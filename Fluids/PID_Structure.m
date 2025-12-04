@@ -4,7 +4,9 @@
 % Pablo Plata   -   12/02/25
 
 
-%% System constants
+%% System constants and setup
+clear;
+addpath(".\Links and Nodes\")
 rho_N2 = 1000;
 rho_OX = 1000;
 rho_FU = 1000;
@@ -35,7 +37,11 @@ Node(4) = Nodes('Atm', 4, 1, P_atm, 3, []);
 % for throttle valves, Orifice equation for Orifices...).
 
 Link(1) = PipeLink('Pipe1', 1, 1, 2, 0.3, 1e-4, 2, rho_FU);
-Link(2) = ValveLink('Valve', 2, 2, 3, rho_FU, 2);
+Link(2) = ValveLink('Valve', 'Throttle', 2, 2, 3, rho_FU, 2);
 Link(3) = PipeLink('Pipe2', 3, 3, 4, 0.3, 1e-4, 2, rho_FU);
+
+%% Define System
+System.Nodes = Node;
+System.Links = Link;
 
 
