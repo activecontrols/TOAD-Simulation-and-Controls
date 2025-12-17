@@ -16,27 +16,18 @@ function XDOT = FluidsSolver(X, System)
     RhoArray = System.Constants.RhoArray;
     NumSpecies = length(RhoArray);
     RhoNode = zeros(PLength, 1);
-
-    % Link Map
-    LinkMap = zeros(MALength + MDLength, 2);
-    for i = 1:MDLength
-        L = System.Links.Dynamic(i);
-        LinkMap(L.ID, :) = [L.Up, L.Down];
-    end
-    for i = 1:MALength
-        L = System.Links.Algebraic(i);
-        LinkMap(L.ID, :) = [L.Up, L.Down];
-    end
+    LinkMap = System.LinkMap;
 
     %% Calculate Node Densities
     Y_All = X(YIdx_Start:end);
-    Y_Matrix = reshape(Y_All, [PLength, NumSpecies]);
+    Y_Matrix = reshape(Y_All, [NumSpecies, PLength])';
     for i = 1:PLength
         Y_Vec = Y_Matrix(i, :);
         Y_Vec = max(0, Y_Vec);
         if sum(Y_Vec) > 0
             Y_Vec = Y_Vec / sum(Y_Vec);
         end
+        Y_Matrix(i, :) = Y_Vec;
 
         % Calculate mix density
         InvRho = sum(Y_Vec ./ RhoArray);
@@ -85,7 +76,8 @@ function XDOT = FluidsSolver(X, System)
             end
 
             % Equation
-            Massflow(ID) = 0.0076 * Cv * sqrt(abs(DeltaP * Rho/1000)) * sign(DeltaP);
+            Massflow(ID) = 0.0076 * Cv * sqrt(abs(DeltaP * Rho)) * sign(DeltaP)...
+            * System.Links.Algebraic(i).Active;
         end
     end
     
@@ -143,5 +135,5 @@ function XDOT = FluidsSolver(X, System)
     end
 
     %% Package State Vector
-    XDOT(YIdx_Start:end) = reshape(XDOT_Species, [], 1);
+    XDOT(YIdx_Start:end) = reshape(XDOT_Species', [], 1);
 end
