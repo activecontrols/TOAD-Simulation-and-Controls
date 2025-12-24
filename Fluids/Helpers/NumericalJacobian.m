@@ -2,7 +2,7 @@ function J = NumericalJacobian(Func, X)
     % Calculates Jacobian J via finite differences
     % J(:,i) = (F(X + dx) - F(X)) / dx
     
-    epsilon = 1e-8; % Perturbation size
+    epsilon = 4e-9; % Perturbation size
     N = length(X);
     F0 = Func(X);
     J = zeros(N, N);

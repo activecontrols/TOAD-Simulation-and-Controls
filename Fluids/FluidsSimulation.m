@@ -45,7 +45,7 @@ lastError = 0;
 % Warm-start the implicit solver
 fprintf('Warming up system states...\n');
 for k = 1:10
-    XDOT = FluidsSolver2(X_cur, System, 'Numerical');
+    XDOT = PhysicsEngine(X_cur, System, zeros(MALength,1), true);
     X_cur = X_cur + XDOT * 5e-5;
 end
 

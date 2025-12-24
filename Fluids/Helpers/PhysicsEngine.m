@@ -8,10 +8,8 @@ function XDOT = PhysicsEngine(X, System, U, isSmooth)
     % Auto-detect Symbolic Input
     isSymbolicType = isa(X, 'sym');
 
-    % Constants for N2 (approximate)
-    R_N2 = 296.8; % J/kg*K
-    T_amb = 293;  % K (Standard Temp)
-    Beta_Liq = 1.2e9; % Pa (Bulk Modulus of Liquid ~ Fuel)
+    % Constants (approximate)
+    Beta_Liq = 1.1e9; % Pa (Bulk Modulus of Liquid ~ Fuel)
 
     % Pre-allocation
     if isSymbolicType
@@ -39,9 +37,6 @@ function XDOT = PhysicsEngine(X, System, U, isSmooth)
         Alpha_Vec = zeros(PLength, 1);
         Rho_Liq_Vec = zeros(PLength, 1);
     end
-    if ~isSmooth
-        X = real(X);
-    end
 
     RhoArray = System.Constants.RhoArray;
     NumSpecies = length(RhoArray);
@@ -59,22 +54,13 @@ function XDOT = PhysicsEngine(X, System, U, isSmooth)
         R_Gas = Node.R;
 
         % Robust Pressure
-        if isSmooth
-            P = sqrt(X(i)^2 + 1e-6);
-        else
-            P = max(X(i), 1e-1);     
-        end
+        P = sqrt(X(i)^2 + 1e-6);
         Pressure(i) = P; 
 
         % Normalize Composition
         Y_Vec = Y_Matrix(i, :);
-        if ~isSmooth
-            Y_Vec = max(Y_Vec, 0);
-        end
         Y_Sum = sum(Y_Vec);
-
-        if ~isSmooth && Y_Sum > 0, Y_Vec = Y_Vec / Y_Sum;
-        elseif isSmooth, Y_Vec = Y_Vec / (Y_Sum + 1e-9); end
+        Y_Vec = Y_Vec / (Y_Sum + 1e-9);
         Y_Matrix(i, :) = Y_Vec;
 
         % Calculate Phase Split (Optimized for Symbolic Engine)
@@ -86,40 +72,21 @@ function XDOT = PhysicsEngine(X, System, U, isSmooth)
         % Term representing Liquid Volume per unit Mass
         InvRhoLiq = (Y_OX / RhoArray(1)) + (Y_FU / RhoArray(2));
         
-       if isSmooth
-             % Calculate "Raw" density (Unstable near zero)
-             Rho_Raw = (Y_OX + Y_FU) / (InvRhoLiq + 1e-12);
-             
-             % Weighting factor: 1 if gas, 0 if liquid
-             % Use high-gain tanh (1e12) to switch cleanly when InvRhoLiq < 1e-9
-             IsPureGas = 0.5 + 0.5 * tanh(1e6 * (1e-9 - InvRhoLiq)); 
-             
-             % Blend: If Gas, use Default. If Liquid, use Calculated.
-             Rho_Liq_Local = (1 - IsPureGas) * Rho_Raw + IsPureGas * Rho_Default_Liq;
-        else
-             % Crisp logic
-             if InvRhoLiq < 1e-9
-                 Rho_Liq_Local = Rho_Default_Liq;
-             else
-                 Rho_Liq_Local = (Y_OX + Y_FU) / InvRhoLiq;
-             end
-        end
+        % Calculate "Raw" density (Unstable near zero)
+        Rho_Raw = (Y_OX + Y_FU) / (InvRhoLiq + 1e-12);
+         
+        % Weighting factor: 1 if gas, 0 if liquid
+        % Use high-gain tanh (1e12) to switch cleanly when InvRhoLiq < 1e-9
+        IsPureGas = 0.5 + 0.5 * tanh(1e6 * (1e-9 - InvRhoLiq)); 
+         
+        % Blend: If Gas, use Default. If Liquid, use Calculated.
+        Rho_Liq_Local = (1 - IsPureGas) * Rho_Raw + IsPureGas * Rho_Default_Liq;
 
         % Calculate Volume Ratio term: (Rho_Gas / Rho_Liq)
         Term_LiqVol = Rho_Gas / Rho_Liq_Local;
         
-        % Calculate Void Fraction (Alpha) from Mass Fraction (Y_N2)
-        if isSmooth
-            % Smooth
-            Alpha = (Y_N2) / (Y_N2 + Term_LiqVol * (1 - Y_N2) + 1e-9);
-        else
-            Denom = Y_N2 + Term_LiqVol * (1 - Y_N2);
-            if Denom < 1e-9
-                Alpha = 0; 
-            else
-                Alpha = Y_N2 / Denom; 
-            end
-        end
+        % Calculate Void Fraction (Alpha) from Mass Fraction
+        Alpha = (Y_N2) / (Y_N2 + Term_LiqVol * (1 - Y_N2) + 1e-9);
         if Node.IsCombustor
             Alpha = 1;
         end
@@ -162,13 +129,8 @@ function XDOT = PhysicsEngine(X, System, U, isSmooth)
         LinkRhoArray(3) = RhoGas;
         
         % Calculate Mixture Density
-        if isSmooth
-            Rho = 1 / sum(Y_Stratified ./ (LinkRhoArray + 1e-9));
-            FricTerm = FlowState * sqrt(FlowState^2 + 1e-6);
-        else
-            Rho = 1 / sum(Y_Stratified ./ LinkRhoArray);
-            FricTerm = abs(FlowState) * FlowState;
-        end
+        Rho = 1 / sum(Y_Stratified ./ (LinkRhoArray + 1e-9));
+        FricTerm = FlowState * sqrt(FlowState^2 + 1e-6);
 
         % Massflow ODE
         XDOT(PLength + i) = L.A/L.L * (DeltaP - L.Zeta/(2*Rho*L.A*L.A) * FricTerm);
@@ -184,38 +146,24 @@ function XDOT = PhysicsEngine(X, System, U, isSmooth)
             
             % Determine Direction & Upstream Properties
             % (Strict upwinding is required for choked flow logic)
-            if isSmooth
-                % Smooth switch to select P_up and P_down
-                Dir = 0.5 + 0.5 * tanh(1e3 * DeltaP); 
-                P_up   = X(UpIDX) * Dir + X(DwIDX) * (1 - Dir);
-                Rho_up = RhoNode(UpIDX) * Dir + RhoNode(DwIDX) * (1 - Dir);
-                G_Up = System.Nodes(UpIDX).Gamma * Dir + System.Nodes(DwIDX).Gamma * (1 - Dir);
-            else
-                IsForward = DeltaP >= 0;
-                P_up   = IsForward * X(UpIDX) + (~IsForward) * X(DwIDX);
-                Rho_up = IsForward * RhoNode(UpIDX) + (~IsForward) * RhoNode(DwIDX);
-                G_Up   = IsForward * System.Nodes(UpIDX).Gamma + (~IsForward) * System.Nodes(DwIDX).Gamma;
-            end
+            % Smooth switch to select P_up and P_down
+            Dir = 0.5 + 0.5 * tanh(1e3 * DeltaP); 
+            P_up   = X(UpIDX) * Dir + X(DwIDX) * (1 - Dir);
+            Rho_up = RhoNode(UpIDX) * Dir + RhoNode(DwIDX) * (1 - Dir);
+            G_Up = System.Nodes(UpIDX).Gamma * Dir + System.Nodes(DwIDX).Gamma * (1 - Dir);
 
             % Calculate Effective Pressure Drop (Choked Flow Check)
             % Critical Pressure Ratio (approx 0.5 for N2)
             Rc = (2 / (G_Up + 1)) ^ (G_Up / (G_Up - 1)); 
             DP_Choked = P_up * (1 - Rc); % Max physical DeltaP before sonic choking
             
-            if isSmooth
-                % Smooth Min: min(a,b) approx 0.5*(a+b - sqrt((a-b)^2))
-                DP_Raw = sqrt(DeltaP^2 + 1e-9);
-                DP_Eff = 0.5 * (DP_Raw + DP_Choked - sqrt((DP_Raw - DP_Choked)^2 + 1e-4));
-                
-                % Standard valve equation terms
-                SqrtTerm = sqrt(DP_Eff * Rho_up + 1e-9);
-                SignTerm = tanh(1e3 * DeltaP);
-            else
-                % Hard Clamp
-                DP_Eff = min(abs(DeltaP), DP_Choked);
-                SqrtTerm = sqrt(DP_Eff * Rho_up);
-                SignTerm = sign(DeltaP);
-            end
+            % Smooth Min: min(a,b) approx 0.5*(a+b - sqrt((a-b)^2))
+            DP_Raw = sqrt(DeltaP^2 + 1e-9);
+            DP_Eff = 0.5 * (DP_Raw + DP_Choked - sqrt((DP_Raw - DP_Choked)^2 + 1e-4));
+            
+            % Standard valve equation terms
+            SqrtTerm = sqrt(DP_Eff * Rho_up + 1e-9);
+            SignTerm = tanh(1e3 * DeltaP);
 
             % Get Cv (Input U or fixed)
             Cv = L.Cv;
@@ -286,8 +234,7 @@ function XDOT = PhysicsEngine(X, System, U, isSmooth)
                 V_Safe = Node.V;
             else
                 V_Safe = Vol_Ullage(i);
-                if isSmooth, V_Safe = V_Safe + 1e-6; 
-                else,     V_Safe = max(V_Safe, 1e-6); end
+                V_Safe = V_Safe + 1e-6;
             end
             
             dP_GasTerm = (mdot_Gas_Net * R * Temp);
@@ -298,13 +245,6 @@ function XDOT = PhysicsEngine(X, System, U, isSmooth)
             
             if Node.IsCombustor
                 XDOT(i) = dP_GasMode;
-            elseif ~isSmooth
-                % Crisp Switch (Old Logic)
-                if Alpha_Vec(i) < 1e-4
-                    XDOT(i) = dP_HydraulicMode;
-                else
-                    XDOT(i) = dP_GasMode;
-                end
             else
                 % Smooth Blend
                 % Blend Factor: 0 = Hydraulic, 1 = Gas
