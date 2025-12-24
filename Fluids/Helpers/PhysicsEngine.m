@@ -140,37 +140,43 @@ function XDOT = PhysicsEngine(X, System, U, isSmooth)
     %% Algebraic Links (Valves)
     for i = 1:MALength
         L = System.Links.Algebraic(i);
+        UpIDX = L.Up; DwIDX = L.Down;
+        DeltaP = X(UpIDX) - X(DwIDX);
+        
+        % Determine Direction & Upstream Properties
+        % (Strict upwinding is required for choked flow logic)
+        % Smooth switch to select P_up and P_down
+        Dir = 0.5 + 0.5 * tanh(1e3 * DeltaP); 
+        P_up   = X(UpIDX) * Dir + X(DwIDX) * (1 - Dir);
+        Rho_up = RhoNode(UpIDX) * Dir + RhoNode(DwIDX) * (1 - Dir);
+        G_Up = System.Nodes(UpIDX).Gamma * Dir + System.Nodes(DwIDX).Gamma * (1 - Dir);
+
+        % Calculate Effective Pressure Drop (Choked Flow Check)
+        % Critical Pressure Ratio (approx 0.5 for N2)
+        Rc = (2 / (G_Up + 1)) ^ (G_Up / (G_Up - 1)); 
+        DP_Choked = P_up * (1 - Rc); % Max physical DeltaP before sonic choking
+        
+        % Smooth Min: min(a,b) approx 0.5*(a+b - sqrt((a-b)^2))
+        DP_Raw = sqrt(DeltaP^2 + 1e-9);
+        DP_Eff = 0.5 * (DP_Raw + DP_Choked - sqrt((DP_Raw - DP_Choked)^2 + 1e-4));
+        
+        % Standard valve equation terms
+        SignTerm = tanh(1e3 * DeltaP);
         if strcmp(L.Type, 'Throttle')
-            UpIDX = L.Up; DwIDX = L.Down;
-            DeltaP = X(UpIDX) - X(DwIDX);
-            
-            % Determine Direction & Upstream Properties
-            % (Strict upwinding is required for choked flow logic)
-            % Smooth switch to select P_up and P_down
-            Dir = 0.5 + 0.5 * tanh(1e3 * DeltaP); 
-            P_up   = X(UpIDX) * Dir + X(DwIDX) * (1 - Dir);
-            Rho_up = RhoNode(UpIDX) * Dir + RhoNode(DwIDX) * (1 - Dir);
-            G_Up = System.Nodes(UpIDX).Gamma * Dir + System.Nodes(DwIDX).Gamma * (1 - Dir);
-
-            % Calculate Effective Pressure Drop (Choked Flow Check)
-            % Critical Pressure Ratio (approx 0.5 for N2)
-            Rc = (2 / (G_Up + 1)) ^ (G_Up / (G_Up - 1)); 
-            DP_Choked = P_up * (1 - Rc); % Max physical DeltaP before sonic choking
-            
-            % Smooth Min: min(a,b) approx 0.5*(a+b - sqrt((a-b)^2))
-            DP_Raw = sqrt(DeltaP^2 + 1e-9);
-            DP_Eff = 0.5 * (DP_Raw + DP_Choked - sqrt((DP_Raw - DP_Choked)^2 + 1e-4));
-            
-            % Standard valve equation terms
-            SqrtTerm = sqrt(DP_Eff * Rho_up + 1e-9);
-            SignTerm = tanh(1e3 * DeltaP);
-
             % Get Cv (Input U or fixed)
+            SqrtTerm = sqrt(DP_Eff * Rho_up + 1e-9);
             Cv = L.Cv;
             if ~isempty(U), Cv = U(i); end
 
             % Compute Massflow
             Massflow(L.ID) = 2.402e-5 * Cv * SqrtTerm * SignTerm;
+        elseif strcmp(L.Type, 'Orifice')
+            Cd = L.Cv;
+            A = L.A;
+            SqrtTerm = sqrt(2 * Rho_up * DP_Eff + 1e-9);
+            
+            % Compute Massflow
+            Massflow(L.ID) = Cd * A * SqrtTerm * SignTerm;
         end
     end
 

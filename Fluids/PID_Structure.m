@@ -65,7 +65,8 @@ Node(5) = Nodes('Outlet', 5, 1, P_atm, 0, [0 0 1], 4, [], false);
 Link(1) = ValveLink('COPV Valve', 'Throttle', 1, 1, 2, rho_FU, 2);
 Link(2) = PipeLink('Tank2Valve', 2, 2, 3, rho_FU, 1, 1e-4, 15);
 Link(3) = ValveLink('Outlet Valve', 'Throttle', 3, 3, 4, rho_FU, 0);
-Link(4) = PipeLink('Valve2Outlet', 4, 4, 5, rho_FU, 0.4, 1e-4, 15);
+Link(4) = ValveLink('Outlet', 'Orifice', 4, 4, 5, rho_FU, 0.7, 1e-4);
+% Link(4) = PipeLink('Valve2Outlet', 4, 4, 5, rho_FU, 0.4, 1e-4, 15);
 
 %% Pre-processing (subdividing into Dynamic and Algebraic Links)
 isDynamic = strcmp({Link.Type}, 'Pipe');

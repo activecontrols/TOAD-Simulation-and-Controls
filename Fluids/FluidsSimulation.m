@@ -189,7 +189,7 @@ end
 
 % Massflow Plots
 figure;
-for i = 1:2
+for i = 1:1
     subplot(1,2,i);
     plot(T_LOG, X_LOG(i + PLength,:)); hold on; grid on;
     Label = System.Links.Dynamic(i).Name;
