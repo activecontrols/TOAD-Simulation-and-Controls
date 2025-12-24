@@ -26,9 +26,9 @@ end
 %% Simulation Loop 2 (Implicit Euler w/ Variable timestep)
 % Initialize Solver 2 parameters
 simTime = 20;
-dT = 1e-4;
+dT = 5e-4;
 MaxdT = 1e-2;
-MindT = 5e-5;
+MindT = 5e-4;
 MaxSteps = 1e5;
 
 % Logs
@@ -41,9 +41,6 @@ T_LOG(1) = t;
 X_LOG(:, 1) = X_cur;
 stepCount = 1;
 lastError = 0;
-
-% Generate Symbolic File
-FluidsSolver2([], System, 'Analytic');
 
 % Warm-start the implicit solver
 fprintf('Warming up system states...\n');
@@ -92,11 +89,12 @@ while t < simTime
         X_new = X_old;
         isConverged = false;
 
-        for iter = 1:30
+        for iter = 1:40
             % Evaluate Dynamics and Jacobian
-            F = FluidDynamics(X_new, U);
-            % J = NumericalJacobian(@(x) FluidDynamics(x, U), X_new);
-            J = FluidJacobian(X_new, U);
+            F = PhysicsEngine(X_new, System, U, true);
+            J = NumericalJacobian(@(x) PhysicsEngine(x, System, U, true), X_new);
+            M = eye(length(X0)) - dT * J;
+            [LD, UD] = lu(M);
     
             % Residual
             R = X_new - X_old - dT * F;
@@ -108,9 +106,7 @@ while t < simTime
             end
     
             % Newton Update: Delta = - (I - dt*J)^-1 * R
-            M = eye(length(X0)) - dT * J;
-            Delta = -M \ R;
-            
+            Delta = - (UD \ (LD \ R));
             X_new = X_new + Delta;
         end
 

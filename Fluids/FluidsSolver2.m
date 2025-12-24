@@ -35,12 +35,10 @@ function varargout = FluidsSolver2(X, System, Mode)
             % We pass 'true' to enable smooth differentiable approximations (tanh)
             fprintf('Computing Symbolic Physics...\n');
             FluidDynamics = PhysicsEngine(X_sym, System, U_sym, true);
-            J = jacobian(FluidDynamics, X_sym);
             
             % Generate Optimized MATLAB Files
             fprintf('Exporting "FluidDynamics.m and FluidJacobian.m"...\n');
             matlabFunction(FluidDynamics, 'File', './Fluids/Helpers/FluidDynamics', 'Vars', {X_sym, U_sym});
-            matlabFunction(J, 'File', './Fluids/Helpers/FluidJacobian', 'Vars', {X_sym, U_sym}, 'Sparse', true);
             fprintf('Success! Files generated.\n');
             
             varargout{1} = true;

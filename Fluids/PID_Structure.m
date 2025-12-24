@@ -15,7 +15,7 @@ R_N2_init = 296.8;  % J/kg*K
 T_amb_init = 293;   % K
 P_init_Pa = P_atm * 6895; % Convert 14.7 psi to Pa for density calc
 
-TargetUllage = 0.5; 
+TargetUllage = 0.1; 
 TankVol = 0.0283;   
 
 % Calculate Phase Volumes
@@ -50,7 +50,7 @@ fprintf('Mass Fractions -> FU: %.6f, N2: %.6f\n', Y_FU, Y_N2);
 Node(1) = Nodes('Regulator', 1, 1, 550, 5, [0 0 1], [], 1);
 Node(2) = Nodes('Tank', 2, 0, P_atm, TankVol, [0 Y_FU Y_N2], 1, 2);
 Node(3) = Nodes('Up', 3, 0, P_atm, 0.002, [0 Y_FU Y_N2], 2, 3);
-Node(4) = Nodes('Down', 4, 0, P_atm, 0.002, [0 0 1], 3, 4);
+Node(4) = Nodes('Down', 4, 0, P_atm, 0.002, [0 1 0], 3, 4);
 Node(5) = Nodes('Outlet', 5, 1, P_atm, 0, [0 0 1], 4, []);
 
 %% Links
@@ -63,9 +63,9 @@ Node(5) = Nodes('Outlet', 5, 1, P_atm, 0, [0 0 1], 4, []);
 % for throttle valves, Orifice equation for Orifices...).
 
 Link(1) = ValveLink('COPV Valve', 'Throttle', 1, 1, 2, rho_FU, 2);
-Link(2) = PipeLink('Tank2Valve', 2, 2, 3, rho_FU, 1, 1e-4, 10);
+Link(2) = PipeLink('Tank2Valve', 2, 2, 3, rho_FU, 1, 1e-4, 15);
 Link(3) = ValveLink('Outlet Valve', 'Throttle', 3, 3, 4, rho_FU, 0);
-Link(4) = PipeLink('Valve2Outlet', 4, 4, 5, rho_FU, 0.4, 1e-4, 10);
+Link(4) = PipeLink('Valve2Outlet', 4, 4, 5, rho_FU, 0.4, 1e-4, 15);
 
 %% Pre-processing (subdividing into Dynamic and Algebraic Links)
 isDynamic = strcmp({Link.Type}, 'Pipe');
