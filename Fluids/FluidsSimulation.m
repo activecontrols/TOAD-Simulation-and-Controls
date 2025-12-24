@@ -26,9 +26,9 @@ end
 %% Simulation Loop 2 (Implicit Euler w/ Variable timestep)
 % Initialize Solver 2 parameters
 simTime = 40;
-dT = 5e-4;
-MaxdT = 1e-2;
-MindT = 5e-4;
+dT = 1e-3;
+MaxdT = 5e-2;
+MindT = 7e-4;
 MaxSteps = 1e5;
 
 % Logs
@@ -89,7 +89,7 @@ while t < simTime
         X_new = X_old;
         isConverged = false;
 
-        for iter = 1:40
+        for iter = 1:45
             % Evaluate Dynamics and Jacobian
             F = PhysicsEngine(X_new, System, U, true);
             J = NumericalJacobian(@(x) PhysicsEngine(x, System, U, true), X_new);
