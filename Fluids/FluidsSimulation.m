@@ -25,7 +25,7 @@ end
 
 %% Simulation Loop 2 (Implicit Euler w/ Variable timestep)
 % Initialize Solver 2 parameters
-simTime = 20;
+simTime = 40;
 dT = 5e-4;
 MaxdT = 1e-2;
 MindT = 5e-4;

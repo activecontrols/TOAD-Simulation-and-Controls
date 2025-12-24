@@ -49,8 +49,8 @@ fprintf('Mass Fractions -> FU: %.6f, N2: %.6f\n', Y_FU, Y_N2);
 
 Node(1) = Nodes('Regulator', 1, 1, 550, 5, [0 0 1], [], 1);
 Node(2) = Nodes('Tank', 2, 0, P_atm, TankVol, [0 Y_FU Y_N2], 1, 2);
-Node(3) = Nodes('Up', 3, 0, P_atm, 0.002, [0 Y_FU Y_N2], 2, 3);
-Node(4) = Nodes('Down', 4, 0, P_atm, 0.002, [0 1 0], 3, 4);
+Node(3) = Nodes('Up', 3, 0, P_atm, 0.001, [0 Y_FU Y_N2], 2, 3);
+Node(4) = Nodes('Down', 4, 0, P_atm, 0.001, [0 0 1], 3, 4);
 Node(5) = Nodes('Outlet', 5, 1, P_atm, 0, [0 0 1], 4, []);
 
 %% Links
