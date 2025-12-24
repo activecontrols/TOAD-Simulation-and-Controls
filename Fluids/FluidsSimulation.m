@@ -1,6 +1,7 @@
 %% This file is test Simulation run of the P&ID Model Simulation.
 % Load in PID Structure
-addpath('.\Helpers');
+addpath('.\Fluids\Helpers');
+addpath('.\Fluids\Links and Nodes');
 PID_Structure;
 
 %% Package initial state vector
@@ -24,10 +25,10 @@ end
 
 %% Simulation Loop 2 (Implicit Euler w/ Variable timestep)
 % Initialize Solver 2 parameters
-simTime = 50;
-dT = 1e-5;
+simTime = 20;
+dT = 1e-4;
 MaxdT = 1e-2;
-MindT = 1e-5;
+MindT = 5e-5;
 MaxSteps = 1e5;
 
 % Logs
@@ -41,18 +42,19 @@ X_LOG(:, 1) = X_cur;
 stepCount = 1;
 lastError = 0;
 
-% Generate Symbolic Files
+% Generate Symbolic File
 FluidsSolver2([], System, 'Analytic');
 
 % Warm-start the implicit solver
 fprintf('Warming up system states...\n');
-for k = 1:1000
+for k = 1:10
     XDOT = FluidsSolver2(X_cur, System, 'Numerical');
-    X_cur = X_cur + XDOT * 1e-5;
+    X_cur = X_cur + XDOT * 5e-5;
 end
 
 fprintf('Warm up complete. Starting Implicit Loop.\n');
 tic;
+warning('off', 'MATLAB:nearlySingularMatrix');
 while t < simTime
     X_old = X_cur;
     isAccepted = false;
@@ -61,25 +63,39 @@ while t < simTime
         t_next = t + dT;
 
         %% Valve Control Logic
-        ValveTiming = 10;
+        ValveTiming = [5 70];
         ValveRamp = 0.12;
         U = zeros(MALength, 1);
-        if t_next < ValveTiming
+
+        % Throttle Valve Open
+        if t_next < ValveTiming(1)
             U = zeros(MALength, 1);
-        elseif t_next < (ValveTiming + ValveRamp)
-            Progress = (t_next - ValveTiming) / ValveRamp;
-            U(1) = 0.5 * Progress;
+        elseif t_next < (ValveTiming(1) + ValveRamp)
+            Progress = (t_next - ValveTiming(1)) / ValveRamp;
+            U(2) = 2.9 * Progress;
         else
-            U(1) = 0.5;
+            U(2) = 2.9;
         end
+
+        % COPV Valve Close
+        if t_next < ValveTiming(2)
+            U(1) = 2.9;
+        elseif t_next < (ValveTiming(2) + ValveRamp)
+            Progress = (t_next - ValveTiming(1)) / ValveRamp;
+            U(1) = 0;
+        else
+            U(1) = 0;
+        end
+
     
         %% Implicit Solver Step via Newton-Ralphson
         X_new = X_old;
         isConverged = false;
 
-        for iter = 1:20
+        for iter = 1:30
             % Evaluate Dynamics and Jacobian
             F = FluidDynamics(X_new, U);
+            % J = NumericalJacobian(@(x) FluidDynamics(x, U), X_new);
             J = FluidJacobian(X_new, U);
     
             % Residual
@@ -98,13 +114,15 @@ while t < simTime
             X_new = X_new + Delta;
         end
 
-        % Step Acceptance
+        %% Step Acceptance for Variable Timestep
         if isConverged
+            Y_Start_Idx = PLength + MDLength + 1;
+            X_new(Y_Start_Idx:end) = max(min(X_new(Y_Start_Idx:end), 1.0), 0.0);
             % Metric: Max Relative Change
             RelChange = abs(X_new - X_old) ./ (abs(X_new) + 1e-2);
             MaxChange = max(RelChange);
             Tolerance = 0.15;  
-            Target    = 0.04;  
+            Target    = 0.05;  
             
             if MaxChange > Tolerance && dT > MindT
                 isAccepted = false;
@@ -112,15 +130,15 @@ while t < simTime
             else
                 isAccepted = true;
 
-                % ~PI Control for timestep
+                % Lowpass for timestep
                 Error = (Target / (MaxChange + 1e-9));
-                Factor = (Error)^0.4;
-                Beta = 0.02;
+                Factor = (Error)^0.5;
+                Beta = 0.03;
                 dT = (1 - Beta) * dT + Beta * Factor * dT;
                 
                 % Solver Difficulty Check (Override)
                 if iter >= 10
-                    dT = min(dT, dT * 0.9);
+                    dT = min(dT, dT * 0.4);
                 end
             end
         else
@@ -128,7 +146,7 @@ while t < simTime
             if dT <= MindT
                 isAccepted = true; 
             else
-                dT = max(dT * 0.5, MindT);
+                dT = max(dT * 0.4, MindT);
                 WasRejected = true;
             end
         end
@@ -148,17 +166,53 @@ while t < simTime
     T_LOG(stepCount) = t; 
     
     % Progress Print
-    if mod(stepCount, 500) == 0
+    if mod(stepCount, 100) == 0
         fprintf('Time: %.2f s | Tank P: %.2f psi | dT: %.1e\n', ...
-            t, X_cur(1)/6895, dT);
+            t, X_cur(2)/6895, dT);
     end
 end
+warning('on', 'MATLAB:nearlySingularMatrix');
 
 % Trim logs to actual size after loop
 X_LOG = X_LOG(:, 1:stepCount);
 U_LOG = U_LOG(:, 1:stepCount);
 T_LOG = T_LOG(1:stepCount);
 toc;
+
+%% Plots
+% Pressure plots
+close all;
+figure;
+for i = 1:4
+    subplot(2,2,i);
+    plot(T_LOG, X_LOG(i+1,:) / 6895); hold on; grid on;
+    Label = System.Nodes(i+1).Name;
+    xlabel('Time [s]'); ylabel('Pressure [psi]');
+    title([Label ' Pressure over time']);
+end
+
+% Massflow Plots
+figure;
+for i = 1:2
+    subplot(1,2,i);
+    plot(T_LOG, X_LOG(i + PLength,:)); hold on; grid on;
+    Label = System.Links.Dynamic(i).Name;
+    xlabel('Time [s]'); ylabel('Massflow [kg/sec]');
+    title([Label ' Massflow over time']);
+end
+
+% Node Composition Plots
+figure;
+for i = 1:4
+    subplot(2,2,i);
+    IDX = 3 * i + PLength + MDLength + 1;
+    plot(T_LOG, X_LOG(IDX:IDX+2,:)); hold on; grid on;
+    Label = System.Nodes(i+1).Name;
+    xlabel('Time [s]'); ylabel('Species Proportions');
+    title([Label ' Composition over time']);
+    legend('OX', 'FU', 'N2');
+end
+
 
 
 
