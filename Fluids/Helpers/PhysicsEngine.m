@@ -145,11 +145,44 @@ function XDOT = PhysicsEngine(X, System, U, isSmooth)
         
         % Determine Direction & Upstream Properties
         % (Strict upwinding is required for choked flow logic)
-        % Smooth switch to select P_up and P_down
+        % Determine Direction (Smooth Sigmoid)
         Dir = 0.5 + 0.5 * tanh(1e3 * DeltaP); 
-        P_up   = X(UpIDX) * Dir + X(DwIDX) * (1 - Dir);
-        Rho_up = RhoNode(UpIDX) * Dir + RhoNode(DwIDX) * (1 - Dir);
-        G_Up = System.Nodes(UpIDX).Gamma * Dir + System.Nodes(DwIDX).Gamma * (1 - Dir);
+
+        % Get Stratified Composition (Filters out gas if liquid is present)
+        % Note: We pass 'true' to force smooth tanh-based stratification
+        Y_Up_Strat = NodeFluidFlow(Y_Matrix(UpIDX, :), true);
+        Y_Dw_Strat = NodeFluidFlow(Y_Matrix(DwIDX, :), true);
+        
+        % Blend Composition based on Flow Direction
+        Y_Flow = Y_Up_Strat * Dir + Y_Dw_Strat * (1 - Dir);
+
+        % Calculate Density of the FLOWING fluid (not node average)
+        % Get Local Gas Properties (Blended)
+        T_Flow = System.Nodes(UpIDX).Temp * Dir + System.Nodes(DwIDX).Temp * (1 - Dir);
+        R_Flow = System.Nodes(UpIDX).R    * Dir + System.Nodes(DwIDX).R    * (1 - Dir);
+        P_Flow = Pressure(UpIDX) * Dir + Pressure(DwIDX) * (1 - Dir);
+        
+        % Calculate local gas density at the valve throat
+        Rho_Gas_Flow = P_Flow / (R_Flow * T_Flow);
+        IsSrcComb = (System.Nodes(UpIDX).IsCombustor * Dir) + ...
+                    (System.Nodes(DwIDX).IsCombustor * (1 - Dir));
+        
+        if IsSrcComb > 0.5
+            Rho_up = Rho_Gas_Flow;
+        else
+            LinkRhoArray = RhoArray;
+            if isSymbolicType, LinkRhoArray = sym(LinkRhoArray); end
+            LinkRhoArray(3) = Rho_Gas_Flow;
+            
+            Rho_up = 1 / sum(Y_Flow ./ (LinkRhoArray + 1e-9));
+        end
+
+        % Standard Upstream Properties for Choking (Smooth)
+        Liq_Frac = sum(Y_Flow(1:2));
+        IsLiqFlow = 0.5 + 0.5 * tanh(10 * (Liq_Frac - 0.1));
+        G_Node = System.Nodes(UpIDX).Gamma * Dir + System.Nodes(DwIDX).Gamma * (1 - Dir);
+        G_Up = IsLiqFlow * 100 + (1 - IsLiqFlow) * G_Node;
+        P_up = Pressure(UpIDX) * Dir + Pressure(DwIDX) * (1 - Dir);
 
         % Calculate Effective Pressure Drop (Choked Flow Check)
         % Critical Pressure Ratio (approx 0.5 for N2)

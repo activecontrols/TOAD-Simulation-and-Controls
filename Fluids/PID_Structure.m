@@ -1,5 +1,6 @@
 % This file creates the data structure of nodes and links for the lumped
 % paramter model of TOAD's P&ID Simulation
+% 
 %
 % Pablo Plata   -   12/02/25
 
@@ -7,66 +8,53 @@
 %% System constants and setup
 clear;
 addpath(".\Fluids\Links and Nodes\")
-rho_FU = 785;
-rho_OX = 1140;
 P_atm = 14.7;
+TankVol = 0.0283;
 
-R_N2_init = 296.8;  % J/kg*K
-T_amb_init = 293;   % K
-P_init_Pa = P_atm * 6895; % Convert 14.7 psi to Pa for density calc
-
-TargetUllage = 0.1; 
-TankVol = 0.0283;   
-
-% Calculate Phase Volumes
-Vol_Gas = TankVol * TargetUllage;
-Vol_Liq = TankVol * (1 - TargetUllage);
-
-% Calculate Initial Gas Density (Ideal Gas Law)
-Rho_Gas_Init = P_init_Pa / (R_N2_init * T_amb_init);
-
-% Calculate Component Masses
-Mass_Gas = Vol_Gas * Rho_Gas_Init;
-Mass_Liq = Vol_Liq * rho_FU;
-Mass_Total = Mass_Gas + Mass_Liq;
-
-% Calculate Mass Fractions Y = [OX, FU, N2]
-Y_N2 = Mass_Gas / Mass_Total;
-Y_FU = Mass_Liq / Mass_Total;
-
-% Print Check
-fprintf('Initializing Tank with %.1f%% Ullage.\n', TargetUllage*100);
-fprintf('Mass Fractions -> FU: %.6f, N2: %.6f\n', Y_FU, Y_N2);
+% Initialize Tank Mass Fractions to 10% Ullage
+[Y0_OX, Y0_FU] = InitializeTanks(TankVol, TankVol);
 
 %% Nodes
-% Nodes are defined as the control volumes between diffrent links. Each
-% node has a fixed volume V_k. For the purposes of this Simulation, we will
-% assign it a length and an area, and constrain the nodes to straight,
-% constant area pipes. Each node will also have a defined speed of sound 
-% across it, aswell as a friction loss coefficient. Each node
-% also has a parameter listing the connecting links. A pressure state is
-% assigned to each node.
+% ID Map:
+% 1: Regulator
+% 2: Tank LOX
+% 3: Tank IPA
+% 4: Line LOX (Post-Valve)
+% 5: Line IPA (Post-Valve)
+% 6: Combustor
+% 7: Atmosphere
+% Constructor: Nodes(name, ID, Fixed, P0_psi, V_m3, Y0, LinksIN, LinksOUT, isCombustor)
 
-Node(1) = Nodes('Regulator', 1, 1, 550, 5, [0 0 1], [], 1, false);
-Node(2) = Nodes('Tank', 2, 0, P_atm, TankVol, [0 Y_FU Y_N2], 1, 2, false);
-Node(3) = Nodes('Up', 3, 0, P_atm, 0.001, [0 Y_FU Y_N2], 2, 3, false);
-Node(4) = Nodes('Down', 4, 0, P_atm, 0.001, [0 0 1], 3, 4, false);
-Node(5) = Nodes('Outlet', 5, 1, P_atm, 0, [0 0 1], 4, [], false);
+% Tanks
+    Node(1) = Nodes('Regulator', 1, 1, 550, 5, [0 0 1], [], [1 2], false);
+    Node(2) = Nodes('Tank OX', 2, 0, P_atm, TankVol, Y0_OX, 1, 3, false);
+    Node(3) = Nodes('Tank IPA', 3, 0, P_atm, TankVol, Y0_FU, 2, 4, false);
+% Lines
+    Node(4) = Nodes('Line OX', 4, 0, P_atm, 0.0005, [0 0 1], 3, 5, false);
+    Node(5) = Nodes('Line FU', 5, 0, P_atm, 0.0005, [0 0 1], 4, 6, false);
+% Manifold
+    Node(6) = Nodes('OX Manifold', 6, 0, P_atm, 0.0005, [0 0 1], 5, 7, false);
+    Node(7) = Nodes('FU Manifold', 7, 0, P_atm, 0.0005, [0 0 1], 6, 8, false);
+% TADPOLE
+    Node(8) = Nodes('TADPOLE', 8, 0, P_atm, 0.00125, [0 0 1], [7 8], 9, true);
+% Atmosphere
+    Node(9) = Nodes('Atmosphere', 9, 1, P_atm, 1, [0 0 1], 9, [], false);
 
 %% Links
-% Links are defined as the flow elements that connect nodes. There are
-% diffrent types of links (ex: "Pipe", "Throttle_Valve", "Binary_Valve",
-% "Orifice", "Check_Valve"...). Each link as assigned node indexes it
-% connects, aswell as diffrent parameters. If the link is a pipe section,
-% it has defined geometric parameters and an assigned ODE. Else, the link
-% is assigned an algebraic massflow equation depending on it's type (ex: Cv
-% for throttle valves, Orifice equation for Orifices...).
-
-Link(1) = ValveLink('COPV Valve', 'Throttle', 1, 1, 2, rho_FU, 2);
-Link(2) = PipeLink('Tank2Valve', 2, 2, 3, rho_FU, 1, 1e-4, 15);
-Link(3) = ValveLink('Outlet Valve', 'Throttle', 3, 3, 4, rho_FU, 0);
-Link(4) = ValveLink('Outlet', 'Orifice', 4, 4, 5, rho_FU, 0.7, 1e-4);
-% Link(4) = PipeLink('Valve2Outlet', 4, 4, 5, rho_FU, 0.4, 1e-4, 15);
+% Tank Press
+    Link(1) = ValveLink('Press_OX', 'Throttle', 1, 1, 2, 2.0);
+    Link(2) = ValveLink('Press_FU', 'Throttle', 2, 1, 3, 2.0);
+% Run Valves
+    Link(3) = ValveLink('Main_OX', 'Throttle', 3, 2, 4, 2.9);
+    Link(4) = ValveLink('Main_FU', 'Throttle', 4, 3, 5, 2.9);
+% Pipe Section
+    Link(5) = PipeLink('OX Line', 5, 4, 6, 1, 1e-4, 10);
+    Link(6) = PipeLink('FU Line', 6, 5, 7, 1, 1e-4, 10);
+% Injectors
+    Link(7) = ValveLink('Inj OX', 'Orifice', 7, 6, 8, 0.49, 7.65e-5);
+    Link(8) = ValveLink('Inj FU', 'Orifice', 8, 7, 8, 0.7, 6.3e-5);
+% Nozzle 
+    Link(9) = ValveLink('Nozzle', 'Orifice', 9, 8, 9, 0.69, 0.0011);
 
 %% Pre-processing (subdividing into Dynamic and Algebraic Links)
 isDynamic = strcmp({Link.Type}, 'Pipe');

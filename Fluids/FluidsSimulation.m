@@ -25,10 +25,10 @@ end
 
 %% Simulation Loop 2 (Implicit Euler w/ Variable timestep)
 % Initialize Solver 2 parameters
-simTime = 40;
+simTime = 20;
 dT = 1e-3;
 MaxdT = 5e-2;
-MindT = 7e-4;
+MindT = 5e-5;
 MaxSteps = 1e5;
 
 % Logs
@@ -69,19 +69,19 @@ while t < simTime
             U = zeros(MALength, 1);
         elseif t_next < (ValveTiming(1) + ValveRamp)
             Progress = (t_next - ValveTiming(1)) / ValveRamp;
-            U(2) = 2.9 * Progress;
+            U(3:4) = 2.9 * Progress;
         else
-            U(2) = 2.9;
+            U(3:4) = 2.9;
         end
 
         % COPV Valve Close
         if t_next < ValveTiming(2)
-            U(1) = 2.9;
+            U(1:2) = 2.9;
         elseif t_next < (ValveTiming(2) + ValveRamp)
             Progress = (t_next - ValveTiming(1)) / ValveRamp;
-            U(1) = 0;
+            U(1:2) = 0;
         else
-            U(1) = 0;
+            U(1:2) = 0;
         end
 
     
@@ -89,7 +89,7 @@ while t < simTime
         X_new = X_old;
         isConverged = false;
 
-        for iter = 1:45
+        for iter = 1:35
             % Evaluate Dynamics and Jacobian
             F = PhysicsEngine(X_new, System, U, true);
             J = NumericalJacobian(@(x) PhysicsEngine(x, System, U, true), X_new);
@@ -175,41 +175,130 @@ U_LOG = U_LOG(:, 1:stepCount);
 T_LOG = T_LOG(1:stepCount);
 toc;
 
-%% Plots
-% Pressure plots
-close all;
-figure;
-for i = 1:4
-    subplot(2,2,i);
-    plot(T_LOG, X_LOG(i+1,:) / 6895); hold on; grid on;
-    Label = System.Nodes(i+1).Name;
+%% VISUALIZATION (DARK MODE)
+close all
+% Convert to common engineering units
+Time = T_LOG;
+PSI = 6895;
+Pressures_PSI = X_LOG(1:PLength, :) / PSI;
+
+% Dynamic Massflows (Pipe Links)
+Pipe_Flows = X_LOG(PLength+1 : PLength+MDLength, :);
+
+% Reconstruct Algebraic Massflows (Injectors/Valves) for plotting
+Inj_Flows = zeros(2, length(Time)); % 1: OX Inj, 2: FU Inj
+
+% Dynamically fetch parameters from the System Struct
+% Note: Adjust indices (7 and 8) if your Link IDs change
+L_OX = System.Links.Algebraic(5); 
+L_FU = System.Links.Algebraic(6);
+
+for k = 1:length(Time)
+    % Extract State
+    P_Man_OX = X_LOG(6, k); P_Cham = X_LOG(8, k); P_Man_FU = X_LOG(7, k);
+    
+    % OX Injector (Link 7)
+    DP_OX = P_Man_OX - P_Cham;
+    % Uses L_OX.Cv (which is Cd) and L_OX.Area automatically
+    Inj_Flows(1, k) = L_OX.Cv * L_OX.A * sqrt(2 * 1141 * abs(DP_OX)) * sign(DP_OX);
+    
+    % FU Injector (Link 8)
+    DP_FU = P_Man_FU - P_Cham;
+    Inj_Flows(2, k) = L_FU.Cv * L_FU.A * sqrt(2 * 786 * abs(DP_FU)) * sign(DP_FU);
+end
+
+% Dark Mode Settings
+DarkBg = [0.15 0.15 0.15]; % Dark Grey Background
+AxColor = [0.9 0.9 0.9];   % Off-White Axes/Text
+GridAlpha = 0.2;
+
+% FIG 1: Tank Blowdown (Supply Side)
+fig1 = figure('Name', 'Supply Pressures', 'NumberTitle', 'off', 'Color', DarkBg);
+    plot(Time, Pressures_PSI(1,:), 'w--', 'LineWidth', 1.5); hold on; % Regulator
+    plot(Time, Pressures_PSI(2,:), 'c', 'LineWidth', 1.5);   % OX (Cyan)
+    plot(Time, Pressures_PSI(3,:), 'm', 'LineWidth', 1.5);   % FU (Magenta)
+    grid on;
+    legend('Regulator', 'LOX Tank', 'IPA Tank', 'TextColor', 'w', 'Color', 'none', 'EdgeColor', 'none');
     xlabel('Time [s]'); ylabel('Pressure [psi]');
-    title([Label ' Pressure over time']);
-end
+    title('Tank Blowdown Curves');
+    
+    % Apply Dark Theme
+    set(gca, 'Color', DarkBg, 'XColor', AxColor, 'YColor', AxColor, 'GridColor', 'w', 'GridAlpha', GridAlpha);
 
-% Massflow Plots
-figure;
-for i = 1:1
-    subplot(1,2,i);
-    plot(T_LOG, X_LOG(i + PLength,:)); hold on; grid on;
-    Label = System.Links.Dynamic(i).Name;
-    xlabel('Time [s]'); ylabel('Massflow [kg/sec]');
-    title([Label ' Massflow over time']);
-end
+% FIG 2: Feed System Drops (Manifold Dynamics)
+fig2 = figure('Name', 'Feed System Gradients', 'NumberTitle', 'off', 'Color', DarkBg);
+subplot(2,1,1);
+    plot(Time, Pressures_PSI(2,:), 'c--'); hold on;          % Tank (Cyan Dash)
+    plot(Time, Pressures_PSI(4,:), 'c');                     % Line (Cyan)
+    plot(Time, Pressures_PSI(6,:), 'g', 'LineWidth', 1.5);   % Manifold (Green)
+    grid on;
+    legend('Tank', 'Line (Post-Valve)', 'Manifold (Pre-Inj)', 'TextColor', 'w', 'Color', 'none', 'EdgeColor', 'none');
+    title('Oxidizer Feed Line Pressures');
+    ylabel('Pressure [psi]');
+    set(gca, 'Color', DarkBg, 'XColor', AxColor, 'YColor', AxColor, 'GridColor', 'w', 'GridAlpha', GridAlpha);
+    
+subplot(2,1,2);
+    plot(Time, Pressures_PSI(3,:), 'm--'); hold on;          % Tank (Magenta Dash)
+    plot(Time, Pressures_PSI(5,:), 'm');                     % Line (Magenta)
+    plot(Time, Pressures_PSI(7,:), 'y', 'LineWidth', 1.5);   % Manifold (Yellow)
+    grid on;
+    legend('Tank', 'Line (Post-Valve)', 'Manifold (Pre-Inj)', 'TextColor', 'w', 'Color', 'none', 'EdgeColor', 'none');
+    title('Fuel Feed Line Pressures');
+    ylabel('Pressure [psi]');
+    xlabel('Time [s]');
+    set(gca, 'Color', DarkBg, 'XColor', AxColor, 'YColor', AxColor, 'GridColor', 'w', 'GridAlpha', GridAlpha);
 
-% Node Composition Plots
-figure;
-for i = 1:4
-    subplot(2,2,i);
-    IDX = 3 * i + PLength + MDLength + 1;
-    plot(T_LOG, X_LOG(IDX:IDX+2,:)); hold on; grid on;
-    Label = System.Nodes(i+1).Name;
-    xlabel('Time [s]'); ylabel('Species Proportions');
-    title([Label ' Composition over time']);
-    legend('OX', 'FU', 'N2');
-end
+% FIG 3: Engine Performance (Chamber & Injection)
+fig3 = figure('Name', 'Engine Operation', 'NumberTitle', 'off', 'Color', DarkBg);
+subplot(2,1,1);
+    plot(Time, Pressures_PSI(6,:), 'g'); hold on;            % OX Man (Green)
+    plot(Time, Pressures_PSI(7,:), 'y');                     % FU Man (Yellow)
+    plot(Time, Pressures_PSI(8,:), 'w', 'LineWidth', 2);     % Chamber (White)
+    yline(14.7, 'w--');                                      % Atm (White Dash)
+    grid on;
+    legend('OX Manifold', 'FU Manifold', 'Chamber', 'Atm', 'TextColor', 'w', 'Color', 'none', 'EdgeColor', 'none');
+    title('Injection Pressures');
+    ylabel('Pressure [psi]');
+    set(gca, 'Color', DarkBg, 'XColor', AxColor, 'YColor', AxColor, 'GridColor', 'w', 'GridAlpha', GridAlpha);
 
+subplot(2,1,2);
+    % Compare Pipe Massflow (Supply) vs Injector Massflow (Demand)
+    plot(Time, Pipe_Flows(1,:), 'c'); hold on;               % OX Pipe (Cyan)
+    plot(Time, Inj_Flows(1,:), 'g--');                       % OX Inj (Green Dash)
+    plot(Time, Pipe_Flows(2,:), 'm');                        % FU Pipe (Magenta)
+    plot(Time, Inj_Flows(2,:), 'y--');                       % FU Inj (Yellow Dash)
+    grid on;
+    legend('OX Pipe', 'OX Inj', 'FU Pipe', 'FU Inj', 'TextColor', 'w', 'Color', 'none', 'EdgeColor', 'none');
+    title('Massflow Dynamics (Lag Check)');
+    ylabel('Flow [kg/s]');
+    xlabel('Time [s]');
+    set(gca, 'Color', DarkBg, 'XColor', AxColor, 'YColor', AxColor, 'GridColor', 'w', 'GridAlpha', GridAlpha);
 
+% FIG 4: Fluid Composition (Purge/Mixing Check)
+fig4 = figure('Name', 'Fluid Composition', 'NumberTitle', 'off', 'Color', DarkBg);
+StartIdx = PLength + MDLength;
 
+subplot(2,1,1);
+    % Plot OX Manifold Gas Fraction
+    Idx_ManOX = StartIdx + (6-1)*3 + 3; % N2 index
+    plot(Time, X_LOG(Idx_ManOX, :), 'c'); hold on;
+    Idx_ManFU = StartIdx + (7-1)*3 + 3; 
+    plot(Time, X_LOG(Idx_ManFU, :), 'm');
+    grid on;
+    ylabel('N2 Mass Fraction');
+    legend('OX Manifold', 'FU Manifold', 'TextColor', 'w', 'Color', 'none', 'EdgeColor', 'none');
+    title('Quality Check (1.0 = Pure Gas, 0.0 = Pure Liquid)');
+    set(gca, 'Color', DarkBg, 'XColor', AxColor, 'YColor', AxColor, 'GridColor', 'w', 'GridAlpha', GridAlpha);
 
-
+subplot(2,1,2);
+    % Chamber Mixture Ratio
+    Idx_ChamOX = StartIdx + (8-1)*3 + 1;
+    Idx_ChamFU = StartIdx + (8-1)*3 + 2;
+    plot(Time, X_LOG(Idx_ChamOX, :), 'c'); hold on;
+    plot(Time, X_LOG(Idx_ChamFU, :), 'm');
+    grid on;
+    legend('Oxidizer', 'Fuel', 'TextColor', 'w', 'Color', 'none', 'EdgeColor', 'none');
+    title('Chamber Composition');
+    ylabel('Mass Fraction');
+    xlabel('Time [s]');
+    set(gca, 'Color', DarkBg, 'XColor', AxColor, 'YColor', AxColor, 'GridColor', 'w', 'GridAlpha', GridAlpha);
