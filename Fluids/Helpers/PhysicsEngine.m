@@ -53,6 +53,11 @@ function XDOT = PhysicsEngine(X, System, U, isSmooth)
     Y_Matrix = reshape(Y_All, [NumSpecies, PLength])';
 
     for i = 1:PLength
+        % Node Parameters
+        Node = System.Nodes(i);
+        Temp = Node.Temp;
+        R_Gas = Node.R;
+
         % Robust Pressure
         if isSmooth
             P = sqrt(X(i)^2 + 1e-6);
@@ -73,11 +78,10 @@ function XDOT = PhysicsEngine(X, System, U, isSmooth)
         Y_Matrix(i, :) = Y_Vec;
 
         % Calculate Phase Split (Optimized for Symbolic Engine)
-        Rho_Gas = P / (R_N2 * T_amb);
+        Rho_Gas = P / (R_Gas * Temp);
         
-        Y_OX = Y_Vec(1);
-        Y_FU = Y_Vec(2);
-        Y_N2 = Y_Vec(3);
+        % Mass Fractions
+        Y_OX = Y_Vec(1);    Y_FU = Y_Vec(2);    Y_N2 = Y_Vec(3);
         
         % Term representing Liquid Volume per unit Mass
         InvRhoLiq = (Y_OX / RhoArray(1)) + (Y_FU / RhoArray(2));
@@ -106,7 +110,7 @@ function XDOT = PhysicsEngine(X, System, U, isSmooth)
         
         % Calculate Void Fraction (Alpha) from Mass Fraction (Y_N2)
         if isSmooth
-            % Smooth approximation for CSD
+            % Smooth
             Alpha = (Y_N2) / (Y_N2 + Term_LiqVol * (1 - Y_N2) + 1e-9);
         else
             Denom = Y_N2 + Term_LiqVol * (1 - Y_N2);
@@ -115,6 +119,9 @@ function XDOT = PhysicsEngine(X, System, U, isSmooth)
             else
                 Alpha = Y_N2 / Denom; 
             end
+        end
+        if Node.IsCombustor
+            Alpha = 1;
         end
         Alpha_Vec(i) = Alpha;
 
@@ -143,14 +150,16 @@ function XDOT = PhysicsEngine(X, System, U, isSmooth)
         % This applies the "Liquid Check" to our effectively selected upstream composition
         Y_Stratified = NodeFluidFlow(Y_UpStr, isSmooth);
 
-        % 4. Calculate Density of this Stratified Mixture
-        % Calculate N2 density based on the effective Upstream Pressure
-        RhoN2_Up = P_UpStr / (R_N2 * T_amb);
+        % Calculate Density of this Stratified Mixture
+        % Fetch Upstream Thermodynamic Proprieties
+        T_Up = System.Nodes(UpIDX).Temp * IsForward + System.Nodes(DwIDX).Temp * (1 - IsForward);
+        R_Up = System.Nodes(UpIDX).R    * IsForward + System.Nodes(DwIDX).R    * (1 - IsForward);
+        RhoGas = P_UpStr / (R_Up * T_Up);
         
         % Build Local Density Array
         LinkRhoArray = RhoArray; 
         if isSymbolicType, LinkRhoArray = sym(LinkRhoArray); end
-        LinkRhoArray(3) = RhoN2_Up;
+        LinkRhoArray(3) = RhoGas;
         
         % Calculate Mixture Density
         if isSmooth
@@ -180,15 +189,17 @@ function XDOT = PhysicsEngine(X, System, U, isSmooth)
                 Dir = 0.5 + 0.5 * tanh(1e3 * DeltaP); 
                 P_up   = X(UpIDX) * Dir + X(DwIDX) * (1 - Dir);
                 Rho_up = RhoNode(UpIDX) * Dir + RhoNode(DwIDX) * (1 - Dir);
+                G_Up = System.Nodes(UpIDX).Gamma * Dir + System.Nodes(DwIDX).Gamma * (1 - Dir);
             else
                 IsForward = DeltaP >= 0;
                 P_up   = IsForward * X(UpIDX) + (~IsForward) * X(DwIDX);
                 Rho_up = IsForward * RhoNode(UpIDX) + (~IsForward) * RhoNode(DwIDX);
+                G_Up   = IsForward * System.Nodes(UpIDX).Gamma + (~IsForward) * System.Nodes(DwIDX).Gamma;
             end
 
             % Calculate Effective Pressure Drop (Choked Flow Check)
             % Critical Pressure Ratio (approx 0.5 for N2)
-            Rc = 0.5; 
+            Rc = (2 / (G_Up + 1)) ^ (G_Up / (G_Up - 1)); 
             DP_Choked = P_up * (1 - Rc); % Max physical DeltaP before sonic choking
             
             if isSmooth
@@ -215,7 +226,7 @@ function XDOT = PhysicsEngine(X, System, U, isSmooth)
         end
     end
 
-    %% 4. Pressure & Species Transport
+    %% Conservation of Mass and Energy
     XDOT_Species_Mat = zeros(PLength, NumSpecies);
     if isSymbolicType
         XDOT_Species_Mat = sym(zeros(PLength, NumSpecies));
@@ -266,22 +277,28 @@ function XDOT = PhysicsEngine(X, System, U, isSmooth)
             
             %% ODE's
             Rho_Liq_Local = Rho_Liq_Vec(i);
-            % Stratified Pressure ODE
-            % Gas Term: Adding gas mass increases Pressure
-            dP_GasTerm = (mdot_Gas_Net * R_N2 * T_amb);
+            Temp = Node.Temp;   R = Node.R;
+
+            % Calculate Gas Volume
+            if Node.IsCombustor
+                mdot_Gas_Net = mdot_Gas_Net + mdot_Liq_Net;
+                mdot_Liq_Net = 0; 
+                V_Safe = Node.V;
+            else
+                V_Safe = Vol_Ullage(i);
+                if isSmooth, V_Safe = V_Safe + 1e-6; 
+                else,     V_Safe = max(V_Safe, 1e-6); end
+            end
             
-            % Liquid Term: Adding liquid volume compresses gas
-            dP_LiqTerm = Pressure(i) * (mdot_Liq_Net / Rho_Liq_Local);
+            dP_GasTerm = (mdot_Gas_Net * R * Temp);
+            dP_LiqTerm = Pressure(i) * (mdot_Liq_Net / max(Rho_Liq_Local, 100));
+
+            dP_GasMode = (dP_GasTerm + dP_LiqTerm) / V_Safe;
+            dP_HydraulicMode = (Beta_Liq / (Node.V * max(Rho_Liq_Local, 100))) * m_Net_Total;
             
-            % Calculate Derivative
-            V_Ullage_Safe = Vol_Ullage(i);
-            if isSmooth, V_Ullage_Safe = V_Ullage_Safe + 1e-6; 
-            else,     V_Ullage_Safe = max(V_Ullage_Safe, 1e-6); end
-            
-            dP_GasMode = (dP_GasTerm + dP_LiqTerm) / V_Ullage_Safe;
-            dP_HydraulicMode = (Beta_Liq / (Node.V * Rho_Liq_Local)) * m_Net_Total;
-            
-            if ~isSmooth
+            if Node.IsCombustor
+                XDOT(i) = dP_GasMode;
+            elseif ~isSmooth
                 % Crisp Switch (Old Logic)
                 if Alpha_Vec(i) < 1e-4
                     XDOT(i) = dP_HydraulicMode;
