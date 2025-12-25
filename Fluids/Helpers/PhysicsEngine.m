@@ -180,6 +180,7 @@ function XDOT = PhysicsEngine(X, System, U, isSmooth)
         % Standard Upstream Properties for Choking (Smooth)
         Liq_Frac = sum(Y_Flow(1:2));
         IsLiqFlow = 0.5 + 0.5 * tanh(10 * (Liq_Frac - 0.1));
+        IsLiqFlow = IsLiqFlow * (1 - IsSrcComb);
         G_Node = System.Nodes(UpIDX).Gamma * Dir + System.Nodes(DwIDX).Gamma * (1 - Dir);
         G_Up = IsLiqFlow * 100 + (1 - IsLiqFlow) * G_Node;
         P_up = Pressure(UpIDX) * Dir + Pressure(DwIDX) * (1 - Dir);

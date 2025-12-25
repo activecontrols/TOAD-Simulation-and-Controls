@@ -9,10 +9,11 @@
 clear;
 addpath(".\Fluids\Links and Nodes\")
 P_atm = 14.7;
-TankVol = 0.0283;
+TankVolOX = 0.03075;
+TankVolFU = 0.03746;
 
 % Initialize Tank Mass Fractions to 10% Ullage
-[Y0_OX, Y0_FU] = InitializeTanks(TankVol, TankVol);
+[Y0_OX, Y0_FU] = InitializeTanks(TankVolOX, TankVolFU);
 
 %% Nodes
 % ID Map:
@@ -27,14 +28,14 @@ TankVol = 0.0283;
 
 % Tanks
     Node(1) = Nodes('Regulator', 1, 1, 550, 5, [0 0 1], [], [1 2], false);
-    Node(2) = Nodes('Tank OX', 2, 0, P_atm, TankVol, Y0_OX, 1, 3, false);
-    Node(3) = Nodes('Tank IPA', 3, 0, P_atm, TankVol, Y0_FU, 2, 4, false);
+    Node(2) = Nodes('Tank OX', 2, 0, P_atm, TankVolOX, Y0_OX, 1, 3, false);
+    Node(3) = Nodes('Tank IPA', 3, 0, P_atm, TankVolFU, Y0_FU, 2, 4, false);
 % Lines
-    Node(4) = Nodes('Line OX', 4, 0, P_atm, 0.0005, [0 0 1], 3, 5, false);
-    Node(5) = Nodes('Line FU', 5, 0, P_atm, 0.0005, [0 0 1], 4, 6, false);
+    Node(4) = Nodes('Line OX', 4, 0, P_atm, 0.0005, [1 0 0], 3, 5, false);
+    Node(5) = Nodes('Line FU', 5, 0, P_atm, 0.0005, [0 1 0], 4, 6, false);
 % Manifold
-    Node(6) = Nodes('OX Manifold', 6, 0, P_atm, 0.0005, [0 0 1], 5, 7, false);
-    Node(7) = Nodes('FU Manifold', 7, 0, P_atm, 0.0005, [0 0 1], 6, 8, false);
+    Node(6) = Nodes('OX Manifold', 6, 0, P_atm, 0.0005, [1 0 0], 5, 7, false);
+    Node(7) = Nodes('FU Manifold', 7, 0, P_atm, 0.0005, [0 1 0], 6, 8, false);
 % TADPOLE
     Node(8) = Nodes('TADPOLE', 8, 0, P_atm, 0.00125, [0 0 1], [7 8], 9, true);
 % Atmosphere
@@ -48,13 +49,13 @@ TankVol = 0.0283;
     Link(3) = ValveLink('Main_OX', 'Throttle', 3, 2, 4, 2.9);
     Link(4) = ValveLink('Main_FU', 'Throttle', 4, 3, 5, 2.9);
 % Pipe Section
-    Link(5) = PipeLink('OX Line', 5, 4, 6, 1, 1e-4, 10);
-    Link(6) = PipeLink('FU Line', 6, 5, 7, 1, 1e-4, 10);
+    Link(5) = PipeLink('OX Line', 5, 4, 6, 1, 1e-4, 15);
+    Link(6) = PipeLink('FU Line', 6, 5, 7, 0.5, 1e-4, 15);
 % Injectors
-    Link(7) = ValveLink('Inj OX', 'Orifice', 7, 6, 8, 0.49, 7.65e-5);
-    Link(8) = ValveLink('Inj FU', 'Orifice', 8, 7, 8, 0.7, 6.3e-5);
+    Link(7) = ValveLink('Inj OX', 'Orifice', 7, 6, 8, 0.49, 3.146e-5);
+    Link(8) = ValveLink('Inj FU', 'Orifice', 8, 7, 8, 0.7, 2.6e-5);
 % Nozzle 
-    Link(9) = ValveLink('Nozzle', 'Orifice', 9, 8, 9, 0.69, 0.0011);
+    Link(9) = ValveLink('Nozzle', 'Orifice', 9, 8, 9, 0.48, 0.0011);
 
 %% Pre-processing (subdividing into Dynamic and Algebraic Links)
 isDynamic = strcmp({Link.Type}, 'Pipe');

@@ -25,7 +25,7 @@ end
 
 %% Simulation Loop 2 (Implicit Euler w/ Variable timestep)
 % Initialize Solver 2 parameters
-simTime = 20;
+simTime = 60;
 dT = 1e-3;
 MaxdT = 5e-2;
 MindT = 5e-5;
@@ -274,31 +274,42 @@ subplot(2,1,2);
     xlabel('Time [s]');
     set(gca, 'Color', DarkBg, 'XColor', AxColor, 'YColor', AxColor, 'GridColor', 'w', 'GridAlpha', GridAlpha);
 
-% FIG 4: Fluid Composition (Purge/Mixing Check)
-fig4 = figure('Name', 'Fluid Composition', 'NumberTitle', 'off', 'Color', DarkBg);
+% FIG 4: Tank Composition (Propellant Depletion Check)
+fig4 = figure('Name', 'Tank Composition', 'NumberTitle', 'off', 'Color', DarkBg);
 StartIdx = PLength + MDLength;
+NumSpecies = 3; % Assuming standard [OX, FU, N2]
 
+% Subplot 1: Oxidizer Tank (Node 2)
 subplot(2,1,1);
-    % Plot OX Manifold Gas Fraction
-    Idx_ManOX = StartIdx + (6-1)*3 + 3; % N2 index
-    plot(Time, X_LOG(Idx_ManOX, :), 'c'); hold on;
-    Idx_ManFU = StartIdx + (7-1)*3 + 3; 
-    plot(Time, X_LOG(Idx_ManFU, :), 'm');
+    % Calculate Indices for Node 2
+    % Species: 1=OX, 2=FU, 3=N2
+    Idx_LOX_Liq = StartIdx + (2-1)*NumSpecies + 1; 
+    Idx_LOX_N2  = StartIdx + (2-1)*NumSpecies + 3;
+    
+    plot(Time, X_LOG(Idx_LOX_Liq, :), 'c', 'LineWidth', 1.5); hold on;
+    plot(Time, X_LOG(Idx_LOX_N2, :), 'w--');
+    
     grid on;
-    ylabel('N2 Mass Fraction');
-    legend('OX Manifold', 'FU Manifold', 'TextColor', 'w', 'Color', 'none', 'EdgeColor', 'none');
-    title('Quality Check (1.0 = Pure Gas, 0.0 = Pure Liquid)');
+    ylabel('Mass Fraction');
+    legend('LOX Liquid', 'N2 Gas', 'TextColor', 'w', 'Color', 'none', 'EdgeColor', 'none');
+    title('Oxidizer Tank Composition (Node 2)');
+    % Force Y-Limits to 0-1 to handle numerical noise cleanly
+    ylim([-0.05 1.05]); 
     set(gca, 'Color', DarkBg, 'XColor', AxColor, 'YColor', AxColor, 'GridColor', 'w', 'GridAlpha', GridAlpha);
 
+% Subplot 2: Fuel Tank (Node 3)
 subplot(2,1,2);
-    % Chamber Mixture Ratio
-    Idx_ChamOX = StartIdx + (8-1)*3 + 1;
-    Idx_ChamFU = StartIdx + (8-1)*3 + 2;
-    plot(Time, X_LOG(Idx_ChamOX, :), 'c'); hold on;
-    plot(Time, X_LOG(Idx_ChamFU, :), 'm');
+    % Calculate Indices for Node 3
+    Idx_FU_Liq = StartIdx + (3-1)*NumSpecies + 2; 
+    Idx_FU_N2  = StartIdx + (3-1)*NumSpecies + 3;
+    
+    plot(Time, X_LOG(Idx_FU_Liq, :), 'm', 'LineWidth', 1.5); hold on;
+    plot(Time, X_LOG(Idx_FU_N2, :), 'w--');
+    
     grid on;
-    legend('Oxidizer', 'Fuel', 'TextColor', 'w', 'Color', 'none', 'EdgeColor', 'none');
-    title('Chamber Composition');
     ylabel('Mass Fraction');
     xlabel('Time [s]');
+    legend('IPA Liquid', 'N2 Gas', 'TextColor', 'w', 'Color', 'none', 'EdgeColor', 'none');
+    title('Fuel Tank Composition (Node 3)');
+    ylim([-0.05 1.05]);
     set(gca, 'Color', DarkBg, 'XColor', AxColor, 'YColor', AxColor, 'GridColor', 'w', 'GridAlpha', GridAlpha);
