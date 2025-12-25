@@ -58,7 +58,7 @@ function XDOT = PhysicsEngine(X, System, U)
         Rho_Raw = (Y_OX + Y_FU) / (InvRhoLiq + 1e-12);
          
         % Blend: If Gas, use Default. If Liquid, use Calculated.
-        IsPureGas = Sigmoid(1e-9 - InvRhoLiq, 1e6);
+        IsPureGas = 0.5 + 0.5 * tanh(1e6 * (1e-9 - InvRhoLiq));
         Rho_Liq_Local = (1 - IsPureGas) * Rho_Raw + IsPureGas * Rho_Default_Liq;
 
         % Gas Proportion
@@ -81,10 +81,21 @@ function XDOT = PhysicsEngine(X, System, U)
         FlowState = X(PLength + i);
         
         % Determine Flow Direction
-        Dir = Sigmoid(FlowState, 100);
+        Dir = 0.5 + 0.5 * tanh(100 * FlowState);
 
         % Get Upstream Properties
-        [RhoGas, Y_Stratified, ~] = GetUpstreamParams(System, Pressure, Y_Matrix, UpIDX, DwIDX, Dir);
+        T_Up = System.Nodes(UpIDX).Temp * Dir + System.Nodes(DwIDX).Temp * (1 - Dir);
+        R_Up = System.Nodes(UpIDX).R    * Dir + System.Nodes(DwIDX).R    * (1 - Dir);
+        P_Up = Pressure(UpIDX)          * Dir + Pressure(DwIDX)          * (1 - Dir);
+        RhoGas = P_Up / (R_Up * T_Up);
+        Y_Raw = Y_Matrix(UpIDX, :) * Dir + Y_Matrix(DwIDX, :) * (1 - Dir);
+        
+        % Apply Stratification
+        LiqSum = sum(Y_Raw(1:2));
+        F = 0.5 + 0.5 * tanh(100 * LiqSum);
+        Y_Stratified = Y_Raw;
+        Y_Stratified(3) = Y_Stratified(3) * (1 - F);
+        Y_Stratified = Y_Stratified / sum(Y_Stratified);
 
         % Calculate Mixture Density
         LinkRhoArray = RhoArray; 
@@ -105,10 +116,21 @@ function XDOT = PhysicsEngine(X, System, U)
         DeltaP = X(UpIDX) - X(DwIDX);
         
         % Determine Direction
-        Dir = Sigmoid(DeltaP, 1e3);
+        Dir = 0.5 + 0.5 * tanh(1e3 * DeltaP);
 
         % Get Upstream Properties (Unified Logic)
-        [Rho_Gas_Flow, Y_Flow, P_Up] = GetUpstreamParams(System, Pressure, Y_Matrix, UpIDX, DwIDX, Dir);
+        T_Up = System.Nodes(UpIDX).Temp * Dir + System.Nodes(DwIDX).Temp * (1 - Dir);
+        R_Up = System.Nodes(UpIDX).R    * Dir + System.Nodes(DwIDX).R    * (1 - Dir);
+        P_Up = Pressure(UpIDX)          * Dir + Pressure(DwIDX)          * (1 - Dir);
+        Rho_Gas_Flow = P_Up / (R_Up * T_Up);
+        Y_Raw = Y_Matrix(UpIDX, :) * Dir + Y_Matrix(DwIDX, :) * (1 - Dir);
+        
+        % Apply Stratification
+        LiqSum = sum(Y_Raw(1:2));
+        F = 0.5 + 0.5 * tanh(100 * LiqSum);
+        Y_Flow = Y_Raw;
+        Y_Flow(3) = Y_Flow(3) * (1 - F);
+        Y_Flow = Y_Flow / sum(Y_Flow);
 
         % Handle Combustor Sources (Inject Gas Only)
         IsSrcComb = (System.Nodes(UpIDX).IsCombustor * Dir) + ...
@@ -123,7 +145,7 @@ function XDOT = PhysicsEngine(X, System, U)
 
         % Choked Flow Check
         Liq_Frac = sum(Y_Flow(1:2));
-        IsLiqFlow = Sigmoid(Liq_Frac - 0.1, 10) * (1 - IsSrcComb);
+        IsLiqFlow = (0.5 + 0.5 * tanh(10 * (Liq_Frac - 0.1))) * (1 - IsSrcComb);
         
         G_Node = System.Nodes(UpIDX).Gamma * Dir + System.Nodes(DwIDX).Gamma * (1 - Dir);
         G_Up = IsLiqFlow * 100 + (1 - IsLiqFlow) * G_Node;
@@ -132,7 +154,7 @@ function XDOT = PhysicsEngine(X, System, U)
         Rc = (2 / (G_Up + 1)) ^ (G_Up / (G_Up - 1)); 
         DP_Choked = P_Up * (1 - Rc); 
         DP_Raw = sqrt(DeltaP^2 + 1e-9);
-        DP_Eff = SmoothMin(DP_Raw, DP_Choked);
+        DP_Eff = 0.5 * (DP_Raw + DP_Choked - sqrt((DP_Raw - DP_Choked)^2 + 1e-4));
         
         % Compute Massflow
         SignTerm = tanh(1e3 * DeltaP);
@@ -174,11 +196,25 @@ function XDOT = PhysicsEngine(X, System, U)
                 
                 % Determine Neighbor & Inflow Factor
                 neighbor = LinkMap(lIdx, 1) * (Dirs(k) == 1) + LinkMap(lIdx, 2) * (Dirs(k) ~= 1);
-                isInflow = Sigmoid(flow_signed, 100);
+                isInflow = 0.5 + 0.5 * tanh(100 * flow_signed);
                 
                 % Upwind Composition 
-                Y_Neigh = ApplyStratification(Y_Matrix(neighbor, :));
-                Y_Self  = ApplyStratification(Y_Matrix(i, :));
+                % Neighbor
+                Y_Neigh_Raw = Y_Matrix(neighbor, :);
+                LiqSum_Neigh = sum(Y_Neigh_Raw(1:2));
+                F_Neigh = 0.5 + 0.5 * tanh(100 * LiqSum_Neigh);
+                Y_Neigh = Y_Neigh_Raw;
+                Y_Neigh(3) = Y_Neigh(3) * (1 - F_Neigh);
+                Y_Neigh = Y_Neigh / sum(Y_Neigh);
+                
+                % Self
+                Y_Self_Raw = Y_Matrix(i, :);
+                LiqSum_Self = sum(Y_Self_Raw(1:2));
+                F_Self = 0.5 + 0.5 * tanh(100 * LiqSum_Self);
+                Y_Self = Y_Self_Raw;
+                Y_Self(3) = Y_Self(3) * (1 - F_Self);
+                Y_Self = Y_Self / sum(Y_Self);
+                
                 Y_Flux  = Y_Neigh * isInflow + Y_Self * (1 - isInflow);
                 
                 % Accumulate
@@ -212,7 +248,7 @@ function XDOT = PhysicsEngine(X, System, U)
                 XDOT(i) = dP_GasMode;
             else
                 % Blend based on Void Fraction
-                BlendFactor = Sigmoid(Alpha_Vec(i) - 0.002, 1e3);
+                BlendFactor = 0.5 + 0.5 * tanh(1e3 * (Alpha_Vec(i) - 0.002));
                 XDOT(i) = BlendFactor * dP_GasMode + (1 - BlendFactor) * dP_FluidMode;
             end
             
@@ -224,38 +260,6 @@ function XDOT = PhysicsEngine(X, System, U)
 end
 
 %% Helper Functions
-
-function [RhoGas, Y_Strat, P_Up, T_Up] = GetUpstreamParams(System, Pressure, Y_Matrix, uIdx, dIdx, Dir)
-    % Blends thermodynamic properties from the Upstream and Downstream nodes
-    % based on the flow direction 'Dir' (0 to 1).
-    
-    % Blend Thermo Props
-    T_Up = System.Nodes(uIdx).Temp * Dir + System.Nodes(dIdx).Temp * (1 - Dir);
-    R_Up = System.Nodes(uIdx).R    * Dir + System.Nodes(dIdx).R    * (1 - Dir);
-    P_Up = Pressure(uIdx)          * Dir + Pressure(dIdx)          * (1 - Dir);
-
-    % Gas Density
-    RhoGas = P_Up / (R_Up * T_Up);
-
-    % Composition
-    Y_Raw = Y_Matrix(uIdx, :) * Dir + Y_Matrix(dIdx, :) * (1 - Dir);
-    Y_Strat = ApplyStratification(Y_Raw);
-end
-
-function val = Sigmoid(x, k)
-    val = 0.5 + 0.5 * tanh(k * x);
-end
-
-function Y_Strat = ApplyStratification(Y)
-    % If liquid is present, supress gas from outlet flow
-    LiqSum = sum(Y(1:2));
-    F = Sigmoid(LiqSum, 100);
-    
-    Y_Strat = Y;
-    Y_Strat(3) = Y_Strat(3) * (1 - F);
-    Y_Strat = Y_Strat / sum(Y_Strat);
-end
-
 function val = SmoothMin(a, b)
     val = 0.5 * (a + b - sqrt((a - b)^2 + 1e-4));
 end
