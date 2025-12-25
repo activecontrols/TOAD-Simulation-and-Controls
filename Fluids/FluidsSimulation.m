@@ -25,10 +25,10 @@ end
 
 %% Simulation Loop 2 (Implicit Euler w/ Variable timestep)
 % Initialize Solver 2 parameters
-simTime = 14;
+simTime = 8;
 dT = 1e-3;
 MaxdT = 5e-2;
-MindT = 5e-5;
+MindT = 1e-4;
 MaxSteps = 1e5;
 
 % Logs
@@ -45,7 +45,7 @@ lastError = 0;
 % Warm-start the implicit solver
 fprintf('Warming up system states...\n');
 for k = 1:10
-    XDOT = PhysicsEngine(X_cur, System, zeros(MALength,1), true);
+    XDOT = PhysicsEngine(X_cur, System, zeros(MALength,1));
     X_cur = X_cur + XDOT * 5e-5;
 end
 
@@ -59,7 +59,7 @@ while t < simTime
         % Use proposed step
         t_next = t + dT;
 
-%% Valve Control Logic
+        %% Valve Control Logic
         ValveTiming = [5 9];
         RunValves = [2.7, 1.05]; % [Cv_OX, Cv_FU]
         ValveRamp = 0.03;        
@@ -106,8 +106,8 @@ while t < simTime
 
         for iter = 1:35
             % Evaluate Dynamics and Jacobian
-            F = PhysicsEngine(X_new, System, U, true);
-            J = NumericalJacobian(@(x) PhysicsEngine(x, System, U, true), X_new);
+            F = PhysicsEngine(X_new, System, U);
+            J = NumericalJacobian(@(x) PhysicsEngine(x, System, U), X_new);
             M = eye(length(X0)) - dT * J;
             [LD, UD] = lu(M);
     
