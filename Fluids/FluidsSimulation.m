@@ -25,7 +25,7 @@ end
 
 %% Simulation Loop 2 (Implicit Euler w/ Variable timestep)
 % Initialize Solver 2 parameters
-simTime = 10;
+simTime = 14;
 dT = 1e-3;
 MaxdT = 5e-2;
 MindT = 5e-5;
@@ -60,7 +60,7 @@ while t < simTime
         t_next = t + dT;
 
 %% Valve Control Logic
-        ValveTiming = [5 15];
+        ValveTiming = [5 9];
         RunValves = [2.7, 1.05]; % [Cv_OX, Cv_FU]
         ValveRamp = 0.03;        
         OxDelay   = 0.06;        
