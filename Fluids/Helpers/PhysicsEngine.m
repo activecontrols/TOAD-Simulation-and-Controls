@@ -205,7 +205,7 @@ function XDOT = PhysicsEngine(X, System, U)
             dP_LiqTerm = Pressure(i) * (mdot_Liq_Net / max(Rho_Liq_Vec(i), 100));
 
             dP_GasMode = (dP_GasTerm + dP_LiqTerm) / V_Safe;
-            dP_HydraulicMode = (Beta_Liq / (Node.V * max(Rho_Liq_Vec(i), 100))) * m_Net_Total;
+            dP_FluidMode = (Beta_Liq / (Node.V * max(Rho_Liq_Vec(i), 100))) * m_Net_Total;
             
             if Node.IsCombustor
                 % If Combustor, only Gas mode.
@@ -213,7 +213,7 @@ function XDOT = PhysicsEngine(X, System, U)
             else
                 % Blend based on Void Fraction
                 BlendFactor = Sigmoid(Alpha_Vec(i) - 0.002, 1e3);
-                XDOT(i) = BlendFactor * dP_GasMode + (1 - BlendFactor) * dP_HydraulicMode;
+                XDOT(i) = BlendFactor * dP_GasMode + (1 - BlendFactor) * dP_FluidMode;
             end
             
             XDOT_Species_Mat(i, :) = Species_Term / (Mass + 1e-9);
