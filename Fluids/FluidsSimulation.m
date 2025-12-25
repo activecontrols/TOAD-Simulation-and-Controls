@@ -25,7 +25,7 @@ end
 
 %% Simulation Loop 2 (Implicit Euler w/ Variable timestep)
 % Initialize Solver 2 parameters
-simTime = 60;
+simTime = 10;
 dT = 1e-3;
 MaxdT = 5e-2;
 MindT = 5e-5;
@@ -59,31 +59,46 @@ while t < simTime
         % Use proposed step
         t_next = t + dT;
 
-        %% Valve Control Logic
-        ValveTiming = [5 70];
-        ValveRamp = 0.12;
+%% Valve Control Logic
+        ValveTiming = [5 15];
+        RunValves = [2.7, 1.05]; % [Cv_OX, Cv_FU]
+        ValveRamp = 0.03;        
+        OxDelay   = 0.06;        
+        
         U = zeros(MALength, 1);
-
-        % Throttle Valve Open
+        U(1:2) = 2;              % Keep Pressurization Lines Open
+        
+        % FU Valve
         if t_next < ValveTiming(1)
-            U = zeros(MALength, 1);
+            U(4) = 0;
         elseif t_next < (ValveTiming(1) + ValveRamp)
             Progress = (t_next - ValveTiming(1)) / ValveRamp;
-            U(3:4) = 2.9 * Progress;
-        else
-            U(3:4) = 2.9;
-        end
-
-        % COPV Valve Close
-        if t_next < ValveTiming(2)
-            U(1:2) = 2.9;
+            U(4) = RunValves(2) * Progress;
+        elseif t_next < ValveTiming(2)
+            U(4) = RunValves(2);
         elseif t_next < (ValveTiming(2) + ValveRamp)
-            Progress = (t_next - ValveTiming(1)) / ValveRamp;
-            U(1:2) = 0;
+            Progress = (t_next - ValveTiming(2)) / ValveRamp;
+            U(4) = RunValves(2) * (1 - Progress);
         else
-            U(1:2) = 0;
+            U(4) = 0;
         end
 
+        % OX Valve
+        OxStart = ValveTiming(1) + OxDelay;
+        
+        if t_next < OxStart
+            U(3) = 0;
+        elseif t_next < (OxStart + ValveRamp)
+            Progress = (t_next - OxStart) / ValveRamp;
+            U(3) = RunValves(1) * Progress;
+        elseif t_next < ValveTiming(2)
+            U(3) = RunValves(1);
+        elseif t_next < (ValveTiming(2) + ValveRamp)
+            Progress = (t_next - ValveTiming(2)) / ValveRamp;
+            U(3) = RunValves(1) * (1 - Progress);
+        else
+            U(3) = 0;
+        end
     
         %% Implicit Solver Step via Newton-Ralphson
         X_new = X_old;
@@ -163,8 +178,8 @@ while t < simTime
     
     % Progress Print
     if mod(stepCount, 100) == 0
-        fprintf('Time: %.2f s | Tank P: %.2f psi | dT: %.1e\n', ...
-            t, X_cur(2)/6895, dT);
+        fprintf('Time: %.2f s | Chamber P: %.2f psi | dT: %.1e\n', ...
+            t, X_cur(10)/6895, dT);
     end
 end
 warning('on', 'MATLAB:nearlySingularMatrix');
@@ -189,60 +204,60 @@ Pipe_Flows = X_LOG(PLength+1 : PLength+MDLength, :);
 Inj_Flows = zeros(2, length(Time)); % 1: OX Inj, 2: FU Inj
 
 % Dynamically fetch parameters from the System Struct
-% Note: Adjust indices (7 and 8) if your Link IDs change
-L_OX = System.Links.Algebraic(5); 
-L_FU = System.Links.Algebraic(6);
+% Algebraic Links: [1:PressOX, 2:PressFU, 3:MainOX, 4:MainFU, 5:InjOX, 6:InjFU, 7:Noz]
+L_OX = System.Links.Algebraic(5); % Link 9 (Inj OX)
+L_FU = System.Links.Algebraic(6); % Link 10 (Inj FU)
 
 for k = 1:length(Time)
-    % Extract State
-    P_Man_OX = X_LOG(6, k); P_Cham = X_LOG(8, k); P_Man_FU = X_LOG(7, k);
+    % Extract State (UPDATED NODE MAP: 8=OX Man, 9=FU Man, 10=Chamber)
+    P_Man_OX = X_LOG(8, k); 
+    P_Cham   = X_LOG(10, k); 
+    P_Man_FU = X_LOG(9, k);
     
-    % OX Injector (Link 7)
+    % OX Injector
     DP_OX = P_Man_OX - P_Cham;
-    % Uses L_OX.Cv (which is Cd) and L_OX.Area automatically
     Inj_Flows(1, k) = L_OX.Cv * L_OX.A * sqrt(2 * 1141 * abs(DP_OX)) * sign(DP_OX);
     
-    % FU Injector (Link 8)
+    % FU Injector
     DP_FU = P_Man_FU - P_Cham;
     Inj_Flows(2, k) = L_FU.Cv * L_FU.A * sqrt(2 * 786 * abs(DP_FU)) * sign(DP_FU);
 end
 
 % Dark Mode Settings
-DarkBg = [0.15 0.15 0.15]; % Dark Grey Background
-AxColor = [0.9 0.9 0.9];   % Off-White Axes/Text
+DarkBg = [0.15 0.15 0.15];
+AxColor = [0.9 0.9 0.9];
 GridAlpha = 0.2;
 
 % FIG 1: Tank Blowdown (Supply Side)
 fig1 = figure('Name', 'Supply Pressures', 'NumberTitle', 'off', 'Color', DarkBg);
-    plot(Time, Pressures_PSI(1,:), 'w--', 'LineWidth', 1.5); hold on; % Regulator
-    plot(Time, Pressures_PSI(2,:), 'c', 'LineWidth', 1.5);   % OX (Cyan)
-    plot(Time, Pressures_PSI(3,:), 'm', 'LineWidth', 1.5);   % FU (Magenta)
+    plot(Time, Pressures_PSI(1,:), 'w--', 'LineWidth', 1.5); hold on; % Regulator (Node 1)
+    plot(Time, Pressures_PSI(2,:), 'c', 'LineWidth', 1.5);   % OX Tank (Node 2)
+    plot(Time, Pressures_PSI(3,:), 'm', 'LineWidth', 1.5);   % FU Tank (Node 3)
     grid on;
     legend('Regulator', 'LOX Tank', 'IPA Tank', 'TextColor', 'w', 'Color', 'none', 'EdgeColor', 'none');
     xlabel('Time [s]'); ylabel('Pressure [psi]');
     title('Tank Blowdown Curves');
-    
-    % Apply Dark Theme
     set(gca, 'Color', DarkBg, 'XColor', AxColor, 'YColor', AxColor, 'GridColor', 'w', 'GridAlpha', GridAlpha);
 
 % FIG 2: Feed System Drops (Manifold Dynamics)
+% Trace: Tank -> Post-Valve Node -> Manifold
 fig2 = figure('Name', 'Feed System Gradients', 'NumberTitle', 'off', 'Color', DarkBg);
 subplot(2,1,1);
-    plot(Time, Pressures_PSI(2,:), 'c--'); hold on;          % Tank (Cyan Dash)
-    plot(Time, Pressures_PSI(4,:), 'c');                     % Line (Cyan)
-    plot(Time, Pressures_PSI(6,:), 'g', 'LineWidth', 1.5);   % Manifold (Green)
+    plot(Time, Pressures_PSI(2,:), 'c--'); hold on;          % Tank OX (Node 2)
+    plot(Time, Pressures_PSI(6,:), 'c');                     % Post-Valve OX (Node 6)
+    plot(Time, Pressures_PSI(8,:), 'g', 'LineWidth', 1.5);   % Manifold OX (Node 8)
     grid on;
-    legend('Tank', 'Line (Post-Valve)', 'Manifold (Pre-Inj)', 'TextColor', 'w', 'Color', 'none', 'EdgeColor', 'none');
+    legend('Tank', 'Line (Post-Valve)', 'Manifold', 'TextColor', 'w', 'Color', 'none', 'EdgeColor', 'none');
     title('Oxidizer Feed Line Pressures');
     ylabel('Pressure [psi]');
     set(gca, 'Color', DarkBg, 'XColor', AxColor, 'YColor', AxColor, 'GridColor', 'w', 'GridAlpha', GridAlpha);
     
 subplot(2,1,2);
-    plot(Time, Pressures_PSI(3,:), 'm--'); hold on;          % Tank (Magenta Dash)
-    plot(Time, Pressures_PSI(5,:), 'm');                     % Line (Magenta)
-    plot(Time, Pressures_PSI(7,:), 'y', 'LineWidth', 1.5);   % Manifold (Yellow)
+    plot(Time, Pressures_PSI(3,:), 'm--'); hold on;          % Tank FU (Node 3)
+    plot(Time, Pressures_PSI(7,:), 'm');                     % Post-Valve FU (Node 7)
+    plot(Time, Pressures_PSI(9,:), 'y', 'LineWidth', 1.5);   % Manifold FU (Node 9)
     grid on;
-    legend('Tank', 'Line (Post-Valve)', 'Manifold (Pre-Inj)', 'TextColor', 'w', 'Color', 'none', 'EdgeColor', 'none');
+    legend('Tank', 'Line (Post-Valve)', 'Manifold', 'TextColor', 'w', 'Color', 'none', 'EdgeColor', 'none');
     title('Fuel Feed Line Pressures');
     ylabel('Pressure [psi]');
     xlabel('Time [s]');
@@ -251,10 +266,10 @@ subplot(2,1,2);
 % FIG 3: Engine Performance (Chamber & Injection)
 fig3 = figure('Name', 'Engine Operation', 'NumberTitle', 'off', 'Color', DarkBg);
 subplot(2,1,1);
-    plot(Time, Pressures_PSI(6,:), 'g'); hold on;            % OX Man (Green)
-    plot(Time, Pressures_PSI(7,:), 'y');                     % FU Man (Yellow)
-    plot(Time, Pressures_PSI(8,:), 'w', 'LineWidth', 2);     % Chamber (White)
-    yline(14.7, 'w--');                                      % Atm (White Dash)
+    plot(Time, Pressures_PSI(8,:), 'g'); hold on;            % OX Man (Node 8)
+    plot(Time, Pressures_PSI(9,:), 'y');                     % FU Man (Node 9)
+    plot(Time, Pressures_PSI(10,:), 'w', 'LineWidth', 2);    % Chamber (Node 10)
+    yline(14.7, 'w--');
     grid on;
     legend('OX Manifold', 'FU Manifold', 'Chamber', 'Atm', 'TextColor', 'w', 'Color', 'none', 'EdgeColor', 'none');
     title('Injection Pressures');
@@ -262,54 +277,47 @@ subplot(2,1,1);
     set(gca, 'Color', DarkBg, 'XColor', AxColor, 'YColor', AxColor, 'GridColor', 'w', 'GridAlpha', GridAlpha);
 
 subplot(2,1,2);
-    % Compare Pipe Massflow (Supply) vs Injector Massflow (Demand)
-    plot(Time, Pipe_Flows(1,:), 'c'); hold on;               % OX Pipe (Cyan)
-    plot(Time, Inj_Flows(1,:), 'g--');                       % OX Inj (Green Dash)
-    plot(Time, Pipe_Flows(2,:), 'm');                        % FU Pipe (Magenta)
-    plot(Time, Inj_Flows(2,:), 'y--');                       % FU Inj (Yellow Dash)
+    % Compare Pipe Massflow (Link 7/8 - Manifold In) vs Injector Massflow (Demand)
+    % Pipe Flow Indices: 1=Link3, 2=Link4, 3=Link7, 4=Link8
+    plot(Time, Pipe_Flows(3,:), 'c'); hold on;               % OX Pipe 2 (Link 7)
+    plot(Time, Inj_Flows(1,:), 'g--');                       % OX Inj
+    plot(Time, Pipe_Flows(4,:), 'm');                        % FU Pipe 2 (Link 8)
+    plot(Time, Inj_Flows(2,:), 'y--');                       % FU Inj
     grid on;
-    legend('OX Pipe', 'OX Inj', 'FU Pipe', 'FU Inj', 'TextColor', 'w', 'Color', 'none', 'EdgeColor', 'none');
-    title('Massflow Dynamics (Lag Check)');
+    legend('OX Feed (Manifold In)', 'OX Inj', 'FU Feed (Manifold In)', 'FU Inj', 'TextColor', 'w', 'Color', 'none', 'EdgeColor', 'none');
+    title('Massflow Dynamics');
     ylabel('Flow [kg/s]');
     xlabel('Time [s]');
     set(gca, 'Color', DarkBg, 'XColor', AxColor, 'YColor', AxColor, 'GridColor', 'w', 'GridAlpha', GridAlpha);
 
-% FIG 4: Tank Composition (Propellant Depletion Check)
+% FIG 4: Tank Composition (Node 2 & 3 - Indices Unchanged)
 fig4 = figure('Name', 'Tank Composition', 'NumberTitle', 'off', 'Color', DarkBg);
 StartIdx = PLength + MDLength;
-NumSpecies = 3; % Assuming standard [OX, FU, N2]
+NumSpecies = 3; 
 
-% Subplot 1: Oxidizer Tank (Node 2)
 subplot(2,1,1);
-    % Calculate Indices for Node 2
-    % Species: 1=OX, 2=FU, 3=N2
+    % Node 2 (OX Tank)
     Idx_LOX_Liq = StartIdx + (2-1)*NumSpecies + 1; 
     Idx_LOX_N2  = StartIdx + (2-1)*NumSpecies + 3;
-    
     plot(Time, X_LOG(Idx_LOX_Liq, :), 'c', 'LineWidth', 1.5); hold on;
     plot(Time, X_LOG(Idx_LOX_N2, :), 'w--');
-    
     grid on;
     ylabel('Mass Fraction');
     legend('LOX Liquid', 'N2 Gas', 'TextColor', 'w', 'Color', 'none', 'EdgeColor', 'none');
-    title('Oxidizer Tank Composition (Node 2)');
-    % Force Y-Limits to 0-1 to handle numerical noise cleanly
+    title('Oxidizer Tank Composition');
     ylim([-0.05 1.05]); 
     set(gca, 'Color', DarkBg, 'XColor', AxColor, 'YColor', AxColor, 'GridColor', 'w', 'GridAlpha', GridAlpha);
 
-% Subplot 2: Fuel Tank (Node 3)
 subplot(2,1,2);
-    % Calculate Indices for Node 3
+    % Node 3 (FU Tank)
     Idx_FU_Liq = StartIdx + (3-1)*NumSpecies + 2; 
     Idx_FU_N2  = StartIdx + (3-1)*NumSpecies + 3;
-    
     plot(Time, X_LOG(Idx_FU_Liq, :), 'm', 'LineWidth', 1.5); hold on;
     plot(Time, X_LOG(Idx_FU_N2, :), 'w--');
-    
     grid on;
     ylabel('Mass Fraction');
     xlabel('Time [s]');
     legend('IPA Liquid', 'N2 Gas', 'TextColor', 'w', 'Color', 'none', 'EdgeColor', 'none');
-    title('Fuel Tank Composition (Node 3)');
+    title('Fuel Tank Composition');
     ylim([-0.05 1.05]);
     set(gca, 'Color', DarkBg, 'XColor', AxColor, 'YColor', AxColor, 'GridColor', 'w', 'GridAlpha', GridAlpha);

@@ -31,31 +31,35 @@ TankVolFU = 0.03746;
     Node(2) = Nodes('Tank OX', 2, 0, P_atm, TankVolOX, Y0_OX, 1, 3, false);
     Node(3) = Nodes('Tank IPA', 3, 0, P_atm, TankVolFU, Y0_FU, 2, 4, false);
 % Lines
-    Node(4) = Nodes('Line OX', 4, 0, P_atm, 0.0005, [1 0 0], 3, 5, false);
-    Node(5) = Nodes('Line FU', 5, 0, P_atm, 0.0005, [0 1 0], 4, 6, false);
+    Node(4) = Nodes('Pre OX', 4, 0, P_atm, 0.00025, [1 0 0], 3, 5, false);
+    Node(5) = Nodes('Pre FU', 5, 0, P_atm, 0.00025, [0 1 0], 4, 6, false);
+    Node(6) = Nodes('Post OX', 6, 0, P_atm, 0.00025, [0 0 1], 5, 7, false);
+    Node(7) = Nodes('Post FU', 7, 0, P_atm, 0.00025, [0 0 1], 6, 8, false);
 % Manifold
-    Node(6) = Nodes('OX Manifold', 6, 0, P_atm, 0.0005, [1 0 0], 5, 7, false);
-    Node(7) = Nodes('FU Manifold', 7, 0, P_atm, 0.0005, [0 1 0], 6, 8, false);
+    Node(8) = Nodes('OX Manifold', 8, 0, P_atm, 0.00025, [0 0 1], 7, 9, false);
+    Node(9) = Nodes('FU Manifold', 9, 0, P_atm, 0.00011, [0 0 1], 8, 10, false);
 % TADPOLE
-    Node(8) = Nodes('TADPOLE', 8, 0, P_atm, 0.00125, [0 0 1], [7 8], 9, true);
+    Node(10) = Nodes('TADPOLE', 10, 0, P_atm, 0.00125, [0 0 1], [9 10], 11, true);
 % Atmosphere
-    Node(9) = Nodes('Atmosphere', 9, 1, P_atm, 1, [0 0 1], 9, [], false);
+    Node(11) = Nodes('Atmosphere', 11, 1, P_atm, 1, [0 0 1], 11, [], false);
 
 %% Links
 % Tank Press
     Link(1) = ValveLink('Press_OX', 'Throttle', 1, 1, 2, 2.0);
     Link(2) = ValveLink('Press_FU', 'Throttle', 2, 1, 3, 2.0);
 % Run Valves
-    Link(3) = ValveLink('Main_OX', 'Throttle', 3, 2, 4, 2.9);
-    Link(4) = ValveLink('Main_FU', 'Throttle', 4, 3, 5, 2.9);
-% Pipe Section
-    Link(5) = PipeLink('OX Line', 5, 4, 6, 1, 1e-4, 15);
-    Link(6) = PipeLink('FU Line', 6, 5, 7, 0.5, 1e-4, 15);
+    Link(5) = ValveLink('Main_OX', 'Throttle', 5, 4, 6, 2.9);
+    Link(6) = ValveLink('Main_FU', 'Throttle', 6, 5, 7, 2.9);
+% Pipe Sections 
+    Link(3) = PipeLink('OX Line 1', 3, 2, 4, 0.5, 1e-4, .5);
+    Link(4) = PipeLink('FU Line 1', 4, 3, 5, 0.5, 1e-4, .5);
+    Link(7) = PipeLink('OX Line 2', 7, 6, 8, 0.5, 1e-4, .5);
+    Link(8) = PipeLink('FU Line 2', 8, 7, 9, 0.5, 1e-4, .5);
 % Injectors
-    Link(7) = ValveLink('Inj OX', 'Orifice', 7, 6, 8, 0.49, 3.146e-5);
-    Link(8) = ValveLink('Inj FU', 'Orifice', 8, 7, 8, 0.7, 2.6e-5);
+    Link(9) = ValveLink('Inj OX', 'Orifice', 9, 8, 10, 0.45, 3.146e-5);
+    Link(10) = ValveLink('Inj FU', 'Orifice', 10, 9, 10, 0.77, 2.6e-5);
 % Nozzle 
-    Link(9) = ValveLink('Nozzle', 'Orifice', 9, 8, 9, 0.48, 0.0011);
+    Link(11) = ValveLink('Nozzle', 'Orifice', 11, 10, 11, 0.79, 0.0011);
 
 %% Pre-processing (subdividing into Dynamic and Algebraic Links)
 isDynamic = strcmp({Link.Type}, 'Pipe');
