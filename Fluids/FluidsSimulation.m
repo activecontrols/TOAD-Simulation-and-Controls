@@ -25,7 +25,7 @@ end
 
 %% Simulation Loop 2 (Implicit Euler w/ Variable timestep & Robust Jacobian)
 % Initialize Solver 2 parameters
-simTime = 16;
+simTime = 20;
 dT = 1e-3;
 MaxdT = 5e-2;
 MindT = 1e-6;
@@ -298,13 +298,13 @@ subplot(2,1,2);
     xlabel('Time [s]');
     set(gca, 'Color', DarkBg, 'XColor', AxColor, 'YColor', AxColor, 'GridColor', 'w', 'GridAlpha', GridAlpha);
 
-% FIG 4: Tank Composition (Node 2 & 3 - Indices Unchanged)
-fig4 = figure('Name', 'Tank Composition', 'NumberTitle', 'off', 'Color', DarkBg);
+% FIG 4: Node COmpositions
+fig4 = figure('Name', 'Combustion Components', 'NumberTitle', 'off', 'Color', DarkBg);
 StartIdx = PLength + MDLength;
 NumSpecies = 3; 
 
-subplot(2,1,1);
-    % Node 2 (OX Tank)
+subplot(2,2,1);
+    % Node 6 (OX Post Valve)
     Idx_LOX_Liq = StartIdx + (6-1)*NumSpecies + 1; 
     Idx_LOX_N2  = StartIdx + (6-1)*NumSpecies + 3;
     plot(Time, X_LOG(Idx_LOX_Liq, :), 'c', 'LineWidth', 1.5); hold on;
@@ -316,8 +316,8 @@ subplot(2,1,1);
     ylim([-0.05 1.05]); 
     set(gca, 'Color', DarkBg, 'XColor', AxColor, 'YColor', AxColor, 'GridColor', 'w', 'GridAlpha', GridAlpha);
 
-subplot(2,1,2);
-    % Node 3 (FU Tank)
+subplot(2,2,3);
+    % Node 7 (FU Post Valve)
     Idx_FU_Liq = StartIdx + (7-1)*NumSpecies + 2; 
     Idx_FU_N2  = StartIdx + (7-1)*NumSpecies + 3;
     plot(Time, X_LOG(Idx_FU_Liq, :), 'm', 'LineWidth', 1.5); hold on;
@@ -328,6 +328,32 @@ subplot(2,1,2);
     legend('IPA Liquid', 'N2 Gas', 'TextColor', 'w', 'Color', 'none', 'EdgeColor', 'none');
     title('Fuel Post Valve Composition');
     ylim([-0.05 1.05]);
+    set(gca, 'Color', DarkBg, 'XColor', AxColor, 'YColor', AxColor, 'GridColor', 'w', 'GridAlpha', GridAlpha);
+subplot(2,2,2);
+    % Node 10 (Chamber)
+    Idx_C_OX = StartIdx + (10-1)*NumSpecies + 1; 
+    Idx_C_FU = StartIdx + (10-1)*NumSpecies + 2; 
+    Idx_C_N2  = StartIdx + (10-1)*NumSpecies + 3;
+    plot(Time, X_LOG(Idx_C_OX, :), 'c', 'LineWidth', 1.5); hold on;
+    plot(Time, X_LOG(Idx_C_FU, :), 'm', 'LineWidth', 1.5);
+    plot(Time, X_LOG(Idx_C_N2, :), 'w--');
+    grid on;
+    ylabel('Mass Fraction');
+    xlabel('Time [s]');
+    legend('Oxidizer', 'Fuel', 'N2 Gas', 'TextColor', 'w', 'Color', 'none', 'EdgeColor', 'none');
+    title('TADPOLE Chamber Composition');
+    ylim([-0.05 1.05]);
+    set(gca, 'Color', DarkBg, 'XColor', AxColor, 'YColor', AxColor, 'GridColor', 'w', 'GridAlpha', GridAlpha);
+subplot(2,2,4);
+    % OF Ratio Trace
+    OF_C = X_LOG(Idx_C_OX, :) ./ X_LOG(Idx_C_FU, :);
+    plot(Time, OF_C, 'Color', [0.7 0 1], 'LineWidth', 1.5);
+    grid on;
+    ylabel('Mass Fraction');
+    xlabel('Time [s]');
+    legend('Chamber OF Ratio', 'TextColor', 'w', 'Color', 'none', 'EdgeColor', 'none');
+    title('TADPOLE Chamber OF Ratio');
+    ylim([0.5 1.9]);
     set(gca, 'Color', DarkBg, 'XColor', AxColor, 'YColor', AxColor, 'GridColor', 'w', 'GridAlpha', GridAlpha);
 
 % FIG 5: AutoSequence

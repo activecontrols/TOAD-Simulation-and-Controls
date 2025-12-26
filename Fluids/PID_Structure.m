@@ -33,11 +33,11 @@ TankVolFU = 0.03746;
 % Lines
     Node(4) = Nodes('Pre OX', 4, 0, P_atm, 0.0002, [1 0 0], 3, 5, false);
     Node(5) = Nodes('Pre FU', 5, 0, P_atm, 0.0002, [0 1 0], 4, 6, false);
-    Node(6) = Nodes('Post OX', 6, 0, P_atm, 0.0001, [0 0 1], 5, 7, false);
-    Node(7) = Nodes('Post FU', 7, 0, P_atm, 0.0001, [0 0 1], 6, 8, false);
+    Node(6) = Nodes('Post OX', 6, 0, P_atm, 0.0002, [0 0 1], 5, 7, false);
+    Node(7) = Nodes('Post FU', 7, 0, P_atm, 0.0002, [0 0 1], 6, 8, false);
 % Manifold
-    Node(8) = Nodes('OX Manifold', 8, 0, P_atm, 0.0002, [0 0 1], 7, 9, false);
-    Node(9) = Nodes('FU Manifold', 9, 0, P_atm, 0.0002, [0 0 1], 8, 10, false);
+    Node(8) = Nodes('OX Manifold', 8, 0, P_atm, 0.00015, [0 0 1], 7, 9, false);
+    Node(9) = Nodes('FU Manifold', 9, 0, P_atm, 0.00015, [0 0 1], 8, 10, false);
 % TADPOLE
     Node(10) = Nodes('TADPOLE', 10, 0, P_atm, 0.00125, [0 0 1], [9 10], 11, true);
 % Atmosphere
@@ -51,10 +51,10 @@ TankVolFU = 0.03746;
     Link(5) = ValveLink('Main OX', 'Throttle', 5, 4, 6, 2.9);
     Link(6) = ValveLink('Main FU', 'Throttle', 6, 5, 7, 2.9);
 % Pipe Sections 
-    Link(3) = PipeLink('OX Line 1', 3, 2, 4, 0.5, 1e-4, 1.0);
-    Link(4) = PipeLink('FU Line 1', 4, 3, 5, 0.5, 1e-4, 1.0);
-    Link(7) = PipeLink('OX Line 2', 7, 6, 8, 0.5, 1e-4, 1.0);
-    Link(8) = PipeLink('FU Line 2', 8, 7, 9, 0.5, 1e-4, 1.0);
+    Link(3) = PipeLink('OX Line 1', 3, 2, 4, 0.5, 1e-4, 0.9);
+    Link(4) = PipeLink('FU Line 1', 4, 3, 5, 0.5, 1e-4, 0.9);
+    Link(7) = PipeLink('OX Line 2', 7, 6, 8, 0.5, 1e-4, 0.9);
+    Link(8) = PipeLink('FU Line 2', 8, 7, 9, 0.5, 1e-4, 0.9);
 % Injectors
     Link(9) = ValveLink('Inj OX', 'Orifice', 9, 8, 10, 0.45, 3.146e-5);
     Link(10) = ValveLink('Inj FU', 'Orifice', 10, 9, 10, 0.77, 2.6e-5);
@@ -98,30 +98,40 @@ Scheduler.SetTau('Press OX', 0.005);
 Scheduler.SetTau('Press FU', 0.005);
 Scheduler.SetTau('Purge OX', 0.01);
 Scheduler.SetTau('Purge FU', 0.01);
+Scheduler.SetTau('Main OX', 0.03);
+Scheduler.SetTau('Main FU', 0.03);
 
 % Test Autosequence for System
 AutoSequence = {
     % Open Press Lines
-    0.0,    'Press OX',     2.0;
-    0.0,    'Press FU',     2.0;
+    0.0,    'Press OX',     1.0;
+    0.0,    'Press FU',     1.0;
     
     % Starup 
-    5.0,    'Main FU',      1.05;
-    5.14,   'Main OX',      2.70;
+    4.0,    'Main FU',      0.9284;
+    4.05,    'Main OX',     1.4814;
+
+    % Throttle Down
+    8.0,    'Main FU',      0.2782;
+    8.0,    'Main OX',      0.2719;
+
+    % Throttle Up
+    13.0,   'Main FU',      0.9284;
+    13.0,   'Main OX',      1.4814;
     
     % Shutdown
-    10.0,   'Main FU',      0.0;
-    10.0,   'Main OX',      0.0;
+    16.0,   'Main FU',      0.0;
+    16.0,   'Main OX',      0.0;
 
     % Purges
-    10.02,   'Purge OX',     .5;
-    10.02,   'Purge FU',     .5;
+    16.02,   'Purge OX',     .5;
+    16.02,   'Purge FU',     .5;
     
     % Purges and Press shutdown
-    11.0,   'Purge OX',     0.0;
-    11.0,   'Purge FU',     0.0;
-    12.0,   'Press OX',     0.0;
-    12.0,   'Press FU',     0.0;
+    17.0,   'Purge OX',     0.0;
+    17.0,   'Purge FU',     0.0;
+    17.0,   'Press OX',     0.0;
+    17.0,   'Press FU',     0.0;
 };
 
 Scheduler.LoadSequence(AutoSequence);
