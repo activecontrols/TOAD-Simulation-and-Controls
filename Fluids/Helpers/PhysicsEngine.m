@@ -10,7 +10,7 @@ function XDOT = PhysicsEngine(X, System, U)
     RhoArray = System.Constants.RhoArray;
     NumSpecies = length(RhoArray);
     LinkMap = System.LinkMap;
-    Rho_Default_Liq = mean(RhoArray(1:2));
+    Rho_Default_Liq = (RhoArray(1) + RhoArray(2)) / 2;
 
     % Pre-allocation
     if ~isreal(X)
