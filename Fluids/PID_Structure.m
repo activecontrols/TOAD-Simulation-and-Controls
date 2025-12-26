@@ -31,13 +31,13 @@ TankVolFU = 0.03746;
     Node(2) = Nodes('Tank OX', 2, 0, P_atm, TankVolOX, Y0_OX, 1, 3, false);
     Node(3) = Nodes('Tank IPA', 3, 0, P_atm, TankVolFU, Y0_FU, 2, 4, false);
 % Lines
-    Node(4) = Nodes('Pre OX', 4, 0, P_atm, 0.00025, [1 0 0], 3, 5, false);
-    Node(5) = Nodes('Pre FU', 5, 0, P_atm, 0.00025, [0 1 0], 4, 6, false);
-    Node(6) = Nodes('Post OX', 6, 0, P_atm, 0.00025, [0 0 1], 5, 7, false);
-    Node(7) = Nodes('Post FU', 7, 0, P_atm, 0.00025, [0 0 1], 6, 8, false);
+    Node(4) = Nodes('Pre OX', 4, 0, P_atm, 0.0002, [1 0 0], 3, 5, false);
+    Node(5) = Nodes('Pre FU', 5, 0, P_atm, 0.0002, [0 1 0], 4, 6, false);
+    Node(6) = Nodes('Post OX', 6, 0, P_atm, 0.0002, [0 0 1], 5, 7, false);
+    Node(7) = Nodes('Post FU', 7, 0, P_atm, 0.0002, [0 0 1], 6, 8, false);
 % Manifold
-    Node(8) = Nodes('OX Manifold', 8, 0, P_atm, 0.00025, [0 0 1], 7, 9, false);
-    Node(9) = Nodes('FU Manifold', 9, 0, P_atm, 0.00011, [0 0 1], 8, 10, false);
+    Node(8) = Nodes('OX Manifold', 8, 0, P_atm, 0.0002, [0 0 1], 7, 9, false);
+    Node(9) = Nodes('FU Manifold', 9, 0, P_atm, 0.0002, [0 0 1], 8, 10, false);
 % TADPOLE
     Node(10) = Nodes('TADPOLE', 10, 0, P_atm, 0.00125, [0 0 1], [9 10], 11, true);
 % Atmosphere
@@ -60,6 +60,9 @@ TankVolFU = 0.03746;
     Link(10) = ValveLink('Inj FU', 'Orifice', 10, 9, 10, 0.77, 2.6e-5);
 % Nozzle 
     Link(11) = ValveLink('Nozzle', 'Orifice', 11, 10, 11, 0.79, 0.0011);
+% N2 Purges
+    Link(12) = ValveLink('OX Purge', 'Throttle', 12, 1, 6, 0);
+    Link(13) = ValveLink('FU Purge', 'Throttle', 13, 1, 7, 0);
 
 %% Pre-processing (subdividing into Dynamic and Algebraic Links)
 isDynamic = strcmp({Link.Type}, 'Pipe');

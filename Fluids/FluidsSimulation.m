@@ -28,7 +28,7 @@ end
 simTime = 8;
 dT = 1e-3;
 MaxdT = 5e-2;
-MindT = 1e-5; % Allow smaller steps for stiff valve events
+MindT = 1e-5;
 MaxSteps = 1e5;
 
 % Logs
@@ -64,10 +64,10 @@ while t < simTime
         t_next = t + dT;
 
         %% Valve Control Logic
-        ValveTiming = [5 9];
+        ValveTiming = [5 10];
         RunValves = [2.7, 1.05]; % [Cv_OX, Cv_FU]
         ValveRamp = 0.03;        
-        OxDelay   = 0.06;        
+        OxDelay   = 0.09;        
         
         U = zeros(MALength, 1);
         U(1:2) = 2; % Pressurization Lines
@@ -150,9 +150,7 @@ while t < simTime
                 if mod(iter, 5) == 0
                     J = NumericalJacobian(@(x) PhysicsEngine(x, System, U), X_new);
                     M = eye(length(X0)) - dT * J;
-                    [LD, UD] = lu(M); % This might throw, caught by outer try-catch? 
-                    % Ideally, we'd wrap this too, but for brevity, if this fails 
-                    % the next loop iteration catches it or it diverges.
+                    [LD, UD] = lu(M);
                 end
             end
 
