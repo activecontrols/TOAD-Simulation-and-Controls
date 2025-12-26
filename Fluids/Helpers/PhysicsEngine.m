@@ -15,251 +15,290 @@ function XDOT = PhysicsEngine(X, System, U)
     % Pre-allocation
     if ~isreal(X)
         XDOT = complex(zeros(size(X)));
-        Pressure = complex(zeros(PLength, 1));
         Massflow = complex(zeros(MALength + MDLength, 1));
-        RhoNode = complex(zeros(PLength, 1));
-        Vol_Ullage = complex(zeros(PLength, 1));
-        Alpha_Vec = complex(zeros(PLength, 1));
-        Rho_Liq_Vec = complex(zeros(PLength, 1));
     else
         XDOT = zeros(size(X));
-        Pressure = zeros(PLength, 1);
         Massflow = zeros(MALength + MDLength, 1);
-        RhoNode = zeros(PLength, 1);
-        Vol_Ullage = zeros(PLength, 1);
-        Alpha_Vec = zeros(PLength, 1);
-        Rho_Liq_Vec = zeros(PLength, 1);
     end
 
-    %% Node Densities
+    %% Node Densities (Vectorized)
+    % Initialize Arrays
+    Nodes      = System.Nodes;
+    R_Vec      = [Nodes.R]';   
+    T_Vec      = [Nodes.Temp]';    
+    V_Vec      = [Nodes.V]';      
+    IsComb_Vec = [Nodes.IsCombustor]';
+
+    % Process Pressures
+    P_Raw    = X(1:PLength);
+    Pressure = sqrt(P_Raw.^2 + 1e-6);
+
+    % Process Mass Fractions
     Y_All = X(YIdx_Start:end);
     Y_Matrix = reshape(Y_All, [NumSpecies, PLength])';
 
-    for i = 1:PLength
-        % Node Parameters
-        Node = System.Nodes(i);
-        
-        % Robust Pressure
-        P = sqrt(X(i)^2 + 1e-6);
-        Pressure(i) = P; 
+    % Normalize
+    Y_Sum    = sum(Y_Matrix, 2);
+    Y_Matrix = Y_Matrix ./ (Y_Sum + 1e-9);
 
-        % Normalize Composition
-        Y_Vec = Y_Matrix(i, :);
-        Y_Sum = sum(Y_Vec);
-        Y_Vec = Y_Vec / (Y_Sum + 1e-9);
-        Y_Matrix(i, :) = Y_Vec;
+    % Gas Density via. Ideal Gas Law
+    Rho_Gas_Vec = Pressure ./ (R_Vec .* T_Vec);
 
-        % Calculate Gas Density
-        Rho_Gas = P / (Node.R * Node.Temp);
-        
-        % Liquid Density
-        Y_OX = Y_Vec(1); Y_FU = Y_Vec(2); Y_N2 = Y_Vec(3);
-        InvRhoLiq = (Y_OX / RhoArray(1)) + (Y_FU / RhoArray(2));
-        Rho_Raw = (Y_OX + Y_FU) / (InvRhoLiq + 1e-12);
-         
-        % Blend: If Gas, use Default. If Liquid, use Calculated.
-        IsPureGas = 0.5 + 0.5 * tanh(1e6 * (1e-9 - InvRhoLiq));
-        Rho_Liq_Local = (1 - IsPureGas) * Rho_Raw + IsPureGas * Rho_Default_Liq;
+    % Extract Columns
+    Y_OX = Y_Matrix(:, 1); 
+    Y_FU = Y_Matrix(:, 2); 
+    Y_N2 = Y_Matrix(:, 3);
 
-        % Gas Proportion
-        Term_LiqVol = Rho_Gas / Rho_Liq_Local;
-        Alpha = (Y_N2) / (Y_N2 + Term_LiqVol * (1 - Y_N2) + 1e-9);
-        
-        if Node.IsCombustor, Alpha = 1; end
-        
-        % Store
-        Alpha_Vec(i) = Alpha;
-        Rho_Liq_Vec(i) = Rho_Liq_Local;
-        RhoNode(i) = Alpha * Rho_Gas + (1 - Alpha) * Rho_Liq_Local;
-        Vol_Ullage(i) = Node.V * Alpha;
+    % Mixture Density
+    InvRhoLiq = (Y_OX ./ RhoArray(1)) + (Y_FU ./ RhoArray(2));
+    Rho_Raw   = (Y_OX + Y_FU) ./ (InvRhoLiq + 1e-12);
+
+    % Smooth selection depending on gas composition
+    IsPureGas = 0.5 + 0.5 * tanh(1e6 * (1e-9 - InvRhoLiq));
+    Rho_Liq_Vec = (1 - IsPureGas) .* Rho_Raw + IsPureGas .* Rho_Default_Liq;
+
+    % Proportion of gas (Alpha)
+    Term_LiqVol = Rho_Gas_Vec ./ Rho_Liq_Vec;
+    Alpha_Vec = Y_N2 ./ (Y_N2 + Term_LiqVol .* (1 - Y_N2) + 1e-9);
+
+    % Override to pure gas if combustor
+    Alpha_Vec(IsComb_Vec) = 1.0;
+
+    % Final Node Properties
+    RhoNode    = Alpha_Vec .* Rho_Gas_Vec + (1 - Alpha_Vec) .* Rho_Liq_Vec;
+    Vol_Ullage = V_Vec .* Alpha_Vec;
+
+    %% Dynamic Links (Vectorized)
+    DynLinks = System.Links.Dynamic;
+
+    if ~isempty(DynLinks)
+        % Initialize Arrays
+        Up_Vec   = [DynLinks.Up]';
+        Down_Vec = [DynLinks.Down]';
+        A_Vec    = [DynLinks.A]';
+        L_Vec    = [DynLinks.L]';
+        Zeta_Vec = [DynLinks.Zeta]';
+        ID_Vec   = [DynLinks.ID]';
+
+        % Pick out the Massflow states from the state vector X
+        LinkIdx_Start = PLength + 1;
+        LinkIdx_End   = PLength + MDLength;
+        FlowState_Vec = X(LinkIdx_Start:LinkIdx_End);
+
+        % Flow direction vector
+        Dir_Vec = 0.5 + 0.5 * tanh(100 * FlowState_Vec);
+
+        % Upstream node proprieties
+        P_Up_Vec = Pressure(Up_Vec) .* Dir_Vec + Pressure(Down_Vec) .* (1 - Dir_Vec);
+        T_Up_Vec = T_Vec(Up_Vec)    .* Dir_Vec + T_Vec(Down_Vec)    .* (1 - Dir_Vec);
+        R_Up_Vec = R_Vec(Up_Vec)    .* Dir_Vec + R_Vec(Down_Vec)    .* (1 - Dir_Vec);
+
+        % Gas Density per Link
+        Rho_Gas_Vec = P_Up_Vec ./ (R_Up_Vec .* T_Up_Vec);
+
+        % Smooth Selection for link composition
+        Y_Up_Raw = Y_Matrix(Up_Vec, :)   .* Dir_Vec +...
+                   Y_Matrix(Down_Vec, :) .* (1 - Dir_Vec);
+
+        % Apply stratification and normalize
+        LiqSum_Vec = sum(Y_Up_Raw(:, 1:2), 2);
+        isLiquid      = 0.5 + 0.5 * tanh(100 * LiqSum_Vec);
+        Y_Strat    = Y_Up_Raw;
+        Y_Strat(:, 3) = Y_Strat(:, 3) .* (1 - isLiquid);
+
+        % Mixture density
+        % We build a density matrix and replace the third column as
+        % nessesary from the above process.
+        Rho_Mat_Links = repmat(RhoArray, MDLength, 1);
+        Rho_Mat_Links(:, 3) = Rho_Gas_Vec;
+        Rho_Mix_Vec = 1 ./ sum(Y_Strat ./ (Rho_Mat_Links + 1e-9), 2);
+
+        % Momentum Equation
+        DeltaP_Vec = X(Up_Vec) - X(Down_Vec);
+        FricTerm_Vec = FlowState_Vec .* sqrt(FlowState_Vec.^2 + 1e-6);
+
+        % ODE
+        XDOT(LinkIdx_Start:LinkIdx_End) = (A_Vec ./ L_Vec) .* ...
+            (DeltaP_Vec - (Zeta_Vec ./ (2 * Rho_Mix_Vec .* A_Vec.^2)) .* FricTerm_Vec);
+
+        % Store Massflows for global use
+        Massflow(ID_Vec) = FlowState_Vec;
     end
 
-    %% Dynamic Links (Pipes)
-    for i = 1:MDLength
-        L = System.Links.Dynamic(i);
-        UpIDX = L.Up; DwIDX = L.Down;
-        FlowState = X(PLength + i);
-        
-        % Determine Flow Direction
-        Dir = 0.5 + 0.5 * tanh(100 * FlowState);
+    %% Algebraic Links (Vectorized)
+    AlgLinks = System.Links.Algebraic;
 
-        % Get Upstream Properties
-        T_Up = System.Nodes(UpIDX).Temp * Dir + System.Nodes(DwIDX).Temp * (1 - Dir);
-        R_Up = System.Nodes(UpIDX).R    * Dir + System.Nodes(DwIDX).R    * (1 - Dir);
-        P_Up = Pressure(UpIDX)          * Dir + Pressure(DwIDX)          * (1 - Dir);
-        RhoGas = P_Up / (R_Up * T_Up);
-        Y_Raw = Y_Matrix(UpIDX, :) * Dir + Y_Matrix(DwIDX, :) * (1 - Dir);
-        
-        % Apply Stratification
-        LiqSum = sum(Y_Raw(1:2));
-        F = 0.5 + 0.5 * tanh(100 * LiqSum);
-        Y_Stratified = Y_Raw;
-        Y_Stratified(3) = Y_Stratified(3) * (1 - F);
-        Y_Stratified = Y_Stratified / sum(Y_Stratified);
+    if ~isempty(AlgLinks)
+        % Initialize Vectors
+        Up_Vec   = [AlgLinks.Up]';
+        Down_Vec = [AlgLinks.Down]';
+        ID_Vec   = [AlgLinks.ID]';
+        Cv_Vec   = [AlgLinks.Cv]';
+        A_Vec    = [AlgLinks.A]';
 
-        % Calculate Mixture Density
-        LinkRhoArray = RhoArray; 
-        LinkRhoArray(3) = RhoGas;
-        Rho = 1 / sum(Y_Stratified ./ (LinkRhoArray + 1e-9));
-        
-        % Momentum ODE
-        DeltaP = X(UpIDX) - X(DwIDX);
-        FricTerm = FlowState * sqrt(FlowState^2 + 1e-6);
-        XDOT(PLength + i) = L.A/L.L * (DeltaP - L.Zeta/(2*Rho*L.A*L.A) * FricTerm);
-        Massflow(L.ID) = FlowState;
-    end
+        % Logical Mask for Valves
+        Type_Cell  = {AlgLinks.Type};
+        isThrottle = strcmp(Type_Cell, 'Throttle')';
 
-    %% Algebraic Links (Valves & Orifices)
-    for i = 1:MALength
-        L = System.Links.Algebraic(i);
-        UpIDX = L.Up; DwIDX = L.Down;
-        DeltaP = X(UpIDX) - X(DwIDX);
-        
-        % Determine Direction
-        Dir = 0.5 + 0.5 * tanh(1e3 * DeltaP);
-
-        % Get Upstream Properties (Unified Logic)
-        T_Up = System.Nodes(UpIDX).Temp * Dir + System.Nodes(DwIDX).Temp * (1 - Dir);
-        R_Up = System.Nodes(UpIDX).R    * Dir + System.Nodes(DwIDX).R    * (1 - Dir);
-        P_Up = Pressure(UpIDX)          * Dir + Pressure(DwIDX)          * (1 - Dir);
-        Rho_Gas_Flow = P_Up / (R_Up * T_Up);
-        Y_Raw = Y_Matrix(UpIDX, :) * Dir + Y_Matrix(DwIDX, :) * (1 - Dir);
-        
-        % Apply Stratification
-        LiqSum = sum(Y_Raw(1:2));
-        F = 0.5 + 0.5 * tanh(100 * LiqSum);
-        Y_Flow = Y_Raw;
-        Y_Flow(3) = Y_Flow(3) * (1 - F);
-        Y_Flow = Y_Flow / sum(Y_Flow);
-
-        % Handle Combustor Sources (Inject Gas Only)
-        IsSrcComb = (System.Nodes(UpIDX).IsCombustor * Dir) + ...
-                    (System.Nodes(DwIDX).IsCombustor * (1 - Dir));
-        if IsSrcComb > 0.5
-            Rho_up = Rho_Gas_Flow;
-        else
-            LinkRhoArray = RhoArray;
-            LinkRhoArray(3) = Rho_Gas_Flow;
-            Rho_up = 1 / sum(Y_Flow ./ (LinkRhoArray + 1e-9));
+        % Control Input handling
+        if ~isempty(U)
+            Cv_Vec(isThrottle) = U(isThrottle); 
         end
 
-        % Choked Flow Check
-        Liq_Frac = sum(Y_Flow(1:2));
-        IsLiqFlow = (0.5 + 0.5 * tanh(10 * (Liq_Frac - 0.1))) * (1 - IsSrcComb);
-        
-        G_Node = System.Nodes(UpIDX).Gamma * Dir + System.Nodes(DwIDX).Gamma * (1 - Dir);
-        G_Up = IsLiqFlow * 100 + (1 - IsLiqFlow) * G_Node;
+        % Both Valves and Orifice Plates follow the same form.
+        Coeff_Vec = isThrottle * 2.402e-5 + (~isThrottle) .* A_Vec;
+        Sqrt_Mult = isThrottle * 1.0      + (~isThrottle) * 2.0;
 
-        % Critical Pressure Ratio & Effective DP
-        Rc = (2 / (G_Up + 1)) ^ (G_Up / (G_Up - 1)); 
-        DP_Choked = P_Up * (1 - Rc); 
-        DP_Raw = sqrt(DeltaP^2 + 1e-9);
-        DP_Eff = 0.5 * (DP_Raw + DP_Choked - sqrt((DP_Raw - DP_Choked)^2 + 1e-4));
-        
-        % Compute Massflow
-        SignTerm = tanh(1e3 * DeltaP);
-        
-        % Throttle Valve Logic
-        if strcmp(L.Type, 'Throttle')
-            SqrtTerm = sqrt(DP_Eff * Rho_up + 1e-9);
-            Cv = L.Cv;
-            if ~isempty(U), Cv = U(i); end
-            Massflow(L.ID) = 2.402e-5 * Cv * SqrtTerm * SignTerm;
-        
-        % Orifice Plate Logic
-        elseif strcmp(L.Type, 'Orifice')
-            SqrtTerm = sqrt(2 * Rho_up * DP_Eff + 1e-9);
-            Massflow(L.ID) = L.Cv * L.A * SqrtTerm * SignTerm;
-        end
+        % Flow Direction & Upstream Properties
+        DeltaP_Vec = X(Up_Vec) - X(Down_Vec);
+        Dir_Vec    = 0.5 + 0.5 * tanh(1e3 * DeltaP_Vec);
+
+        % Blending Upstream Properties
+        P_Up_Vec = Pressure(Up_Vec) .* Dir_Vec + Pressure(Down_Vec) .* (1 - Dir_Vec);
+        T_Up_Vec = T_Vec(Up_Vec)    .* Dir_Vec + T_Vec(Down_Vec)    .* (1 - Dir_Vec);
+        R_Up_Vec = R_Vec(Up_Vec)    .* Dir_Vec + R_Vec(Down_Vec)    .* (1 - Dir_Vec);
+        Rho_Gas_Flow = P_Up_Vec ./ (R_Up_Vec .* T_Up_Vec);
+        Y_Up_Raw = Y_Matrix(Up_Vec, :)   .* Dir_Vec + ...
+                   Y_Matrix(Down_Vec, :) .* (1 - Dir_Vec);
+
+        % Stratification
+        LiqSum_Vec = sum(Y_Up_Raw(:, 1:2), 2);
+        isLiquid   = 0.5 + 0.5 * tanh(10 * (LiqSum_Vec - 0.1)); 
+        Y_Flow     = Y_Up_Raw;
+        Y_Flow(:, 3) = Y_Flow(:, 3) .* (1 - isLiquid);
+        Y_Flow     = Y_Flow ./ (sum(Y_Flow, 2) + 1e-9);
+
+        % Identify combustor sources
+        IsSrcComb = (IsComb_Vec(Up_Vec) .* Dir_Vec) + ...
+                    (IsComb_Vec(Down_Vec) .* (1 - Dir_Vec));
+
+        % Mixture Density
+        Rho_Mat_Links = repmat(RhoArray, MALength, 1);
+        Rho_Mat_Links(:, 3) = Rho_Gas_Flow;
+        Rho_Mix_Vec = 1 ./ sum(Y_Flow ./ (Rho_Mat_Links + 1e-9), 2);
+
+        % Final Upstream Density
+        Rho_Up_Final = (IsSrcComb .* Rho_Gas_Flow) + ((1 - IsSrcComb) .* Rho_Mix_Vec);
+
+        % Choked flow handling for combustors and choked flow check
+        IsLiqFlow = isLiquid .* (1 - IsSrcComb);
+        NodesGamma = [System.Nodes.Gamma]';
+        G_Node     = NodesGamma(Up_Vec) .* Dir_Vec + NodesGamma(Down_Vec) .* (1 - Dir_Vec);
+        G_Up       = IsLiqFlow * 100 + (1 - IsLiqFlow) .* G_Node;
+
+        % Critical Pressure Ratio
+        Rc = (2 ./ (G_Up + 1)) .^ (G_Up ./ (G_Up - 1));
+        DP_Choked = P_Up_Vec .* (1 - Rc);
+        DP_Raw    = sqrt(DeltaP_Vec.^2 + 1e-9);
+
+        % Smooth Min 
+        DP_Eff = 0.5 * (DP_Raw + DP_Choked - sqrt((DP_Raw - DP_Choked).^2 + 1e-4));
+
+        % Final Massflow Calculation
+        SignTerm = tanh(1e3 * DeltaP_Vec);
+        SqrtTerm = sqrt(Sqrt_Mult .* Rho_Up_Final .* DP_Eff + 1e-9);
+        Massflow(ID_Vec) = Coeff_Vec .* Cv_Vec .* SqrtTerm .* SignTerm;
     end
 
-    %% Conservation of Mass and Energy
-    XDOT_Species_Mat = zeros(PLength, NumSpecies);
-    if ~isreal(X), XDOT_Species_Mat = complex(zeros(PLength, NumSpecies)); end
+    %% Conservation of Mass and Energy (Vectorized)
+    % Gather link data
+    Link_Up   = LinkMap(:, 1);
+    Link_Down = LinkMap(:, 2);
+    Link_Flow = Massflow;
 
-    for i = 1:PLength
-        Node = System.Nodes(i);
-        if ~Node.Fixed
-            % Initialize accumulators
-            mdot_Gas_Net = 0; mdot_Liq_Net = 0; m_Net_Total = 0;
-            Species_Term = zeros(1, NumSpecies);
-            Mass = Node.V * RhoNode(i);
-            
-            % Process Links
-            Links = [Node.LinksIN, Node.LinksOUT];
-            Dirs  = [ones(1, length(Node.LinksIN)), -1*ones(1, length(Node.LinksOUT))];
-            
-            for k = 1:length(Links)
-                lIdx = Links(k);
-                flow_raw = Massflow(lIdx);
-                flow_signed = flow_raw * Dirs(k); 
-                
-                % Determine Neighbor & Inflow Factor
-                neighbor = LinkMap(lIdx, 1) * (Dirs(k) == 1) + LinkMap(lIdx, 2) * (Dirs(k) ~= 1);
-                isInflow = 0.5 + 0.5 * tanh(100 * flow_signed);
-                
-                % Upwind Composition 
-                % Neighbor
-                Y_Neigh_Raw = Y_Matrix(neighbor, :);
-                LiqSum_Neigh = sum(Y_Neigh_Raw(1:2));
-                F_Neigh = 0.5 + 0.5 * tanh(100 * LiqSum_Neigh);
-                Y_Neigh = Y_Neigh_Raw;
-                Y_Neigh(3) = Y_Neigh(3) * (1 - F_Neigh);
-                Y_Neigh = Y_Neigh / sum(Y_Neigh);
-                
-                % Self
-                Y_Self_Raw = Y_Matrix(i, :);
-                LiqSum_Self = sum(Y_Self_Raw(1:2));
-                F_Self = 0.5 + 0.5 * tanh(100 * LiqSum_Self);
-                Y_Self = Y_Self_Raw;
-                Y_Self(3) = Y_Self(3) * (1 - F_Self);
-                Y_Self = Y_Self / sum(Y_Self);
-                
-                Y_Flux  = Y_Neigh * isInflow + Y_Self * (1 - isInflow);
-                
-                % Accumulate
-                GasFrac = Y_Flux(3);
-                LiqFrac = 1 - GasFrac;
-                
-                mdot_Gas_Net = mdot_Gas_Net + flow_signed * GasFrac;
-                mdot_Liq_Net = mdot_Liq_Net + flow_signed * LiqFrac;
-                m_Net_Total  = m_Net_Total + flow_signed;
-                Species_Term = Species_Term + flow_signed * (Y_Flux - Y_Matrix(i, :));
-            end
-            
-            %% Derivatives
-            if Node.IsCombustor
-                % If the node is a combustor, all the massflow is Gaseous.
-                mdot_Gas_Net = mdot_Gas_Net + mdot_Liq_Net;
-                mdot_Liq_Net = 0; 
-                V_Safe = Node.V;
-            else
-                V_Safe = Vol_Ullage(i) + 1e-6;
-            end
-            
-            dP_GasTerm = (mdot_Gas_Net * Node.R * Node.Temp);
-            dP_LiqTerm = Pressure(i) * (mdot_Liq_Net / max(Rho_Liq_Vec(i), 100));
+    % Determine flow direction (1.0 if Up -> Down, 0.0 if Down -> Up)
+    Link_Dir = 0.5 + 0.5 * tanh(100 * Link_Flow);
 
-            dP_GasMode = (dP_GasTerm + dP_LiqTerm) / V_Safe;
-            dP_FluidMode = (Beta_Liq / (Node.V * max(Rho_Liq_Vec(i), 100))) * m_Net_Total;
-            
-            if Node.IsCombustor
-                % If Combustor, only Gas mode.
-                XDOT(i) = dP_GasMode;
-            else
-                % Blend based on Void Fraction
-                BlendFactor = 0.5 + 0.5 * tanh(1e3 * (Alpha_Vec(i) - 0.002));
-                XDOT(i) = BlendFactor * dP_GasMode + (1 - BlendFactor) * dP_FluidMode;
-            end
-            
-            XDOT_Species_Mat(i, :) = Species_Term / (Mass + 1e-9);
-        end
-    end
+    % Get source compositions and perform stratification on upstream and
+    % downstream nodes
+    % Upstream candidates
+        Y_Up_Raw   = Y_Matrix(Link_Up, :);
+        LiqSum_Up  = sum(Y_Up_Raw(:, 1:2), 2);
+        isLiquid_Up       = 0.5 + 0.5 * tanh(100 * LiqSum_Up);
+        Y_Up_Strat = Y_Up_Raw;
+        Y_Up_Strat(:, 3) = Y_Up_Strat(:, 3) .* (1 - isLiquid_Up);
+        Y_Up_Strat = Y_Up_Strat ./ (sum(Y_Up_Strat, 2) + 1e-9);
+    % Downstream candidates
+        Y_Down_Raw   = Y_Matrix(Link_Down, :);
+        LiqSum_Down  = sum(Y_Down_Raw(:, 1:2), 2);
+        isLiquid_Down       = 0.5 + 0.5 * tanh(100 * LiqSum_Down);
+        Y_Down_Strat = Y_Down_Raw;
+        Y_Down_Strat(:, 3) = Y_Down_Strat(:, 3) .* (1 - isLiquid_Down);
+        Y_Down_Strat = Y_Down_Strat ./ (sum(Y_Down_Strat, 2) + 1e-9);
+
+    % Select composition based on flow direction
+    Y_Trans = Y_Up_Strat .* Link_Dir + Y_Down_Strat .* (1 - Link_Dir);
+
+    % Calculate Fluxes crossing each link
+    Flux_Total = Link_Flow;
+    Flux_Gas   = Link_Flow .* Y_Trans(:, 3);
+    Flux_Liq   = Link_Flow .* (1 - Y_Trans(:, 3));
+    Flux_Spec  = Link_Flow .* Y_Trans;
+
+    % Accumulate flows to nodes
+    % Net massflows
+    Net_Total = accumarray(Link_Down, Flux_Total, [PLength, 1]) - ...
+                accumarray(Link_Up,   Flux_Total, [PLength, 1]);
+
+    Net_Gas   = accumarray(Link_Down, Flux_Gas, [PLength, 1]) - ...
+                accumarray(Link_Up,   Flux_Gas, [PLength, 1]);
+                
+    Net_Liq   = accumarray(Link_Down, Flux_Liq, [PLength, 1]) - ...
+                accumarray(Link_Up,   Flux_Liq, [PLength, 1]);
+
+    % Net species flux
+    Net_Spec = zeros(PLength, 3);
+    Net_Spec(:,1) = accumarray(Link_Down, Flux_Spec(:,1), [PLength, 1]) - ...
+                    accumarray(Link_Up, Flux_Spec(:,1), [PLength, 1]);
+
+    Net_Spec(:,2) = accumarray(Link_Down, Flux_Spec(:,2), [PLength, 1]) - ...
+                    accumarray(Link_Up, Flux_Spec(:,2), [PLength, 1]);
+
+    Net_Spec(:,3) = accumarray(Link_Down, Flux_Spec(:,3), [PLength, 1]) - ...
+                    accumarray(Link_Up, Flux_Spec(:,3), [PLength, 1]);
+
+    % Calculate Pressure and Mass Fraction Derivatives
+    Gas_For_P = Net_Gas;
+    Liq_For_P = Net_Liq;
+
+    % Handle combustor logic (all incoming mass == gas)
+    Gas_For_P(IsComb_Vec) = Net_Gas(IsComb_Vec) + Net_Liq(IsComb_Vec);
+    Liq_For_P(IsComb_Vec) = 0;
+
+    % Volume Safety (combustors are pure gas volume)
+    V_Safe = Vol_Ullage + 1e-6;
+    V_Safe(IsComb_Vec) = V_Vec(IsComb_Vec);
+
+    % Pressure derivatives
+    dP_GasTerm = Gas_For_P .* R_Vec .* T_Vec;
+    dP_LiqTerm = Pressure .* (Liq_For_P ./ max(Rho_Liq_Vec, 100));
+    dP_GasMode   = (dP_GasTerm + dP_LiqTerm) ./ V_Safe;
+    dP_FluidMode = (Beta_Liq ./ (V_Vec .* max(Rho_Liq_Vec, 100))) .* Net_Total;
+
+    % Blend Modes
+    BlendFactor = 0.5 + 0.5 * tanh(1e3 * (Alpha_Vec - 0.002));
+    dP_Final    = BlendFactor .* dP_GasMode + (1 - BlendFactor) .* dP_FluidMode;
+
+    % Species derivatives
+    Mass_Node = V_Vec .* RhoNode;
+    dY_Num    = Net_Spec - Net_Total .* Y_Matrix;
+    dY_dt     = dY_Num ./ (Mass_Node + 1e-9);
+
+    % Fixed (boundary) node constraints
+    Fixed_Vec = [System.Nodes.Fixed]';
+    dP_Final(Fixed_Vec == 1) = 0;
+    dY_dt(Fixed_Vec == 1, :) = 0;
+
+    % Reshape matrix and store derivatives
+    XDOT(1:PLength) = dP_Final;
+    XDOT(YIdx_Start:end) = reshape(dY_dt', [], 1);
+end
+
+
+
+
+
+
+
+
     
-    XDOT(YIdx_Start:end) = reshape(XDOT_Species_Mat', [], 1);
-end
-
-%% Helper Functions
-function val = SmoothMin(a, b)
-    val = 0.5 * (a + b - sqrt((a - b)^2 + 1e-4));
-end
