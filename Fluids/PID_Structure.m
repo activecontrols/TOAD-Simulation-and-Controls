@@ -33,8 +33,8 @@ TankVolFU = 0.03746;
 % Lines
     Node(4) = Nodes('Pre OX', 4, 0, P_atm, 0.0002, [1 0 0], 3, 5, false);
     Node(5) = Nodes('Pre FU', 5, 0, P_atm, 0.0002, [0 1 0], 4, 6, false);
-    Node(6) = Nodes('Post OX', 6, 0, P_atm, 0.0002, [0 0 1], 5, 7, false);
-    Node(7) = Nodes('Post FU', 7, 0, P_atm, 0.0002, [0 0 1], 6, 8, false);
+    Node(6) = Nodes('Post OX', 6, 0, P_atm, 0.0001, [0 0 1], 5, 7, false);
+    Node(7) = Nodes('Post FU', 7, 0, P_atm, 0.0001, [0 0 1], 6, 8, false);
 % Manifold
     Node(8) = Nodes('OX Manifold', 8, 0, P_atm, 0.0002, [0 0 1], 7, 9, false);
     Node(9) = Nodes('FU Manifold', 9, 0, P_atm, 0.0002, [0 0 1], 8, 10, false);
@@ -45,24 +45,24 @@ TankVolFU = 0.03746;
 
 %% Links
 % Tank Press
-    Link(1) = ValveLink('Press_OX', 'Throttle', 1, 1, 2, 2.0);
-    Link(2) = ValveLink('Press_FU', 'Throttle', 2, 1, 3, 2.0);
+    Link(1) = ValveLink('Press OX', 'Throttle', 1, 1, 2, 2.0);
+    Link(2) = ValveLink('Press FU', 'Throttle', 2, 1, 3, 2.0);
 % Run Valves
-    Link(5) = ValveLink('Main_OX', 'Throttle', 5, 4, 6, 2.9);
-    Link(6) = ValveLink('Main_FU', 'Throttle', 6, 5, 7, 2.9);
+    Link(5) = ValveLink('Main OX', 'Throttle', 5, 4, 6, 2.9);
+    Link(6) = ValveLink('Main FU', 'Throttle', 6, 5, 7, 2.9);
 % Pipe Sections 
-    Link(3) = PipeLink('OX Line 1', 3, 2, 4, 0.5, 1e-4, .5);
-    Link(4) = PipeLink('FU Line 1', 4, 3, 5, 0.5, 1e-4, .5);
-    Link(7) = PipeLink('OX Line 2', 7, 6, 8, 0.5, 1e-4, .5);
-    Link(8) = PipeLink('FU Line 2', 8, 7, 9, 0.5, 1e-4, .5);
+    Link(3) = PipeLink('OX Line 1', 3, 2, 4, 0.5, 1e-4, 1.0);
+    Link(4) = PipeLink('FU Line 1', 4, 3, 5, 0.5, 1e-4, 1.0);
+    Link(7) = PipeLink('OX Line 2', 7, 6, 8, 0.5, 1e-4, 1.0);
+    Link(8) = PipeLink('FU Line 2', 8, 7, 9, 0.5, 1e-4, 1.0);
 % Injectors
     Link(9) = ValveLink('Inj OX', 'Orifice', 9, 8, 10, 0.45, 3.146e-5);
     Link(10) = ValveLink('Inj FU', 'Orifice', 10, 9, 10, 0.77, 2.6e-5);
 % Nozzle 
     Link(11) = ValveLink('Nozzle', 'Orifice', 11, 10, 11, 0.79, 0.0011);
 % N2 Purges
-    Link(12) = ValveLink('OX Purge', 'Throttle', 12, 1, 6, 0);
-    Link(13) = ValveLink('FU Purge', 'Throttle', 13, 1, 7, 0);
+    Link(12) = ValveLink('Purge OX', 'Check', 12, 1, 6, 0);
+    Link(13) = ValveLink('Purge FU', 'Check', 13, 1, 7, 0);
 
 %% Pre-processing (subdividing into Dynamic and Algebraic Links)
 isDynamic = strcmp({Link.Type}, 'Pipe');
@@ -91,6 +91,40 @@ for i = 1:MALength
     LinkMap(L.ID, :) = [L.Up, L.Down];
 end
 System.LinkMap = LinkMap;
+
+%% Valve Manager Tests
+Scheduler = ValveManager(System);
+Scheduler.SetTau('Press OX', 0.005);
+Scheduler.SetTau('Press FU', 0.005);
+Scheduler.SetTau('Purge OX', 0.01);
+Scheduler.SetTau('Purge FU', 0.01);
+
+% Test Autosequence for System
+AutoSequence = {
+    % Open Press Lines
+    0.0,    'Press OX',     2.0;
+    0.0,    'Press FU',     2.0;
+    
+    % Starup 
+    5.0,    'Main FU',      1.05;
+    5.14,   'Main OX',      2.70;
+    
+    % Shutdown
+    10.0,   'Main FU',      0.0;
+    10.0,   'Main OX',      0.0;
+
+    % Purges
+    10.02,   'Purge OX',     .5;
+    10.02,   'Purge FU',     .5;
+    
+    % Purges and Press shutdown
+    11.0,   'Purge OX',     0.0;
+    11.0,   'Purge FU',     0.0;
+    12.0,   'Press OX',     0.0;
+    12.0,   'Press FU',     0.0;
+};
+
+Scheduler.LoadSequence(AutoSequence);
 
 
 

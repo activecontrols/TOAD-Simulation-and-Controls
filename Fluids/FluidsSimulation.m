@@ -25,10 +25,10 @@ end
 
 %% Simulation Loop 2 (Implicit Euler w/ Variable timestep & Robust Jacobian)
 % Initialize Solver 2 parameters
-simTime = 8;
+simTime = 16;
 dT = 1e-3;
 MaxdT = 5e-2;
-MindT = 1e-5;
+MindT = 1e-6;
 MaxSteps = 1e5;
 
 % Logs
@@ -58,50 +58,23 @@ tic;
 while t < simTime
     X_old = X_cur;
     isAccepted = false;
+
+    % Save the clean Scheduler state before we attempt any timestep
+    Saved_U = Scheduler.CurrentU;
+    Saved_Target = Scheduler.TargetU;
+    Saved_Idx = Scheduler.NextEventIdx;
     
     while ~isAccepted
+        % Rewind scheduler
+        Scheduler.CurrentU = Saved_U;
+        Scheduler.TargetU = Saved_Target;
+        Scheduler.NextEventIdx = Saved_Idx;
+
         % Proposed next time
         t_next = t + dT;
 
         %% Valve Control Logic
-        ValveTiming = [5 10];
-        RunValves = [2.7, 1.05]; % [Cv_OX, Cv_FU]
-        ValveRamp = 0.03;        
-        OxDelay   = 0.09;        
-        
-        U = zeros(MALength, 1);
-        U(1:2) = 2; % Pressurization Lines
-        
-        % FU Valve
-        if t_next < ValveTiming(1)
-            U(4) = 0;
-        elseif t_next < (ValveTiming(1) + ValveRamp)
-            Progress = (t_next - ValveTiming(1)) / ValveRamp;
-            U(4) = RunValves(2) * Progress;
-        elseif t_next < ValveTiming(2)
-            U(4) = RunValves(2);
-        elseif t_next < (ValveTiming(2) + ValveRamp)
-            Progress = (t_next - ValveTiming(2)) / ValveRamp;
-            U(4) = RunValves(2) * (1 - Progress);
-        else
-            U(4) = 0;
-        end
-
-        % OX Valve
-        OxStart = ValveTiming(1) + OxDelay;
-        if t_next < OxStart
-            U(3) = 0;
-        elseif t_next < (OxStart + ValveRamp)
-            Progress = (t_next - OxStart) / ValveRamp;
-            U(3) = RunValves(1) * Progress;
-        elseif t_next < ValveTiming(2)
-            U(3) = RunValves(1);
-        elseif t_next < (ValveTiming(2) + ValveRamp)
-            Progress = (t_next - ValveTiming(2)) / ValveRamp;
-            U(3) = RunValves(1) * (1 - Progress);
-        else
-            U(3) = 0;
-        end
+        U = Scheduler.Step(t_next, dT);
     
         %% Implicit Solver Step via Modified Newton-Raphson
         X_new = X_old;
@@ -171,25 +144,20 @@ while t < simTime
             % Metric: Max Relative Change
             RelChange = abs(X_new - X_old) ./ (abs(X_new) + 1e-2);
             MaxChange = max(RelChange);
-            Tolerance = 0.15;  
-            Target    = 0.05;  
+            Tolerance = 0.20;  
+            Target    = 0.10;  
             
             if MaxChange > Tolerance && dT > MindT
                 isAccepted = false;
                 dT = max(dT * 0.5, MindT); 
             else
                 isAccepted = true;
-                
-                % Aggressive timestep growth if things are stable
-                if MaxChange < Target * 0.5
-                    dT = dT * 1.2;
-                else
-                    % Lowpass for timestep
-                    Error = (Target / (MaxChange + 1e-9));
-                    Factor = (Error)^0.5;
-                    Beta = 0.05;
-                    dT = (1 - Beta) * dT + Beta * Factor * dT;
-                end
+
+                % Lowpass for timestep
+                Error = (Target / (MaxChange + 1e-9));
+                Factor = (Error)^0.5;
+                Beta = 0.05;
+                dT = (1 - Beta) * dT + Beta * Factor * dT;
             end
         else
             % Diverged or Singular Matrix -> REJECT STEP
@@ -219,8 +187,8 @@ while t < simTime
     T_LOG(stepCount) = t; 
     
     if mod(stepCount, 100) == 0
-        fprintf('Time: %.2f s | Chamber P: %.2f psi | dT: %.1e\n', ...
-            t, X_cur(10)/6895, dT);
+        fprintf('Time: %.2f s | Chamber P: %.2f psi | dT: %.1e | Iterations: %i\n', ...
+            t, X_cur(10)/6895, dT, iter);
     end
 end
 toc;
@@ -337,27 +305,30 @@ NumSpecies = 3;
 
 subplot(2,1,1);
     % Node 2 (OX Tank)
-    Idx_LOX_Liq = StartIdx + (2-1)*NumSpecies + 1; 
-    Idx_LOX_N2  = StartIdx + (2-1)*NumSpecies + 3;
+    Idx_LOX_Liq = StartIdx + (6-1)*NumSpecies + 1; 
+    Idx_LOX_N2  = StartIdx + (6-1)*NumSpecies + 3;
     plot(Time, X_LOG(Idx_LOX_Liq, :), 'c', 'LineWidth', 1.5); hold on;
     plot(Time, X_LOG(Idx_LOX_N2, :), 'w--');
     grid on;
     ylabel('Mass Fraction');
     legend('LOX Liquid', 'N2 Gas', 'TextColor', 'w', 'Color', 'none', 'EdgeColor', 'none');
-    title('Oxidizer Tank Composition');
+    title('Oxidizer Post Valve Composition');
     ylim([-0.05 1.05]); 
     set(gca, 'Color', DarkBg, 'XColor', AxColor, 'YColor', AxColor, 'GridColor', 'w', 'GridAlpha', GridAlpha);
 
 subplot(2,1,2);
     % Node 3 (FU Tank)
-    Idx_FU_Liq = StartIdx + (3-1)*NumSpecies + 2; 
-    Idx_FU_N2  = StartIdx + (3-1)*NumSpecies + 3;
+    Idx_FU_Liq = StartIdx + (7-1)*NumSpecies + 2; 
+    Idx_FU_N2  = StartIdx + (7-1)*NumSpecies + 3;
     plot(Time, X_LOG(Idx_FU_Liq, :), 'm', 'LineWidth', 1.5); hold on;
     plot(Time, X_LOG(Idx_FU_N2, :), 'w--');
     grid on;
     ylabel('Mass Fraction');
     xlabel('Time [s]');
     legend('IPA Liquid', 'N2 Gas', 'TextColor', 'w', 'Color', 'none', 'EdgeColor', 'none');
-    title('Fuel Tank Composition');
+    title('Fuel Post Valve Composition');
     ylim([-0.05 1.05]);
     set(gca, 'Color', DarkBg, 'XColor', AxColor, 'YColor', AxColor, 'GridColor', 'w', 'GridAlpha', GridAlpha);
+
+% FIG 5: AutoSequence
+Scheduler.PlotSequence(round(T_LOG(end)));

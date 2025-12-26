@@ -86,7 +86,7 @@ function XDOT = PhysicsEngine(X, System, U)
         FlowState_Vec = X(LinkIdx_Start:LinkIdx_End);
 
         % Flow direction vector
-        Dir_Vec = 0.5 + 0.5 * tanh(100 * FlowState_Vec);
+        Dir_Vec = 0.5 + 0.5 * tanh(20 * FlowState_Vec);
 
         % Upstream node proprieties
         P_Up_Vec = Pressure(Up_Vec) .* Dir_Vec + Pressure(Down_Vec) .* (1 - Dir_Vec);
@@ -102,7 +102,7 @@ function XDOT = PhysicsEngine(X, System, U)
 
         % Apply stratification and normalize
         LiqSum_Vec = sum(Y_Up_Raw(:, 1:2), 2);
-        isLiquid      = 0.5 + 0.5 * tanh(100 * LiqSum_Vec);
+        isLiquid      = 0.5 + 0.5 * tanh(7 * (LiqSum_Vec - 0.55));
         Y_Strat    = Y_Up_Raw;
         Y_Strat(:, 3) = Y_Strat(:, 3) .* (1 - isLiquid);
 
@@ -118,8 +118,9 @@ function XDOT = PhysicsEngine(X, System, U)
         FricTerm_Vec = FlowState_Vec .* sqrt(FlowState_Vec.^2 + 1e-6);
 
         % ODE
+        Rho_Fric = max(Rho_Mix_Vec, 1.0);
         XDOT(LinkIdx_Start:LinkIdx_End) = (A_Vec ./ L_Vec) .* ...
-            (DeltaP_Vec - (Zeta_Vec ./ (2 * Rho_Mix_Vec .* A_Vec.^2)) .* FricTerm_Vec);
+            (DeltaP_Vec - (Zeta_Vec ./ (2 * Rho_Fric .* A_Vec.^2)) .* FricTerm_Vec);
 
         % Store Massflows for global use
         Massflow(ID_Vec) = FlowState_Vec;
@@ -139,19 +140,23 @@ function XDOT = PhysicsEngine(X, System, U)
         % Logical Mask for Valves
         Type_Cell  = {AlgLinks.Type};
         isThrottle = strcmp(Type_Cell, 'Throttle')';
+        isCheck = strcmp(Type_Cell, 'Check')';
+
+        % Use Cv Math if valve is Throttle or Check
+        isActuated = isCheck | isThrottle;
 
         % Control Input handling
         if ~isempty(U)
-            Cv_Vec(isThrottle) = U(isThrottle); 
+            Cv_Vec(isActuated) = U(isActuated); 
         end
-
+        
         % Both Valves and Orifice Plates follow the same form.
-        Coeff_Vec = isThrottle * 2.402e-5 + (~isThrottle) .* A_Vec;
-        Sqrt_Mult = isThrottle * 1.0      + (~isThrottle) * 2.0;
+        Coeff_Vec = isActuated * 2.402e-5 + (~isActuated) .* A_Vec;
+        Sqrt_Mult = isActuated * 1.0      + (~isActuated) * 2.0;
 
         % Flow Direction & Upstream Properties
         DeltaP_Vec = X(Up_Vec) - X(Down_Vec);
-        Dir_Vec    = 0.5 + 0.5 * tanh(1e3 * DeltaP_Vec);
+        Dir_Vec    = 0.5 + 0.5 * tanh(20 * DeltaP_Vec);
 
         % Blending Upstream Properties
         P_Up_Vec = Pressure(Up_Vec) .* Dir_Vec + Pressure(Down_Vec) .* (1 - Dir_Vec);
@@ -163,7 +168,7 @@ function XDOT = PhysicsEngine(X, System, U)
 
         % Stratification
         LiqSum_Vec = sum(Y_Up_Raw(:, 1:2), 2);
-        isLiquid   = 0.5 + 0.5 * tanh(10 * (LiqSum_Vec - 0.1)); 
+        isLiquid   = 0.5 + 0.5 * tanh(7 * (LiqSum_Vec - 0.55)); 
         Y_Flow     = Y_Up_Raw;
         Y_Flow(:, 3) = Y_Flow(:, 3) .* (1 - isLiquid);
         Y_Flow     = Y_Flow ./ (sum(Y_Flow, 2) + 1e-9);
@@ -194,10 +199,19 @@ function XDOT = PhysicsEngine(X, System, U)
         % Smooth Min 
         DP_Eff = 0.5 * (DP_Raw + DP_Choked - sqrt((DP_Raw - DP_Choked).^2 + 1e-4));
 
-        % Final Massflow Calculation
+        % Robust Massflow Calculation
+        Eps = 100;
+        DensityTerm = sqrt(Sqrt_Mult .* Rho_Up_Final + 1e-9);
+        DPSoft = DP_Eff ./ ((DP_Eff.^2 + Eps).^0.25);
         SignTerm = tanh(1e3 * DeltaP_Vec);
-        SqrtTerm = sqrt(Sqrt_Mult .* Rho_Up_Final .* DP_Eff + 1e-9);
-        Massflow(ID_Vec) = Coeff_Vec .* Cv_Vec .* SqrtTerm .* SignTerm;
+        RawMassflow = Coeff_Vec .* Cv_Vec .* DensityTerm .* DPSoft .* SignTerm;
+        
+        % Check valve logic: Block massflows if backflow
+        isBackflow = DeltaP_Vec < 0;
+        BlockMask = isCheck & isBackflow;
+        RawMassflow(BlockMask) = 0.0;
+
+        Massflow(ID_Vec) = RawMassflow;
     end
 
     %% Conservation of Mass and Energy (Vectorized)
@@ -214,14 +228,14 @@ function XDOT = PhysicsEngine(X, System, U)
     % Upstream candidates
         Y_Up_Raw   = Y_Matrix(Link_Up, :);
         LiqSum_Up  = sum(Y_Up_Raw(:, 1:2), 2);
-        isLiquid_Up       = 0.5 + 0.5 * tanh(100 * LiqSum_Up);
+        isLiquid_Up       = 0.5 + 0.5 * tanh(7 * (LiqSum_Up - 0.55));
         Y_Up_Strat = Y_Up_Raw;
         Y_Up_Strat(:, 3) = Y_Up_Strat(:, 3) .* (1 - isLiquid_Up);
         Y_Up_Strat = Y_Up_Strat ./ (sum(Y_Up_Strat, 2) + 1e-9);
     % Downstream candidates
         Y_Down_Raw   = Y_Matrix(Link_Down, :);
         LiqSum_Down  = sum(Y_Down_Raw(:, 1:2), 2);
-        isLiquid_Down       = 0.5 + 0.5 * tanh(100 * LiqSum_Down);
+        isLiquid_Down       = 0.5 + 0.5 * tanh(7 * (LiqSum_Down - 0.55));
         Y_Down_Strat = Y_Down_Raw;
         Y_Down_Strat(:, 3) = Y_Down_Strat(:, 3) .* (1 - isLiquid_Down);
         Y_Down_Strat = Y_Down_Strat ./ (sum(Y_Down_Strat, 2) + 1e-9);
@@ -266,23 +280,29 @@ function XDOT = PhysicsEngine(X, System, U)
     Liq_For_P(IsComb_Vec) = 0;
 
     % Volume Safety (combustors are pure gas volume)
-    V_Safe = Vol_Ullage + 1e-6;
+    V_Safe = max(Vol_Ullage, 0.001 * V_Vec);
     V_Safe(IsComb_Vec) = V_Vec(IsComb_Vec);
+
+    % Effective Bulk Modulus
+    % Isothermal Bulk Modulus for Ideal Gas is P
+    Beta_Gas = Pressure; 
+    InvBeta  = (Alpha_Vec ./ Beta_Gas) + ((1 - Alpha_Vec) ./ Beta_Liq);
+    Beta_Eff = 1 ./ (InvBeta + 1e-12);
 
     % Pressure derivatives
     dP_GasTerm = Gas_For_P .* R_Vec .* T_Vec;
     dP_LiqTerm = Pressure .* (Liq_For_P ./ max(Rho_Liq_Vec, 100));
     dP_GasMode   = (dP_GasTerm + dP_LiqTerm) ./ V_Safe;
-    dP_FluidMode = (Beta_Liq ./ (V_Vec .* max(Rho_Liq_Vec, 100))) .* Net_Total;
+    dP_FluidMode = (Beta_Eff ./ (V_Vec .* max(RhoNode, 1))) .* Net_Total;
 
     % Blend Modes
-    BlendFactor = 0.5 + 0.5 * tanh(1e3 * (Alpha_Vec - 0.002));
+    BlendFactor = 0.5 + 0.5 * tanh(20 * (Alpha_Vec - 0.20));
     dP_Final    = BlendFactor .* dP_GasMode + (1 - BlendFactor) .* dP_FluidMode;
 
     % Species derivatives
     Mass_Node = V_Vec .* RhoNode;
     dY_Num    = Net_Spec - Net_Total .* Y_Matrix;
-    dY_dt     = dY_Num ./ (Mass_Node + 1e-9);
+    dY_dt     = dY_Num ./ (Mass_Node + 1e-5);
 
     % Fixed (boundary) node constraints
     Fixed_Vec = [System.Nodes.Fixed]';
