@@ -1,14 +1,13 @@
-function [Y0_LOX, Y0_IPA] = InitializeTanks(TankVolOX, TankVolIPA)
+function [Y0_LOX, Y0_IPA] = InitializeTanks(TankVolOX, TankVolIPA, StartP)
     %% Calculate Initial Tank Conditions
     % Fluid Properties [kg/m^3]
     rho_OX = 1141; % LOX
     rho_FU = 786;  % IPA
 
     % Constants
-    P_atm = 14.7;
     R_N2_init = 296.8; 
     T_amb_init = 293;
-    P_init_Pa = P_atm * 6895; 
+    P_init_Pa = StartP * 6895; 
 
     % Tank Geometry
     TargetUllage = 0.10; 

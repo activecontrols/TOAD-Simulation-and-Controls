@@ -91,7 +91,7 @@ classdef ValveManager < handle
             obj.CurrentU(SnapMask) = obj.TargetU(SnapMask);
             U = obj.CurrentU;
         end
-function PlotSequence(obj, t_end)
+        function PlotSequence(obj, t_end)
             % PLOTSEQUENCE Visualizes the valve schedule in Dark Mode
             % Input: t_end (Duration in seconds)
             
@@ -121,7 +121,7 @@ function PlotSequence(obj, t_end)
                 
                 % Process events
                 while EventPtr <= length(obj.SequenceTime) && ...
-                      t >= obj.SequenceTime(EventPtr)
+                    t >= obj.SequenceTime(EventPtr)
                     id = obj.SequenceID(EventPtr);
                     val = obj.SequenceCv(EventPtr);
                     TempTargets(id) = val;

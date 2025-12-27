@@ -13,7 +13,8 @@ TankVolOX = 0.03075;
 TankVolFU = 0.03746;
 
 % Initialize Tank Mass Fractions to 10% Ullage
-[Y0_OX, Y0_FU] = InitializeTanks(TankVolOX, TankVolFU);
+StartP = 500; %P_atm;
+[Y0_OX, Y0_FU] = InitializeTanks(TankVolOX, TankVolFU, StartP);
 
 %% Nodes
 % ID Map:
@@ -25,14 +26,13 @@ TankVolFU = 0.03746;
 % 6: Combustor
 % 7: Atmosphere
 % Constructor: Nodes(name, ID, Fixed, P0_psi, V_m3, Y0, LinksIN, LinksOUT, isCombustor)
-
 % Tanks
     Node(1) = Nodes('Regulator', 1, 1, 550, 5, [0 0 1], [], [1 2], false);
-    Node(2) = Nodes('Tank OX', 2, 0, P_atm, TankVolOX, Y0_OX, 1, 3, false);
-    Node(3) = Nodes('Tank IPA', 3, 0, P_atm, TankVolFU, Y0_FU, 2, 4, false);
+    Node(2) = Nodes('Tank OX', 2, 0, StartP, TankVolOX, Y0_OX, 1, 3, false);
+    Node(3) = Nodes('Tank IPA', 3, 0, StartP, TankVolFU, Y0_FU, 2, 4, false);
 % Lines
-    Node(4) = Nodes('Pre OX', 4, 0, P_atm, 0.0002, [1 0 0], 3, 5, false);
-    Node(5) = Nodes('Pre FU', 5, 0, P_atm, 0.0002, [0 1 0], 4, 6, false);
+    Node(4) = Nodes('Pre OX', 4, 0, StartP, 0.0002, [1 0 0], 3, 5, false);
+    Node(5) = Nodes('Pre FU', 5, 0, StartP, 0.0002, [0 1 0], 4, 6, false);
     Node(6) = Nodes('Post OX', 6, 0, P_atm, 0.0002, [0 0 1], 5, 7, false);
     Node(7) = Nodes('Post FU', 7, 0, P_atm, 0.0002, [0 0 1], 6, 8, false);
 % Manifold
@@ -104,12 +104,12 @@ Scheduler.SetTau('Main FU', 0.03);
 % Test Autosequence for System
 AutoSequence = {
     % Open Press Lines
-    0.0,    'Press OX',     1.0;
-    0.0,    'Press FU',     1.0;
+    0.0,    'Press OX',     0.7;
+    0.0,    'Press FU',     0.7;
     
     % Starup 
     4.0,    'Main FU',      0.9284;
-    4.05,    'Main OX',     1.4814;
+    4.06,    'Main OX',     1.4814;
 
     % Throttle Down
     8.0,    'Main FU',      0.2782;
@@ -133,6 +133,19 @@ AutoSequence = {
     17.0,   'Press OX',     0.0;
     17.0,   'Press FU',     0.0;
 };
+
+%% Purge Test Sequence
+% AutoSequence = {
+%     % Open Press Lines
+%     0.0,    'Press OX',     2.0;
+%     0.0,    'Press FU',     2.0;
+% 
+%     % Purge Test
+%     7,   'Purge OX',     .2;
+%     7,   'Purge FU',     .2;
+%     9,   'Purge OX',      0;
+%     9,   'Purge FU',      0;
+% };
 
 Scheduler.LoadSequence(AutoSequence);
 

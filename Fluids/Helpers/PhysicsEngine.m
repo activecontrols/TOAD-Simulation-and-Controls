@@ -1,4 +1,4 @@
-function XDOT = PhysicsEngine(X, System, U)
+function [XDOT] = PhysicsEngine(X, System, U)
     %% Constants & Setup
     PLength = size(System.Nodes, 2);
     MALength = size(System.Links.Algebraic, 2);
@@ -40,6 +40,27 @@ function XDOT = PhysicsEngine(X, System, U)
     % Normalize
     Y_Sum    = sum(Y_Matrix, 2);
     Y_Matrix = Y_Matrix ./ (Y_Sum + 1e-9);
+
+    %% Combustor Temp Logic
+    CEA_OF = [0.8, 0.9, 1.0, 1.1, 1.2, 1.3, 1.4, 1.5, 1.6, 1.7, ...
+              1.8, 1.9, 2.0, 2.1, 2.2, 2.3, 2.4, 2.5, 2.6, 2.7, ...
+              2.8, 2.9, 3.0, 3.1, 3.2, 3.3];
+    CEA_Temp = [1562, 1879, 2172, 2436, 2668, 2862, 3017, 3135, 3219, 3277, ...
+                3315, 3338, 3352, 3359, 3361, 3360, 3356, 3349, 3341, 3332, ...
+                3322, 3311, 3300, 3288, 3275, 3262];
+
+    % Current OF Ratio
+    Current_OF = Y_Matrix(:, 1) ./ (Y_Matrix(:, 2) + 1e-9);
+    OF_Clamped = max(min(Current_OF, 3.3), 0.8);
+
+    % Interpolate temps
+    T_Combustion = interp1(CEA_OF, CEA_Temp, OF_Clamped, 'linear');
+    MaskLean = 0.5 + 0.5 * tanh(10 * (Current_OF - 0.6));
+    MaskRich = 0.5 + 0.5 * tanh(10 * (3.5 - Current_OF));
+    MaskGas = 0.5 + 0.5 *  tanh(15 * (0.3 - Y_Matrix(:, 3)));
+    BurnFactor = MaskLean .* MaskRich .* MaskGas;
+    T_Dynamic = 293 + (T_Combustion - 293) .* BurnFactor;
+    T_Vec(IsComb_Vec) = T_Dynamic(IsComb_Vec);
 
     % Gas Density via. Ideal Gas Law
     Rho_Gas_Vec = Pressure ./ (R_Vec .* T_Vec);
@@ -296,7 +317,7 @@ function XDOT = PhysicsEngine(X, System, U)
     dP_FluidMode = (Beta_Eff ./ (V_Vec .* max(RhoNode, 1))) .* Net_Total;
 
     % Blend Modes
-    BlendFactor = 0.5 + 0.5 * tanh(20 * (Alpha_Vec - 0.20));
+    BlendFactor = 0.5 + 0.5 * tanh(50 * (Alpha_Vec - 0.08));
     dP_Final    = BlendFactor .* dP_GasMode + (1 - BlendFactor) .* dP_FluidMode;
 
     % Species derivatives

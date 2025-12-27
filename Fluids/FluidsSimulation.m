@@ -199,7 +199,8 @@ U_LOG = U_LOG(:, 1:stepCount);
 T_LOG = T_LOG(1:stepCount);
 
 %% VISUALIZATION (DARK MODE)
-close all
+close all;
+
 % Convert to common engineering units
 Time = T_LOG;
 PSI = 6895;
@@ -357,4 +358,4 @@ subplot(2,2,4);
     set(gca, 'Color', DarkBg, 'XColor', AxColor, 'YColor', AxColor, 'GridColor', 'w', 'GridAlpha', GridAlpha);
 
 % FIG 5: AutoSequence
-Scheduler.PlotSequence(round(T_LOG(end)));
+    Scheduler.PlotSequence(round(T_LOG(end)));
