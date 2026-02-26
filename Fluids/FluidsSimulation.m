@@ -26,8 +26,8 @@ end
 %% Simulation Loop 2 (Implicit Euler w/ Variable timestep & Robust Jacobian)
 % Initialize Solver 2 parameters
 simTime = 20;
-dT = 1e-3;
-MaxdT = 5e-2;
+dT = 1e-4;
+MaxdT = 3e-3;
 MindT = 1e-6;
 MaxSteps = 1e5;
 
@@ -40,6 +40,12 @@ t = 0;
 T_LOG(1) = t;
 X_LOG(:, 1) = X_cur;
 stepCount = 1;
+
+% Combustion Delay Logic
+Tau_Delay = System.Combustion.Tau;
+Inj_History.Time = [-Tau_Delay, 0]; 
+Inj_History.OX   = [0, 0]; 
+Inj_History.FU   = [0, 0];
 
 % Enable warnings to catch them programmatically
 warning('on', 'MATLAB:nearlySingularMatrix');
@@ -63,6 +69,17 @@ while t < simTime
     Saved_U = Scheduler.CurrentU;
     Saved_Target = Scheduler.TargetU;
     Saved_Idx = Scheduler.NextEventIdx;
+
+    % Combustion Delay Logic (lookup delayed rates)
+    t_query = t - Tau_Delay;
+    if t_query <= Inj_History.Time(1)
+        B_OX = Inj_History.OX(1);
+        B_FU = Inj_History.FU(1);
+    else
+        B_OX = interp1(Inj_History.Time, Inj_History.OX, t_query, 'linear', 'extrap');
+        B_FU = interp1(Inj_History.Time, Inj_History.FU, t_query, 'linear', 'extrap');
+    end
+    System.Combustion.BurnRates = [B_OX, B_FU];
     
     while ~isAccepted
         % Rewind scheduler
@@ -80,7 +97,7 @@ while t < simTime
         X_new = X_old;
         isConverged = false;
         
-        % 1. Compute Jacobian & Pre-conditioner (Initial)
+        % Compute Jacobian & Pre-conditioner (Initial)
         % We wrap this in a try-catch to SILENTLY handle singularities
         try
             % Temporarily treat warnings as errors so we can catch them
@@ -96,12 +113,12 @@ while t < simTime
             warning(warnState2);
             
             % Proceed with Newton Iterations
-            for iter = 1:35
+            for iter = 1:30
                 % Evaluate Dynamics
                 F = PhysicsEngine(X_new, System, U);
                 R = X_new - X_old - dT * F;
         
-                if max(abs(R)) < 1e-5
+                if max(abs(R)) < 5e-5
                     isConverged = true;
                     break;
                 end
@@ -120,7 +137,7 @@ while t < simTime
                 X_new = X_new + Delta;
     
                 % Recompute Jacobian every 5 iterations
-                if mod(iter, 5) == 0
+                if mod(iter, 2) == 0
                     J = NumericalJacobian(@(x) PhysicsEngine(x, System, U), X_new);
                     M = eye(length(X0)) - dT * J;
                     [LD, UD] = lu(M);
@@ -144,19 +161,19 @@ while t < simTime
             % Metric: Max Relative Change
             RelChange = abs(X_new - X_old) ./ (abs(X_new) + 1e-2);
             MaxChange = max(RelChange);
-            Tolerance = 0.20;  
-            Target    = 0.10;  
+            Tolerance = 0.15;  
+            Target    = 0.20;  
             
             if MaxChange > Tolerance && dT > MindT
                 isAccepted = false;
-                dT = max(dT * 0.5, MindT); 
+                dT = max(dT * 0.3, MindT); 
             else
                 isAccepted = true;
 
                 % Lowpass for timestep
                 Error = (Target / (MaxChange + 1e-9));
-                Factor = (Error)^0.5;
-                Beta = 0.05;
+                Factor = (Error)^0.4;
+                Beta = 0.01;
                 dT = (1 - Beta) * dT + Beta * Factor * dT;
             end
         else
@@ -166,7 +183,7 @@ while t < simTime
                 % (or log a warning)
                 isAccepted = true; 
             else
-                dT = max(dT * 0.4, MindT);
+                dT = max(dT * 0.3, MindT);
                 isAccepted = false;
             end
         end
@@ -178,7 +195,26 @@ while t < simTime
     t = t_next;      
     X_cur = X_new;   
     stepCount = stepCount + 1;
-    
+
+    % Extract flows to save to history
+    [~, Current_Flows] = PhysicsEngine(X_cur, System, U);
+
+    % Verify these IDs match PID_Structure.m (CRUCIAL)
+    Mdot_Inj_OX = Current_Flows(9);
+    Mdot_Inj_FU = Current_Flows(10);
+
+    % Append to History
+    Inj_History.Time(end+1) = t;
+    Inj_History.OX(end+1)   = Mdot_Inj_OX;
+    Inj_History.FU(end+1)   = Mdot_Inj_FU;
+
+    % Trim buffer
+    if Inj_History.Time(end) - Inj_History.Time(1) > 10*Tau_Delay
+         Inj_History.Time(1) = [];
+         Inj_History.OX(1)   = [];
+         Inj_History.FU(1)   = [];
+    end
+
     if stepCount > MaxSteps, break; end 
     
     % Log Data
@@ -193,12 +229,12 @@ while t < simTime
 end
 toc;
 
-% Trim logs to actual size after loop
-X_LOG = X_LOG(:, 1:stepCount);
-U_LOG = U_LOG(:, 1:stepCount);
-T_LOG = T_LOG(1:stepCount);
+%% Trim logs to actual size after loop
+X_LOG = X_LOG(:, 1:stepCount-1);
+U_LOG = U_LOG(:, 1:stepCount-1);
+T_LOG = T_LOG(1:stepCount-1);
 
-%% VISUALIZATION (DARK MODE)
+% VISUALIZATION (DARK MODE)
 close all;
 
 % Convert to common engineering units
@@ -299,34 +335,34 @@ subplot(2,1,2);
     xlabel('Time [s]');
     set(gca, 'Color', DarkBg, 'XColor', AxColor, 'YColor', AxColor, 'GridColor', 'w', 'GridAlpha', GridAlpha);
 
-% FIG 4: Node COmpositions
+% FIG 4: Node Compositions
 fig4 = figure('Name', 'Combustion Components', 'NumberTitle', 'off', 'Color', DarkBg);
 StartIdx = PLength + MDLength;
 NumSpecies = 3; 
 
 subplot(2,2,1);
-    % Node 6 (OX Post Valve)
-    Idx_LOX_Liq = StartIdx + (6-1)*NumSpecies + 1; 
-    Idx_LOX_N2  = StartIdx + (6-1)*NumSpecies + 3;
+    % Node 6 (OX Manifold)
+    Idx_LOX_Liq = StartIdx + (8-1)*NumSpecies + 1; 
+    Idx_LOX_N2  = StartIdx + (8-1)*NumSpecies + 3;
     plot(Time, X_LOG(Idx_LOX_Liq, :), 'c', 'LineWidth', 1.5); hold on;
     plot(Time, X_LOG(Idx_LOX_N2, :), 'w--');
     grid on;
     ylabel('Mass Fraction');
-    legend('LOX Liquid', 'N2 Gas', 'TextColor', 'w', 'Color', 'none', 'EdgeColor', 'none');
+    legend('LOX Liquid', 'Gases', 'TextColor', 'w', 'Color', 'none', 'EdgeColor', 'none');
     title('Oxidizer Post Valve Composition');
     ylim([-0.05 1.05]); 
     set(gca, 'Color', DarkBg, 'XColor', AxColor, 'YColor', AxColor, 'GridColor', 'w', 'GridAlpha', GridAlpha);
 
 subplot(2,2,3);
-    % Node 7 (FU Post Valve)
-    Idx_FU_Liq = StartIdx + (7-1)*NumSpecies + 2; 
-    Idx_FU_N2  = StartIdx + (7-1)*NumSpecies + 3;
+    % Node 7 (FU Manifold)
+    Idx_FU_Liq = StartIdx + (9-1)*NumSpecies + 2; 
+    Idx_FU_N2  = StartIdx + (9-1)*NumSpecies + 3;
     plot(Time, X_LOG(Idx_FU_Liq, :), 'm', 'LineWidth', 1.5); hold on;
     plot(Time, X_LOG(Idx_FU_N2, :), 'w--');
     grid on;
     ylabel('Mass Fraction');
     xlabel('Time [s]');
-    legend('IPA Liquid', 'N2 Gas', 'TextColor', 'w', 'Color', 'none', 'EdgeColor', 'none');
+    legend('IPA Liquid', 'Gases', 'TextColor', 'w', 'Color', 'none', 'EdgeColor', 'none');
     title('Fuel Post Valve Composition');
     ylim([-0.05 1.05]);
     set(gca, 'Color', DarkBg, 'XColor', AxColor, 'YColor', AxColor, 'GridColor', 'w', 'GridAlpha', GridAlpha);
@@ -341,13 +377,13 @@ subplot(2,2,2);
     grid on;
     ylabel('Mass Fraction');
     xlabel('Time [s]');
-    legend('Oxidizer', 'Fuel', 'N2 Gas', 'TextColor', 'w', 'Color', 'none', 'EdgeColor', 'none');
+    legend('Oxidizer', 'Fuel', 'Gases', 'TextColor', 'w', 'Color', 'none', 'EdgeColor', 'none');
     title('TADPOLE Chamber Composition');
     ylim([-0.05 1.05]);
     set(gca, 'Color', DarkBg, 'XColor', AxColor, 'YColor', AxColor, 'GridColor', 'w', 'GridAlpha', GridAlpha);
 subplot(2,2,4);
     % OF Ratio Trace
-    OF_C = X_LOG(Idx_C_OX, :) ./ X_LOG(Idx_C_FU, :);
+    OF_C = X_LOG(PLength+3, :) ./ X_LOG(PLength+4, :);
     plot(Time, OF_C, 'Color', [0.7 0 1], 'LineWidth', 1.5);
     grid on;
     ylabel('Mass Fraction');

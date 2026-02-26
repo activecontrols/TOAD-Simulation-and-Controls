@@ -1,4 +1,4 @@
-function [Cv_OX, Cv_FU] = ValveController(Pc, OF)
+function [Cv_OX, Cv_FU] = ValveController(Pc, OF, Tank)
     % This function returns the optimal flow coefficient for the main
     % propellant valves given a chamber pressure target and a mass flow
     % ratio.
@@ -6,7 +6,7 @@ function [Cv_OX, Cv_FU] = ValveController(Pc, OF)
     PSI_2_Pa = 6895;
 
     % Tank set pressures (assumed constant for now)
-    P_Tank = 550 * PSI_2_Pa;
+    P_Tank = Tank * PSI_2_Pa;
 
     % Fluid proprieties
     Rho_OX = 1141;
