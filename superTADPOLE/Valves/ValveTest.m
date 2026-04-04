@@ -3,11 +3,11 @@ clear; clc; close all;
 
 % Simulation Setup
 tspan = [0 4];          % Simulate for 4 seconds 
-x0 = [0; 0; 0; 0];      % Initial states: [MotorPos, MotorVel, ValvePos, ValveVel]
+x0 = [0; 0; 0; 0; 0];      % Initial states: [MotorPos, MotorVel, ValvePos, ValveVel]
 
 % Define the Target Trajectory (0.5Hz, 20 deg amplitude)
-Freq = 0.5;                % Hz
-Amplitude = 20 * (pi / 180); % Convert degrees to radians
+Freq = 2;                % Hz
+Amplitude = 10 * (pi / 180); % Convert degrees to radians
 AngleTargetFCN = @(t) Amplitude * sin(2 * pi * Freq * t);
 
 % ODE Solver Options
