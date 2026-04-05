@@ -1,4 +1,4 @@
-function [x, u, xdot] = EoMGenerator(constants, mode)
+function [x, u, xdot] = FlightDynamicsGen(constants, mode)
 % Symbolic defiitions
 syms r1 r2 r3               % earth frame position (R3 up, NWU frame)
 syms v1 v2 v3               % earth frame velocity
@@ -7,8 +7,9 @@ syms omega1 omega2 omega3   % earth-body angular velocity
 syms m_lox m_ipa            % Propellant masses
 syms theta phi;             % thrust angles
 syms thrust                 % thrust magnitude
-syms roll                   % roll input (rad/sec^2)
-syms m_dry m_wet l g rTB    % system constants
+syms roll                   % roll input (Nm)
+syms m_dry l g rTB          % system constants
+syms m_lox_i m_ipa_i        % constants
 syms OxHeight FuHeight      % constants
 syms OxRadius FuRadius      % constants
 syms Ox_Z Fu_Z              % constants
@@ -43,21 +44,13 @@ FI = C_IB * TB + [0; 0;-m*g];
 rdot = v;
 vdot = FI / m;
 
-% Body frame moment (Roll torque along the thrust vector axis due to contra
-% EDF) (TODO: UPDATE for use with RCS)
-% Off center moments for Simulation
-TBx = -0.008 * (mode == 1);
-TBy = 0.0120 * (mode == 1);
-MB = zetaCross([TBx; TBy; rTB])*TB;
-
 % Tank drain dynamics
-mdot_lox = -thrust / maxThrust * OF / (1 + OF);
-mdot_ipa = -thrust / maxThrust * 1 / (1 + OF);
+mdot_lox = -thrust / MaxThrust * OF / (1 + OF) * MaxMdot;
+mdot_ipa = -thrust / MaxThrust * 1 / (1 + OF) * MaxMdot;
 
-% Propellant CoM Locations
-FluidFill = (1 - (m_wet - m_dry)) / (m_lox + m_ipa);
-OxFluidHeight = FluidFill * OxHeight * 0.9;
-FuFluidHeight = FluidFill * FuHeight * 0.9;
+% Propellant Fill height
+OxFluidHeight = (m_lox / m_lox_i) * OxHeight * 0.9;
+FuFluidHeight = (m_ipa / m_ipa_i) * FuHeight * 0.9;
 
 % Propellant inertias
 J_xx = 1/12 * m_lox * (3 * OxRadius^2 + OxFluidHeight^2);
@@ -72,23 +65,43 @@ J_ipa = [J_xx, 0, 0;
          0, J_xx, 0;
          0,    0, J_zz];
 
-% Parallel Axis Theorem
-OxFluidLocation = Ox_Z + OxHeight / 2 - OxFluidHeight;
-FuFluidLocation = Fu_Z + FuHeight / 2 - FuFluidHeight;
-J_tot = J + J_lox * m_lox * OxFluidLocation^2 + J_ipa * m_ipa * FuFluidLocation;
+% Fluid fills & location of CoM
+OxFluidLocation = Ox_Z + OxFluidHeight / 2;
+FuFluidLocation = Fu_Z + FuFluidHeight / 2;
+CGz = (m_dry * rTB + m_lox * OxFluidLocation + m_ipa * FuFluidLocation) / m;
+
+% Distances to CG
+d_dry = rTB - CGz;
+d_lox = OxFluidLocation - CGz;
+d_ipa = FuFluidLocation - CGz;
+
+% Shifted Inertias
+J_dry = J + m_dry * diag([d_dry^2, d_dry^2, 0]);
+J_lox = J_lox + m_lox * diag([d_lox^2, d_lox^2, 0]);
+J_ipa = J_ipa + m_ipa * diag([d_ipa^2, d_ipa^2, 0]);
+
+% Bring everything to instantaneous CG (w.r.t Engine attachment frame)
+J_tot = J_dry + J_lox + J_ipa;
+
+% Body frame moment (Roll torque along the thrust vector axis due to contra
+% EDF) (TODO: UPDATE for use with RCS)
+% Off center moments for Simulation
+TBx = -0.008 * (mode == 1);
+TBy = 0.0120 * (mode == 1);
+MB = zetaCross([TBx; TBy; -CGz])*TB + (TB * roll) / thrust;
 
 % Dynamics
 qdot = 0.5 * HamiltonianProd(q) * [0; omegaB];
-omegaBdot = J_tot^(-1) * (MB - zetaCross(omegaB_AUG) * J_tot * omegaB_AUG) + (TB * roll) / thrust;
+omegaBdot = J_tot \ (MB - zetaCross(omegaB) * J_tot * omegaB);
 
 %State vector
-x = [q; r; v; omegaB; gyroBias];
+x = [q; r; v; omegaB; m_lox; m_ipa];
 
 %Input vector (Assuming concentric EDF design)
 u = [theta; phi; thrust; roll];
     
 %State derivative
-xdot = [qdot; rdot; vdot; omegaBdot; gyroBias_dot];
+xdot = [qdot; rdot; vdot; omegaBdot; mdot_lox; mdot_ipa];
 
 % Create symbolic and numeric constant arrays
 % Perturb true m, rTB, and J values (TODO: Update with disturbance vector &
