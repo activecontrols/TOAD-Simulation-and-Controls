@@ -4,7 +4,8 @@ ASTRA_vel = X(8:10); % Lateral velocities
 % Quaternion components
 q = X(1:4);
 
-mass = constantsASTRA.m;
+% UPDATE WIND FCN TO USE ACTUAL MASS
+mass = constantsASTRA.m_dry;
 MoI = constantsASTRA.J;
 moment = [0, 0, 0.120] * quatRot(q); % Distance from CoM to CoP rotated by Earth to Body DCM
 

@@ -47,5 +47,8 @@ constantsTOAD.K_Att = K_Att;
 covar_vec = [accel_proc_cov; gyro_cov; mag_proc_cov];
 IMU_Rate = 1000;
 
+% Create slBus
+TOAD = Simulink.Bus.createObject(constantsTOAD);
+
 
 
