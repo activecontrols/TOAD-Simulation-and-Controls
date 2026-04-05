@@ -14,7 +14,7 @@
 % channels.
 %
 % By: Pablo Plata   -   11/27/25 (Happy Thanksgiving!)
-function [U, Att] = TOAD_Controller(PosTarget, X, constantsTOAD, t)
+function [U, Att] = TOAD_Control_FCN(PosTarget, X, constantsTOAD, t)
 
 % Time Counter
 persistent lastT VelErrorI AttErrorI lastAttError
@@ -39,7 +39,7 @@ U = zeros(4,1);
 
 %% First Loop (P Loop)
     % Position Error Vector
-    PosError = PosTarget - X(5:7);
+    PosError = PosTarget - X(5:7, :);
     
     % Velocity Command
     K_P = [0.75; 0.75; 0.65];
@@ -51,7 +51,7 @@ U = zeros(4,1);
 
 %% Second Loop (PI Loop)
     % Velocity Error Vector
-    VelError = VelTarget - X(8:10);
+    VelError = VelTarget - X(8:10, :);
 
     % Integral Accumulator
     K_I = [2; 2; 5];
@@ -85,8 +85,8 @@ U = zeros(4,1);
     AccelTarget = max(min(AccelTarget, MaxAccelUp), MaxAccelDown);
 
 %% Kinematics Step
-    % Compute thrust target
-    TargetForce_I = constantsTOAD.m * AccelTarget;
+    % Compute thrust target (UPDATE TO USE MASS STATES)
+    TargetForce_I = constantsTOAD.m_dry * AccelTarget;
     U(3) = norm(TargetForce_I);
     
     % Compute target attitude via GSP.
@@ -107,7 +107,7 @@ U = zeros(4,1);
 
 %% Third Loop (LQRi)
     % Attitude Error computation
-    Q_Conj = [X(1); -X(2:4)];
+    Q_Conj = [X(1); -X(2:4, :)];
     AttError = HamiltonianProd(Q_Conj) * TargetAtt;
     if AttError(1) < 0
         AttError = -AttError;
@@ -120,7 +120,7 @@ U = zeros(4,1);
     AttErrorI = max(min(AttErrorI, Clamp), -Clamp);
 
     % State vector and error
-    X_Err = [-AttError(2:4); X(11:13); AttErrorI];
+    X_Err = [-AttError(2:4, :); X(11:13, :); AttErrorI];
 
     % LQR Controller
     U([1 2 4]) = -K_Att * X_Err;

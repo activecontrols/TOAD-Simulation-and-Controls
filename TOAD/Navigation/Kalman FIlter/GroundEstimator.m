@@ -113,18 +113,6 @@ if any(lastZ(10:15) ~= z(10:15))
     residual = (z(10:15) - z_hat) - H * dx;
     inn = L * residual;
     dx = dx + inn;
-else
-    %% Section purely for output on testing
-    % % Measurement matrix
-    % H = zeros(6,18);
-    % H(1:3, 1:3) = zetaCross(R_b2i' * [0; 0; constantsASTRA.g]);
-    % H(1:3, 13:15) = eye(3);
-    % H(4:6, 1:3) = zetaCross(R_b2i' * constantsASTRA.mag);
-    % H(4:6, 16:18) = MagMatrix;
-    
-    % A priori covariance and Kalman gain
-    L = P * H' / (H * P * H' + R);
-    L(10:18, :) = 0;
 end
 
 % Output

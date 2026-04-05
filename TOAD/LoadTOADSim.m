@@ -46,6 +46,10 @@ magDistMatrix = eye(3);
 constantsTOAD.K_Att = K_Att;
 covar_vec = [accel_proc_cov; gyro_cov; mag_proc_cov];
 IMU_Rate = 1000;
+Checkpoints =  [0, 0, 0,  3,  3, 0, 0, 0;
+                0, 0, 3,  3,  0, 0, 0, 0;
+                0, 3, 3,  3,  3, 3, 0, 0];
+HoldTimeReqs = [7, 5, 3, 3, 3, 3, 0, 0.2];
 
 % Create slBus
 TOAD = Simulink.Bus.createObject(constantsTOAD);
