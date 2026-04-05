@@ -1,4 +1,4 @@
-function [x, u, xdot] = FlightDynamicsGen(constants, mode)
+function FlightDynamicsGen(C)
 % Symbolic defiitions
 syms r1 r2 r3               % earth frame position (R3 up, NWU frame)
 syms v1 v2 v3               % earth frame velocity
@@ -8,14 +8,13 @@ syms m_lox m_ipa            % Propellant masses
 syms theta phi;             % thrust angles
 syms thrust                 % thrust magnitude
 syms roll                   % roll input (Nm)
-syms m_dry l g rTB          % system constants
-syms m_lox_i m_ipa_i        % constants
+syms J [3 3]                % Dry Intertia Matrix
+syms m_dry g rTB            % system constants
+syms OxMassI  FuMassI       % constants
 syms OxHeight FuHeight      % constants
 syms OxRadius FuRadius      % constants
 syms Ox_Z Fu_Z              % constants
 syms MaxThrust MaxMdot OF   % constants
-
-syms J [3 3]                % Dry Intertia Matrix
 
 % Total Mass
 m = m_dry + m_lox + m_ipa;
@@ -49,8 +48,8 @@ mdot_lox = -thrust / MaxThrust * OF / (1 + OF) * MaxMdot;
 mdot_ipa = -thrust / MaxThrust * 1 / (1 + OF) * MaxMdot;
 
 % Propellant Fill height
-OxFluidHeight = (m_lox / m_lox_i) * OxHeight * 0.9;
-FuFluidHeight = (m_ipa / m_ipa_i) * FuHeight * 0.9;
+OxFluidHeight = (m_lox / OxMassI) * OxHeight * 0.9;
+FuFluidHeight = (m_ipa / FuMassI) * FuHeight * 0.9;
 
 % Propellant inertias
 J_xx = 1/12 * m_lox * (3 * OxRadius^2 + OxFluidHeight^2);
@@ -82,39 +81,43 @@ J_ipa = J_ipa + m_ipa * diag([d_ipa^2, d_ipa^2, 0]);
 
 % Bring everything to instantaneous CG (w.r.t Engine attachment frame)
 J_tot = J_dry + J_lox + J_ipa;
+J_tot = simplify(J_tot);
 
 % Body frame moment (Roll torque along the thrust vector axis due to contra
 % EDF) (TODO: UPDATE for use with RCS)
 % Off center moments for Simulation
-TBx = -0.008 * (mode == 1);
-TBy = 0.0120 * (mode == 1);
+TBx = 0;
+TBy = 0;
 MB = zetaCross([TBx; TBy; -CGz])*TB + (TB * roll) / thrust;
 
 % Dynamics
 qdot = 0.5 * HamiltonianProd(q) * [0; omegaB];
-omegaBdot = J_tot \ (MB - zetaCross(omegaB) * J_tot * omegaB);
+netTau = (MB - zetaCross(omegaB) * J_tot * omegaB);
 
 %State vector
 x = [q; r; v; omegaB; m_lox; m_ipa];
-
-%Input vector (Assuming concentric EDF design)
 u = [theta; phi; thrust; roll];
     
-%State derivative
-xdot = [qdot; rdot; vdot; omegaBdot; mdot_lox; mdot_ipa];
-
-% Create symbolic and numeric constant arrays
-% Perturb true m, rTB, and J values (TODO: Update with disturbance vector &
-% Monte Carlo workflow)
-if mode == 1
-    constants.rTB = constants.rTB;
-    constants.m = constants.m * 0.97;
-    constants.J(:) = constants.J(:) * 1.3;
-end
-
-constVal = [constants.m; constants.l; constants.g; constants.rTB; constants.J(:)];
-constVec = [m_dry; l; g; rTB; J(:)];
+%State derivatives
+xdot_6DoF = [qdot; rdot; vdot;];
+xdot_Mass = [mdot_lox; mdot_ipa];
 
 % Subsitute numeric values of constants into xdot
-xdot = subs(xdot, constVec, constVal);
+constVal = [C.m_dry; C.g; C.rTB; C.J(:); C.MaxThrust; C.MaxMdot; C.OF;
+            C.OxMass; C.FuMass; C.OxHeight; C.FuHeight; C.OxRadius;
+            C.FuRadius; C.Ox_Z; C.Fu_Z];
+constVec = [m_dry; g; rTB; J(:); MaxThrust; MaxMdot; OF;
+            OxMassI; FuMassI; OxHeight; FuHeight; OxRadius;
+            FuRadius; Ox_Z; Fu_Z];
+xdot_6DoF = subs(xdot_6DoF, constVec, constVal);
+xdot_Mass = subs(xdot_Mass, constVec, constVal);
+J_tot = subs(J_tot, constVec, constVal);
+netTau = subs(netTau, constVec, constVal);
+
+disp('Generating RawDynamics.m...');
+    matlabFunction(xdot_6DoF, xdot_Mass, J_tot, netTau, ...
+        'File', './Flight Dynamics/Dynamics Files/RawDynamics', ...
+        'Vars', {x, u}, ...
+        'Outputs', {'xdot_kin', 'xdot_mass', 'J_tot', 'netTau'});
+
 end
