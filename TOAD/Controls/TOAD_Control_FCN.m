@@ -29,7 +29,7 @@ lastT = t;
 K_Att = constantsTOAD.K_Att;
 
 % Controller Limits
-thrustMax = 1.5 * 9.8;   %N
+thrustMax = constantsTOAD.MaxThrust;   %N
 gimbalMax = pi/18;
 InputBounds = [-gimbalMax       gimbalMax;
                -gimbalMax       gimbalMax;

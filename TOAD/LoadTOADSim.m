@@ -29,10 +29,13 @@ constantsTOAD.OxMass = 20.78;   constantsTOAD.FuMass = 19.79;
 constantsTOAD.OxHeight = 0.377; constantsTOAD.FuHeight = 0.495;
 constantsTOAD.OxRadius = 0.146; constantsTOAD.FuRadius = 0.146;
 constantsTOAD.Ox_Z = 0.85;      constantsTOAD.Fu_Z = 1.35;
+constantsTOAD.m_wet = constantsTOAD.m_dry + constantsTOAD.OxMass + constantsTOAD.FuMass;
 
 % Dynamic Files Generation & Control
 FlightDynamicsGen(constantsTOAD);
 [K_Att, ~] = TOAD_Controller_Gen(constantsTOAD);
+x0 = [1; zeros(12,1); constantsTOAD.OxMass; constantsTOAD.FuMass];
+u0 = [0; 0; constantsTOAD.g * constantsTOAD.m_wet; 0];
 
 % Kalman Filter & Control Parameters
 constantsTOAD.Q = p2.Q;
@@ -49,7 +52,8 @@ IMU_Rate = 1000;
 Checkpoints =  [0, 0, 0,  3,  3, 0, 0, 0;
                 0, 0, 3,  3,  0, 0, 0, 0;
                 0, 3, 3,  3,  3, 3, 0, 0];
-HoldTimeReqs = [7, 5, 3, 3, 3, 3, 0, 0.2];
+HoldTimeReqs = [20, 5, 3, 3, 3, 3, 0, 0.2];
+dt_SIM = 1/1000;
 
 % Create slBus
 TOAD = Simulink.Bus.createObject(constantsTOAD);

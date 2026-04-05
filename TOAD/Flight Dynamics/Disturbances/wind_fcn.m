@@ -1,12 +1,12 @@
-function total_vect = wind_fcn(constantsASTRA, wind_vel, X)
+function total_vect = wind_fcn(constantsTOAD, wind_vel, X)
 
 ASTRA_vel = X(8:10); % Lateral velocities
 % Quaternion components
 q = X(1:4);
 
 % UPDATE WIND FCN TO USE ACTUAL MASS
-mass = constantsASTRA.m_dry;
-MoI = constantsASTRA.J;
+mass = constantsTOAD.m_wet;
+MoI = constantsTOAD.J;
 moment = [0, 0, 0.120] * quatRot(q); % Distance from CoM to CoP rotated by Earth to Body DCM
 
 rel_vel = wind_vel + ASTRA_vel;
@@ -32,6 +32,6 @@ ang_accel_vect = MoI\transpose(torque_vect);
 
 
 % Turns the acceleration into a 16 state vector to add to xdot
-total_vect = [zeros(7,1); transpose(accel_vect); ang_accel_vect; zeros(3,1)];
+total_vect = [zeros(7,1); transpose(accel_vect); ang_accel_vect; zeros(2,1)];
 
 end

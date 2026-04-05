@@ -21,7 +21,7 @@ T_vec = [cos(theta)*sin(phi); -sin(theta); cos(theta)*cos(phi)];
 TB = thrust * T_vec;
 
 % Torque vector
-MB = zetaCross([0; 0; rTB])*TB;
+MB = zetaCross([0; 0; -rTB])*TB;
 M = [q(1) -q(2) -q(3) -q(4);
      q(2)  q(1) -q(4)  q(3);
      q(3)  q(4)  q(1) -q(2);
