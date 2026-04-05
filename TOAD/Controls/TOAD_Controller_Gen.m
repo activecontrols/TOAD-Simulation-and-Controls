@@ -6,7 +6,7 @@ syms omega1 omega2 omega3   % earth-body angular velocity
 syms theta phi;             % thrust angles
 syms thrust                 % thrust magnitude
 syms roll                   % roll input (rad/sec^2)
-syms m l g rTB              % system constants
+syms m g rTB              % system constants
 syms J [3 3]                % Intertia Matrix
 
 %% Equations of Motion
@@ -37,9 +37,9 @@ xdot = [qdot; omegaBdot];
 u = [theta; phi; roll];
 
 % Substitude constants in
-constVal = [constants.m; constants.l; constants.g; constants.rTB; constants.J(:);
-            constants.m * constants.g];
-constVec = [m; l; g; rTB; J(:); thrust];
+constVal = [constants.m_dry; constants.g; constants.rTB; constants.J(:);
+            constants.m_dry * constants.g];
+constVec = [m; g; rTB; J(:); thrust];
 
 % Subsitute numeric values of constants into xdot
 xdot = subs(xdot, constVec, constVal);

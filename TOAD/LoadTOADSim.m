@@ -14,7 +14,7 @@ clear EstimateStateFCN;
 clear SensorSimulation;
 clear GPS_Sim;
 clear DigitalNF;
-constants_port;
+MEKF_Constants;
 
 %% Create constants struct for TOAD (Approximate values, all metric)
 % Vehicle Parameters
@@ -30,12 +30,19 @@ constantsTOAD.OxHeight = 0.377; constantsTOAD.FuHeight = 0.495;
 constantsTOAD.OxRadius = 0.146; constantsTOAD.FuRadius = 0.146;
 constantsTOAD.Ox_Z = 0.85;      constantsTOAD.Fu_Z = 1.35;
 
+% Dynamic Files Generation & Control
+FlightDynamicsGen(constantsTOAD);
+[K_Att, ~] = TOAD_Controller_Gen(constantsTOAD);
+
 % Kalman Filter & Control Parameters
 constantsTOAD.Q = p2.Q;
 constantsTOAD.R = p2.obsv_cov_mat;
 constantsTOAD.BSigma = 5e-2;
 constantsTOAD.BBias = 1e-8;
 constantsTOAD.mag = [cos(pi/6); 0; -sin(pi/6)];
+magDistMatrix = eye(3) + 0.02 * randn(3);
+magDistMatrix = (magDistMatrix + magDistMatrix') / 2;
+magDistMatrix = eye(3);
 constantsTOAD.K_Att = K_Att;
 covar_vec = [accel_proc_cov; gyro_cov; mag_proc_cov];
 IMU_Rate = 1000;
