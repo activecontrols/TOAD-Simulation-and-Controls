@@ -57,6 +57,7 @@ dt_SIM = 1/1000;
 
 % Create slBus
 TOAD = Simulink.Bus.createObject(constantsTOAD);
+Waypoints = TrajectoryBuilder;
 
 
 

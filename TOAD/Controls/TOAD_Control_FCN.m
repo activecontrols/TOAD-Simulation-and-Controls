@@ -14,7 +14,7 @@
 % channels.
 %
 % By: Pablo Plata   -   11/27/25 (Happy Thanksgiving!)
-function [U, Att] = TOAD_Control_FCN(PosTarget, X, constantsTOAD, t)
+function [U, AttError] = TOAD_Control_FCN(PosTarget, X, constantsTOAD, t, MaxVel, VelFF)
 
 % Time Counter
 persistent lastT VelErrorI AttErrorI lastAttError
@@ -42,11 +42,10 @@ U = zeros(4,1);
     PosError = PosTarget - X(5:7, :);
     
     % Velocity Command
-    K_P = [0.65; 0.65; 0.60];
-    VelTarget = K_P .* PosError;
+    K_P = [0.5; 0.5; 0.75];
+    VelTarget = K_P .* PosError + VelFF;
 
     % Velocity Saturation Step
-    MaxVel = [3 3 6]';
     VelTarget = max(min(VelTarget, MaxVel), -MaxVel);
 
 %% Second Loop (PI Loop)
@@ -54,12 +53,12 @@ U = zeros(4,1);
     VelError = VelTarget - X(8:10, :);
 
     % Integral Accumulator
-    K_I = [1; 1; 2];
-    Leak = 0.07;
+    K_I = [0.8; 0.8; 2];
+    Leak = 0.05;
     Clamp = [5; 5; 5];
 
     % Normalize errors (0 to 1 scale)
-    MaxAttError = [0.06; 0.06; 0.1];
+    MaxAttError = [0.15; 0.15; 0.1];
     MaxVelError = [0.2; 0.2; 0.2];
     NormAttErr = abs(lastAttError) ./ MaxAttError;
     NormVelErr = abs(VelError) ./ MaxVelError;
@@ -74,7 +73,7 @@ U = zeros(4,1);
     K_I = K_I .* Gate;
     VelErrorI = VelErrorI + K_I .* VelError .* dT;
     VelErrorI = max(min(VelErrorI, Clamp), -Clamp);
-    K_P = [2; 2; 5];
+    K_P = [1.8; 1.8; 7];
 
     % Acceleration Target
     AccelTarget = K_P .* VelError + VelErrorI  + [0; 0; constantsTOAD.g];
@@ -129,6 +128,5 @@ U = zeros(4,1);
 uMax = InputBounds(:, 2);
 uMin = InputBounds(:, 1);
 U = min(max(U, uMin), uMax);
-Att = AttError;
     
 
