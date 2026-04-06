@@ -21,7 +21,7 @@ MEKF_Constants;
 constantsTOAD.m_dry = 132.5;
 constantsTOAD.g = 9.80145; 
 constantsTOAD.rTB = 1.1;
-constantsTOAD.J = diag([80 80 15]);
+constantsTOAD.J = diag([50 50 15]);
 constantsTOAD.MaxThrust = 2446.52;
 constantsTOAD.MaxMdot = 1.3204;
 constantsTOAD.OF = 1;
@@ -33,7 +33,7 @@ constantsTOAD.m_wet = constantsTOAD.m_dry + constantsTOAD.OxMass + constantsTOAD
 
 % Dynamic Files Generation & Control
 FlightDynamicsGen(constantsTOAD);
-[K_Att, ~] = TOAD_Controller_Gen(constantsTOAD);
+[K_Att, ~] = TOAD_Controller_Gen(constantsTOAD, constantsTOAD.OxMass, constantsTOAD.FuMass);
 x0 = [1; zeros(12,1); constantsTOAD.OxMass; constantsTOAD.FuMass];
 u0 = [0; 0; constantsTOAD.g * constantsTOAD.m_wet; 0];
 
@@ -49,10 +49,10 @@ magDistMatrix = eye(3);
 constantsTOAD.K_Att = K_Att;
 covar_vec = [accel_proc_cov; gyro_cov; mag_proc_cov];
 IMU_Rate = 1000;
-Checkpoints =  [0, 0, 0,  3,  3, 0, 0, 0;
-                0, 0, 3,  3,  0, 0, 0, 0;
-                0, 3, 3,  3,  3, 3, 0, 0];
-HoldTimeReqs = [20, 5, 3, 3, 3, 3, 0, 0.2];
+Checkpoints =  [0, 5, 5,  5;
+                0, 5, 10, 10;
+                0, 50, 0, 0];
+HoldTimeReqs = [20, 10, 2, 3];
 dt_SIM = 1/1000;
 
 % Create slBus

@@ -18,7 +18,7 @@ R_b2i = quatRot(q)';
 
 % GPS velocity correction
 rGPS = [0 0 0.31]';
-z(13:15) = z(13:15) - R_b2i * cross(z(4:6), rGPS);
+z(13:15) = z(13:15) + R_b2i * cross(z(4:6), rGPS);
 
 % Process Covariance Matrix
 persistent P lastZ 
@@ -55,7 +55,7 @@ if sum(lastZ(10:15) - z(10:15)) ~=0
 
     % Measurement Covariance Matrix
     gps_pos_covar = 0.2 * RTK + 10 * (1 - RTK);
-    gps_vel_covar = 0.05; %gps_pos_covar * 5;
+    gps_vel_covar = 0.1; %gps_pos_covar * 5;
     R = diag([gps_pos_covar^2 * ones(3,1); gps_vel_covar^2 * ones(3,1)]);
 
     % A priori covariance and Kalman gain

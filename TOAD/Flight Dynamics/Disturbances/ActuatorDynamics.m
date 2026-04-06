@@ -33,7 +33,6 @@ function xdot = ActuatorDynamics(x, u, GND)
     % Since torque depends on thrust changes on two fans, response time is
     % half that of thrust. We artificially add an error to the applied
     % input, proportional to the squared magnitude of the thrust pct
-    roll_error = 0.05 * (u(3) / (1.5 * 9.8))^2 * (1 - GND);
-    xdot(6) = (1/(tau/2)) * (u(4) + roll_error - x(6));
+    xdot(6) = (1/(tau/2)) * (u(4)- x(6));
 
 end

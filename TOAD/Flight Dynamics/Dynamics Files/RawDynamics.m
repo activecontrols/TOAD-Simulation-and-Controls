@@ -75,7 +75,7 @@ if nargout > 2
     t48 = t46.^2;
     t49 = m_ipa.*t47;
     t50 = m_lox.*t48;
-    t51 = t37+t38+t44+t49+t50+8.0e+1;
+    t51 = t37+t38+t44+t49+t50+5.0e+1;
     J_tot = reshape([t51,0.0,0.0,0.0,t51,0.0,0.0,0.0,t34],[3,3]);
 end
 if nargout > 3

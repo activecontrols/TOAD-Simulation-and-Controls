@@ -34,7 +34,7 @@ gimbalMax = pi/18;
 InputBounds = [-gimbalMax       gimbalMax;
                -gimbalMax       gimbalMax;
                .4 * thrustMax   thrustMax;
-               -pi/6            pi/6];
+               -10              10];
 U = zeros(4,1);
 
 %% First Loop (P Loop)
@@ -42,11 +42,11 @@ U = zeros(4,1);
     PosError = PosTarget - X(5:7, :);
     
     % Velocity Command
-    K_P = [0.75; 0.75; 0.65];
+    K_P = [0.65; 0.65; 0.60];
     VelTarget = K_P .* PosError;
 
     % Velocity Saturation Step
-    MaxVel = [1 1 1.5]';
+    MaxVel = [3 3 6]';
     VelTarget = max(min(VelTarget, MaxVel), -MaxVel);
 
 %% Second Loop (PI Loop)
@@ -54,13 +54,13 @@ U = zeros(4,1);
     VelError = VelTarget - X(8:10, :);
 
     % Integral Accumulator
-    K_I = [2; 2; 5];
-    Leak = 0.35;
+    K_I = [1; 1; 2];
+    Leak = 0.07;
     Clamp = [5; 5; 5];
 
     % Normalize errors (0 to 1 scale)
-    MaxAttError = [0.06; 0.06; 0.3];
-    MaxVelError = [0.3; 0.3; 0.3];
+    MaxAttError = [0.06; 0.06; 0.1];
+    MaxVelError = [0.2; 0.2; 0.2];
     NormAttErr = abs(lastAttError) ./ MaxAttError;
     NormVelErr = abs(VelError) ./ MaxVelError;
     
@@ -74,7 +74,7 @@ U = zeros(4,1);
     K_I = K_I .* Gate;
     VelErrorI = VelErrorI + K_I .* VelError .* dT;
     VelErrorI = max(min(VelErrorI, Clamp), -Clamp);
-    K_P = [2.4; 2.4; 5];
+    K_P = [2; 2; 5];
 
     % Acceleration Target
     AccelTarget = K_P .* VelError + VelErrorI  + [0; 0; constantsTOAD.g];
@@ -85,7 +85,7 @@ U = zeros(4,1);
     AccelTarget = max(min(AccelTarget, MaxAccelUp), MaxAccelDown);
 
 %% Kinematics Step
-    % Compute thrust target (UPDATE TO USE MASS STATES)
+    % Compute thrust target (Update to use estimated mass, for now I gain takes care)
     TargetForce_I = constantsTOAD.m_dry * AccelTarget;
     U(3) = norm(TargetForce_I);
     
