@@ -7,7 +7,6 @@
 
 %% Initialize parameters and clear functions
 % Initial conditions for state
-clear;
 clear ref_generator3;
 clear inputfcn3;
 clear EstimateStateFCN;
@@ -32,7 +31,7 @@ constantsTOAD.Ox_Z = 0.85;      constantsTOAD.Fu_Z = 1.35;
 constantsTOAD.m_wet = constantsTOAD.m_dry + constantsTOAD.OxMass + constantsTOAD.FuMass;
 
 % Dynamic Files Generation & Control
-FlightDynamicsGen(constantsTOAD);
+% FlightDynamicsGen(constantsTOAD);
 [K_Att, ~] = TOAD_Controller_Gen(constantsTOAD, constantsTOAD.OxMass, constantsTOAD.FuMass);
 x0 = [1; zeros(12,1); constantsTOAD.OxMass; constantsTOAD.FuMass];
 u0 = [0; 0; constantsTOAD.g * constantsTOAD.m_wet; 0];
@@ -53,11 +52,14 @@ Checkpoints =  [0, 5, 5,  5;
                 0, 5, 10, 10;
                 0, 50, 0, 0];
 HoldTimeReqs = [20, 10, 2, 3];
-dt_SIM = 1/1000;
+dt_SIM = 1/250;
 
 % Create slBus
 TOAD = Simulink.Bus.createObject(constantsTOAD);
 Waypoints = TrajectoryBuilder;
+J_d = zeros(3);
+MaxMdot_d = 0;
+TB_d = zeros(3,1);
 
 
 

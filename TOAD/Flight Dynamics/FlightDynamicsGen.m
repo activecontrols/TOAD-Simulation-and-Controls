@@ -9,12 +9,19 @@ syms theta phi;             % thrust angles
 syms thrust                 % thrust magnitude
 syms roll                   % roll input (Nm)
 syms J [3 3]                % Dry Intertia Matrix
-syms m_dry g rTB            % system constants
-syms OxMassI  FuMassI       % constants
-syms OxHeight FuHeight      % constants
-syms OxRadius FuRadius      % constants
-syms Ox_Z Fu_Z              % constants
-syms MaxThrust MaxMdot OF   % constants
+
+% System constants
+syms m_dry g rTB            
+syms OxMassI  FuMassI      
+syms OxHeight FuHeight     
+syms OxRadius FuRadius      
+syms Ox_Z Fu_Z           
+syms MaxThrust MaxMdot OF 
+
+% Monte Carlo Params
+syms J_d [3 3]              % Disturbance inertia matrix
+syms TB_d [3 1]             % dry CoM disturbance
+syms MaxMdot_d              % Drain rate variation
 
 % Total Mass
 m = m_dry + m_lox + m_ipa;
@@ -44,8 +51,8 @@ rdot = v;
 vdot = FI / m;
 
 % Tank drain dynamics
-mdot_lox = -thrust / MaxThrust * OF / (1 + OF) * MaxMdot;
-mdot_ipa = -thrust / MaxThrust * 1 / (1 + OF) * MaxMdot;
+mdot_lox = -thrust / MaxThrust * OF / (1 + OF) * (MaxMdot + MaxMdot_d);
+mdot_ipa = -thrust / MaxThrust * 1 / (1 + OF) * (MaxMdot + MaxMdot_d);
 
 % Propellant Fill height
 OxFluidHeight = (m_lox / OxMassI) * OxHeight * 0.9;
@@ -70,7 +77,7 @@ FuFluidLocation = Fu_Z + FuFluidHeight / 2;
 CGz = (m_dry * rTB + m_lox * OxFluidLocation + m_ipa * FuFluidLocation) / m;
 
 % Distances to CG
-d_dry = rTB - CGz;
+d_dry = rTB - CGz + TB_d(3);
 d_lox = OxFluidLocation - CGz;
 d_ipa = FuFluidLocation - CGz;
 
@@ -80,26 +87,23 @@ J_lox = J_lox + m_lox * diag([d_lox^2, d_lox^2, 0]);
 J_ipa = J_ipa + m_ipa * diag([d_ipa^2, d_ipa^2, 0]);
 
 % Bring everything to instantaneous CG (w.r.t Engine attachment frame)
-J_tot = J_dry + J_lox + J_ipa;
-J_tot = simplify(J_tot);
+J_tot = J_dry + J_lox + J_ipa + J_d;
 
 % Body frame moment (Roll torque along the thrust vector axis due to contra
 % EDF) (TODO: UPDATE for use with RCS)
 % Off center moments for Simulation
-TBx = 0;
-TBy = 0;
-MB = zetaCross([TBx; TBy; -CGz])*TB + (TB * roll) / thrust;
+MB = zetaCross([0; 0; -CGz] + TB_d)*TB + (TB * roll) / thrust;
 
 % Dynamics
 qdot = 0.5 * HamiltonianProd(q) * [0; omegaB];
 netTau = (MB - zetaCross(omegaB) * J_tot * omegaB);
 
-%State vector
+%State vector & disturbance struct
 x = [q; r; v; omegaB; m_lox; m_ipa];
 u = [theta; phi; thrust; roll];
     
 %State derivatives
-xdot_6DoF = [qdot; rdot; vdot;];
+xdot_6DoF = [qdot; rdot; vdot];
 xdot_Mass = [mdot_lox; mdot_ipa];
 
 % Subsitute numeric values of constants into xdot
@@ -117,7 +121,7 @@ netTau = subs(netTau, constVec, constVal);
 disp('Generating RawDynamics.m...');
 filename = "RawDynamics";
 matlabFunction(xdot_6DoF, xdot_Mass, J_tot, netTau, ...
-'File', './Flight Dynamics/Dynamics Files/' + filename, 'Vars', {x, u}, ...
+'File', './Flight Dynamics/Dynamics Files/' + filename, 'Vars', {x, u, J_d, TB_d, MaxMdot_d}, ...
 'Outputs', {'xdot_kin', 'xdot_mass', 'J_tot', 'netTau'});
 
 % Remove auto-gen header for simpler version control

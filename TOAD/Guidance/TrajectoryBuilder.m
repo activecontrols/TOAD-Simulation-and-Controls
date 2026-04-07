@@ -14,7 +14,7 @@ Waypoints(1) = TOADWaypoint([0; 0; 0], 'Label', 'PAD HLD 1', 'HoldTime', 20.0, .
     'PosTol',   1);
 
 Waypoints(2) = TOADWaypoint([0; 0; 5], 'Label', 'PAD DIV 1', 'MaxVel', ...
-    [3; 3; 6], 'PosTol', 1, 'VelFF', [0; 0; 6]);
+    [3; 3; 6], 'PosTol', 3, 'VelFF', [0; 0; 6]);
 
 Waypoints(3) = TOADWaypoint([0; 5; 50], 'Label', 'FLT HOV 1', 'PosTol', 1, ...
     'HoldTime', 10);
