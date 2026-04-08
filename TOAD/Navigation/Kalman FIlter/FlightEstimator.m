@@ -8,9 +8,12 @@ z(7:9) = z(7:9) - x_est(17:19);
 % Extract quaternion
 dx = zeros(9,1);
 q = x_est(1:4);
-qdot = 0.5 * HamiltonianProd(q) * [0; z(4:6)]; 
-x_est(1:4) = q + qdot * dT;
-q = x_est(1:4);
+if sqrt(sum(z(4:6).^2))<1e-5 || dT == 0
+    x_est(1:4) = q;
+else
+    x_est(1:4) = (HamiltonianProd(q) * [cos(sqrt(sum(z(4:6).^2)).*dT./2); (z(4:6)/sqrt(sum(z(4:6).^2))).*sin(sqrt(sum(z(4:6).^2)).*dT./2)]);
+end
+q = x_est(1:4)/norm(x_est(1:4));
 
 % A-priori quaternion estimate and rotation matrix
 q = q / norm(q);
