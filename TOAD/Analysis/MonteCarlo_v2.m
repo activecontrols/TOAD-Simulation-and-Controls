@@ -1,7 +1,7 @@
 %% Parallel Monte Carlo Setup & Disturbance Generation
 % --- Configuration ---
 model_name = 'TOAD_Simulation';
-num_sims = 750;
+num_sims = 1000;
 
 % Nominal parameters (Ensure constantsTOAD is loaded in base workspace first)
 J_nom = constantsTOAD.J;
@@ -18,20 +18,20 @@ disp(['Generating disturbances for ', num2str(num_sims), ' runs...']);
 
 for i = 1:num_sims
     % 1. Moment of Inertia Disturbances (Delta J)
-    dI_xx = (0.05 * J_nom(1,1)) * randn();
-    dI_yy = (0.05 * J_nom(2,2)) * randn();
-    dI_zz = (0.05 * J_nom(3,3)) * randn();
-    dI_xy = 0.5 * randn();
-    dI_xz = 0.5 * randn();
-    dI_yz = 0.5 * randn();
+    dI_xx = (0.1 * J_nom(1,1)) * rand();
+    dI_yy = (0.1 * J_nom(2,2)) * rand();
+    dI_zz = (0.1 * J_nom(3,3)) * rand();
+    dI_xy = 2 * rand();
+    dI_xz = 2 * rand();
+    dI_yz = 2 * rand();
     
     J_d_vals{i} = [dI_xx, dI_xy, dI_xz;
                    dI_xy, dI_yy, dI_yz;
                    dI_xz, dI_yz, dI_zz];
                
     % 2. Lever Arm Disturbances (Delta Lever Arm)
-    sigma_lever = [0.02; 0.02; 0.04]; 
-    TB_d_vals{i} = randn(3, 1) .* sigma_lever;
+    sigma_lever = [0.1; 0.1; 0.15]; 
+    TB_d_vals{i} = rand(3, 1) .* sigma_lever;
 end
 
 %% Setup Simulation Inputs for Parallel Execution
