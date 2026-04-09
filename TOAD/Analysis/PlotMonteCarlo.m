@@ -54,9 +54,9 @@ function PlotMonteCarlo(filename)
 
     % --- Attitude Histogram (Yaw, Pitch, Roll) ---
     nexttile; hold on; grid on;
-    att_roll  = RMSE_Controls_all(1, :);
+    att_yaw  = RMSE_Controls_all(1, :);
     att_pitch = RMSE_Controls_all(2, :);
-    att_yaw   = RMSE_Controls_all(3, :);
+    att_roll   = RMSE_Controls_all(3, :);
 
     histogram(clipUpper(att_yaw), num_bins, 'FaceColor', '#EDB120', 'FaceAlpha', 0.6, 'EdgeColor', 'none', 'DisplayName', 'Yaw');
     histogram(clipUpper(att_pitch), num_bins, 'FaceColor', '#D95319', 'FaceAlpha', 0.6, 'EdgeColor', 'none', 'DisplayName', 'Pitch');
