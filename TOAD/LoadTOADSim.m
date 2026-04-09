@@ -13,6 +13,7 @@ clear EstimateStateFCN;
 clear SensorSimulation;
 clear GPS_Sim;
 clear DigitalNF;
+clear slBus1
 MEKF_Constants;
 
 %% Create constants struct for TOAD (Approximate values, all metric)
@@ -61,5 +62,15 @@ J_d = zeros(3);
 MaxMdot_d = 0;
 TB_d = zeros(3,1);
 
+% Constant vars (varied usage)
+[windMerid, windZonal] = atmoshwm(40.4258686, -86.9080655, 186 + 50);
+accelBias = 0.09 * ones(3,1);
+gyroBias = 0.05 * ones(3, 1);
+distMode = 0;
 
-
+%% Load the data dictionary
+dictObj = Simulink.data.dictionary.open('Model_Vars.sldd');
+importFromBaseWorkspace(dictObj, 'varList', {'accelBias', 'constantsTOAD', 'distMode', 'dt', ...
+    'dt_SIM', 'gyroBias', 'IMU_Rate', 'J_d', 'magDistMatrix', 'MaxMdot_d', 'slBus1', 'TB_d', ...
+    'u0', 'x0', 'Waypoints', 'windMerid', 'windZonal'}, 'existingVarsAction', 'overwrite');
+saveChanges(dictObj);
