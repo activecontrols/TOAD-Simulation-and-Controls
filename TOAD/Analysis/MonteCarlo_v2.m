@@ -1,6 +1,6 @@
 %% Parallel Monte Carlo Setup & Disturbance Generation
 % --- Configuration ---
-model_name = 'TOAD_Simulation_2025a';
+model_name = 'TOAD_Simulation';
 num_sims = 200;
 
 % Nominal parameters (Ensure constantsTOAD is loaded in base workspace first)
