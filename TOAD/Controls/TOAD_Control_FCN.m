@@ -14,7 +14,7 @@
 % channels.
 %
 % By: Pablo Plata   -   11/27/25 (Happy Thanksgiving!)
-function [U, AttError] = TOAD_Control_FCN(PosTarget, X, constantsTOAD, t, MaxVel, VelFF)
+function [U, State_ERR] = TOAD_Control_FCN(PosTarget, X, constantsTOAD, t, MaxVel, VelFF)
 
 % Time Counter
 persistent lastT VelErrorI AttErrorI lastAttError
@@ -120,6 +120,7 @@ U = zeros(4,1);
 
     % State vector and error
     X_Err = [-AttError(2:4, :); X(11:13, :); AttErrorI];
+    State_ERR = [AttError(2:4); PosError; VelError].^2;
 
     % LQR Controller
     U([1 2 4]) = -K_Att * X_Err;
