@@ -1,7 +1,7 @@
 %% Parallel Monte Carlo Setup & Disturbance Generation
 % --- Configuration ---
 model_name = 'TOAD_Simulation';
-num_sims = 400;
+num_sims = 200;
 
 % Nominal parameters (Ensure constantsTOAD is loaded in base workspace first)
 J_nom = constantsTOAD.J;
@@ -18,19 +18,19 @@ disp(['Generating disturbances for ', num2str(num_sims), ' runs...']);
 
 for i = 1:num_sims
     % 1. Moment of Inertia Disturbances (Delta J)
-    dI_xx = (0.50 * J_nom(1,1)) * rand();
-    dI_yy = (0.50 * J_nom(2,2)) * rand();
-    dI_zz = (0.50 * J_nom(3,3)) * rand();
-    dI_xy = 12.0 * rand();
-    dI_xz = 12.0 * rand();
-    dI_yz = 12.0 * rand();
+    dI_xx = (0.10 * J_nom(1,1)) * rand();
+    dI_yy = (0.10 * J_nom(2,2)) * rand();
+    dI_zz = (0.10 * J_nom(3,3)) * rand();
+    dI_xy = 15.0 * rand();
+    dI_xz = 15.0 * rand();
+    dI_yz = 15.0 * rand();
     
     J_d_vals{i} = [dI_xx, dI_xy, dI_xz;
                    dI_xy, dI_yy, dI_yz;
                    dI_xz, dI_yz, dI_zz];
                
     % 2. Lever Arm Disturbances (Delta Lever Arm)
-    sigma_lever = [0.05; 0.05; 0.05]; 
+    sigma_lever = [0.03; 0.03; 0.1]; 
     TB_d_vals{i} = randn(3, 1) .* sigma_lever;
 end
 
@@ -79,8 +79,13 @@ end
 %% Analysis
 disp('Analyzing Data...');
 
-J_mag           = zeros(num_sims, 1);
-Lever_mag       = zeros(num_sims, 1);
+% --- New Isolated Symmetry Metrics ---
+Lever_Radial  = zeros(num_sims, 1);
+Lever_Axial   = zeros(num_sims, 1);
+J_Trans_Scale = zeros(num_sims, 1);
+J_Axial_Scale = zeros(num_sims, 1);
+J_Wobble_Coup = zeros(num_sims, 1);
+J_Trans_Coup  = zeros(num_sims, 1);
 
 metric_Ctrl_Att = zeros(num_sims, 1);
 metric_Ctrl_Pos = zeros(num_sims, 1);
@@ -88,9 +93,22 @@ metric_Ctrl_Vel = zeros(num_sims, 1);
 metric_Filter   = zeros(num_sims, 1);
 
 for i = 1:num_sims
-    % Input magnitudes
-    J_mag(i)     = norm(J_d_vals{i}); 
-    Lever_mag(i) = norm(TB_d_vals{i});
+    % 1. Lever Arm: Axial vs. Radial
+    Lever_Radial(i) = norm(TB_d_vals{i}(1:2)); % sqrt(dX^2 + dY^2)
+    Lever_Axial(i)  = abs(TB_d_vals{i}(3));    % |dZ|
+    
+    % 2. Inertia Tensor: Dynamic Symmetry Grouping
+    dI_xx = J_d_vals{i}(1,1);
+    dI_yy = J_d_vals{i}(2,2);
+    dI_zz = J_d_vals{i}(3,3);
+    dI_xy = J_d_vals{i}(1,2);
+    dI_xz = J_d_vals{i}(1,3);
+    dI_yz = J_d_vals{i}(2,3);
+    
+    J_Trans_Scale(i) = norm([dI_xx, dI_yy]); % Pitch/Yaw inertia error
+    J_Axial_Scale(i) = abs(dI_zz);           % Roll inertia error
+    J_Wobble_Coup(i) = norm([dI_xz, dI_yz]); % Roll -> Pitch/Yaw coupling
+    J_Trans_Coup(i)  = abs(dI_xy);           % Pitch <-> Yaw coupling
     
     % Split the 9x1 Controller SSE into its physical domains
     metric_Ctrl_Att(i) = norm(RMSE_Controls_all(1:3, i)); 
@@ -110,17 +128,12 @@ save_data = 1;
 if save_data
     disp('Saving workspace data...');
     
-    % Use Present Working Directory (pwd) to bypass the AppData Temp bug
-    % This relies on your Current Folder pane being set to the Analysis folder
     script_dir = pwd; 
-    
-    % Simple folder structure inside your project directory
     save_dir = fullfile(script_dir, 'Analysis', 'Monte Carlo Runs');
     if ~exist(save_dir, 'dir')
         mkdir(save_dir);
     end
     
-    % Clean, simple naming convention: MC_500runs_YYYYMMDD_HHMM.mat
     timestamp = datestr(now, 'yyyymmdd_HHMM');
     mat_filename = fullfile(save_dir, sprintf('MC_%druns_%s.mat', num_sims, timestamp));
     
@@ -131,5 +144,6 @@ if save_data
 else
     disp('Save bypassed (save_data flag set to false).');
 end
+
 %% Render Plots using the active workspace
 PlotMonteCarlo();

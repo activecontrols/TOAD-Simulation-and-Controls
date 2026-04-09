@@ -1,50 +1,54 @@
 function PlotMonteCarlo(filename)
     % PlotMonteCarlo Generates robustness and performance plots for MC runs.
-    %
-    % Usage:
-    %   PlotMonteCarlo()          - Uses data currently in the base workspace.
-    %   PlotMonteCarlo('file.mat')- Loads data from the specified .mat file.
 
     %% 1. Handle Input Arguments & Data Loading
     if nargin < 1 || isempty(filename)
         disp('No file provided. Pulling data from the base workspace...');
         
-        reqVars = {'J_mag', 'Lever_mag', 'RMSE_Controls_all', 'RMSE_Filter_all', 'metric_Filter'};
+        reqVars = {'Lever_Radial', 'Lever_Axial', 'J_Trans_Scale', 'J_Axial_Scale', ...
+                   'J_Wobble_Coup', 'J_Trans_Coup', 'RMSE_Controls_all', 'RMSE_Filter_all'};
         
         for i = 1:length(reqVars)
             varName = reqVars{i};
             try
                 eval([varName ' = evalin(''base'', ''' varName ''');']);
             catch
-                error('Variable "%s" not found in base workspace. Run the simulation first or provide a valid .mat filename.', varName);
+                error('Variable "%s" not found in base workspace. Run the simulation first.', varName);
             end
         end
     else
-        disp(['Loading data from: ', filename]);
-        if ~isfile(filename)
-            error('File "%s" does not exist. Please check the path and try again.', filename);
-        end
-        load(filename, 'J_mag', 'Lever_mag', 'RMSE_Controls_all', 'RMSE_Filter_all', 'metric_Filter');
+        load(filename, 'Lever_Radial', 'Lever_Axial', 'J_Trans_Scale', 'J_Axial_Scale', ...
+                       'J_Wobble_Coup', 'J_Trans_Coup', 'RMSE_Controls_all', 'RMSE_Filter_all');
     end
 
     %% 2. Setup Plotting Parameters
     disp('Generating plots...');
     num_bins = 50; 
-    
-    % RMSE is strictly positive. We only need to clip extreme upper outliers.
-    clipUpper = @(x) min(x, prctile(x, 99));
+    clipUpper = @(x) min(x, prctile(x, 99)); % Clip top 1% for cleaner histograms
 
-    %% Plot 1: 3D Bivariate Histogram (Disturbance Density)
-    figure('Name', 'MC Disturbance Density', 'Color', 'w', 'WindowStyle', 'docked');
-    histogram2(J_mag, Lever_mag, 'DisplayStyle', 'bar3', 'FaceColor', 'flat');
-    colorbar;
-    xlabel('MoI Disturbance (Norm)', 'FontWeight', 'bold');
-    ylabel('Lever Arm Disturbance (Norm)', 'FontWeight', 'bold');
-    zlabel('Number of MC Runs', 'FontWeight', 'bold');
-    title('3D Histogram: Distribution of Applied Disturbances');
+    %% Plot 1: Bivariate Histograms (Disturbance Densities)
+    figure('Name', 'MC Disturbance Densities', 'Color', 'w', 'WindowStyle', 'docked');
+    tiledlayout(1, 2, 'TileSpacing', 'compact');
+
+    % Lever Arm Distributions
+    nexttile;
+    histogram2(Lever_Radial, Lever_Axial, 'DisplayStyle', 'bar3', 'FaceColor', 'flat');
+    xlabel('Radial Shift (m)', 'FontWeight', 'bold');
+    ylabel('Axial Shift (m)', 'FontWeight', 'bold');
+    zlabel('MC Runs');
+    title('Lever Arm Disturbances');
     view(45, 45); grid on;
 
-    %% Plot 2: Controller Performance Histograms (Stacked Subcomponents)
+    % Inertia Coupling Distributions
+    nexttile;
+    histogram2(J_Trans_Scale, J_Wobble_Coup, 'DisplayStyle', 'bar3', 'FaceColor', 'flat');
+    xlabel('Transverse Scale Error', 'FontWeight', 'bold');
+    ylabel('Wobble Coupling (XZ/YZ)', 'FontWeight', 'bold');
+    zlabel('MC Runs');
+    title('Inertia Disturbances');
+    view(45, 45); grid on;
+
+    %% Plot 2: Controller Performance Histograms
     figure('Name', 'Controller RMSE Distributions', 'Color', 'w', 'WindowStyle', 'docked');
     tiledlayout(1, 3, 'TileSpacing', 'compact');
 
@@ -54,11 +58,9 @@ function PlotMonteCarlo(filename)
     att_pitch = RMSE_Controls_all(2, :);
     att_yaw   = RMSE_Controls_all(3, :);
 
-    % Plotted in order: Yaw, Pitch, Roll
     histogram(clipUpper(att_yaw), num_bins, 'FaceColor', '#EDB120', 'FaceAlpha', 0.6, 'EdgeColor', 'none', 'DisplayName', 'Yaw');
     histogram(clipUpper(att_pitch), num_bins, 'FaceColor', '#D95319', 'FaceAlpha', 0.6, 'EdgeColor', 'none', 'DisplayName', 'Pitch');
     histogram(clipUpper(att_roll), num_bins, 'FaceColor', '#0072BD', 'FaceAlpha', 0.6, 'EdgeColor', 'none', 'DisplayName', 'Roll');
-    
     xlabel('Attitude RMSE (rad)'); ylabel('Frequency'); title('Attitude Error');
     legend('show', 'Location', 'northeast');
 
@@ -69,7 +71,6 @@ function PlotMonteCarlo(filename)
 
     histogram(clipUpper(pos_x), num_bins, 'FaceColor', '#0072BD', 'FaceAlpha', 0.6, 'EdgeColor', 'none', 'DisplayName', 'X');
     histogram(clipUpper(pos_y), num_bins, 'FaceColor', '#D95319', 'FaceAlpha', 0.6, 'EdgeColor', 'none', 'DisplayName', 'Y');
-    
     xlabel('Lateral Position RMSE (m)'); title('Lateral Position Error');
     legend('show', 'Location', 'northeast');
 
@@ -80,66 +81,69 @@ function PlotMonteCarlo(filename)
 
     histogram(clipUpper(vel_x), num_bins, 'FaceColor', '#0072BD', 'FaceAlpha', 0.6, 'EdgeColor', 'none', 'DisplayName', 'Vx');
     histogram(clipUpper(vel_y), num_bins, 'FaceColor', '#D95319', 'FaceAlpha', 0.6, 'EdgeColor', 'none', 'DisplayName', 'Vy');
-    
     xlabel('Velocity RMSE (m/s)'); title('Velocity Error');
     legend('show', 'Location', 'northeast');
 
-    %% Plot 3: 3D Scatter (Lateral Position Error Baselined to Median)
-    figure('Name', 'Robustness Scatter: Lateral Position Error', 'Color', 'w', 'WindowStyle', 'docked');
-    hold on; grid on;
-
-    % Calculate Lateral Position Error (X and Y components only)
-    lat_pos_err = sqrt(RMSE_Controls_all(4, :).^2 + RMSE_Controls_all(5, :).^2);
+    %% Plot 3: Controller Sensitivities (Targeted Scatters)
+    figure('Name', 'Targeted Controller Sensitivities', 'Color', 'w', 'WindowStyle', 'docked');
     
-    Err_base_lat = median(lat_pos_err, 'omitnan');
-    metric_Lat_c = lat_pos_err - Err_base_lat;
+    % 'flow' automatically wraps tiles to fit the window size optimally
+    tiledlayout('flow', 'TileSpacing', 'compact'); 
+    
+    lat_pos_err = sqrt(RMSE_Controls_all(4, :).^2 + RMSE_Controls_all(5, :).^2);
+    att_trans_err = sqrt(RMSE_Controls_all(2, :).^2 + RMSE_Controls_all(3, :).^2); % Pitch/Yaw comb
 
-    p98_lat = prctile(metric_Lat_c, 98);
-    p01_lat = prctile(metric_Lat_c, 1);
-    idx_lat = (metric_Lat_c <= p98_lat) & (metric_Lat_c >= p01_lat);
+    % 1. Lateral Pos vs Lever Radial
+    nexttile; grid on; hold on;
+    scatter(Lever_Radial, lat_pos_err, 30, 'b', 'filled', 'MarkerEdgeColor', 'k', 'MarkerFaceAlpha', 0.7);
+    xlabel('Lever Radial Shift (m)'); ylabel('Lateral Pos RMSE (m)');
+    title('Pos vs. Off-Center CG');
 
-    scatter3(J_mag(idx_lat), Lever_mag(idx_lat), metric_Lat_c(idx_lat), 75, 'b', 'filled', 'MarkerEdgeColor', 'k');
-    xlabel('MoI Disturbance (Norm)');
-    ylabel('Lever Arm Disturbance (Norm)');
-    zlabel('\Delta Lateral Pos RMSE (m) [From Median]');
-    title('Robustness: Lateral Position Error (Extreme Outliers Omitted)');
-    view(45, 30);
+    % 2. Lateral Pos vs Wobble Coupling
+    nexttile; grid on; hold on;
+    scatter(J_Wobble_Coup, lat_pos_err, 30, 'r', 'filled', 'MarkerEdgeColor', 'k', 'MarkerFaceAlpha', 0.7);
+    xlabel('Wobble Coupling (XZ/YZ)'); ylabel('Lateral Pos RMSE (m)');
+    title('Pos vs. Inertia Wobble');
 
-    %% Plot 4: Estimator Filter Performance Histogram (Overlaid Components)
+    % 3. Roll Error vs Axial Scale
+    nexttile; grid on; hold on;
+    scatter(J_Axial_Scale, att_roll, 30, [0 0.5 0], 'filled', 'MarkerEdgeColor', 'k', 'MarkerFaceAlpha', 0.7);
+    xlabel('Axial Scale Error (I_{zz})'); ylabel('Roll RMSE (rad)');
+    title('Roll vs. Roll Inertia Error');
+
+    % 4. Pitch/Yaw Error vs Transverse Coupling
+    nexttile; grid on; hold on;
+    scatter(J_Trans_Coup, att_trans_err, 30, [0.85 0.33 0.1], 'filled', 'MarkerEdgeColor', 'k', 'MarkerFaceAlpha', 0.7);
+    xlabel('Transverse Coupling (I_{xy})'); ylabel('Pitch/Yaw RMSE (rad)');
+    title('Pitch/Yaw vs. Transverse Coupling');
+
+    % 5. Pitch/Yaw Error vs Transverse Scale (Ixx & Iyy)
+    nexttile; grid on; hold on;
+    scatter(J_Trans_Scale, att_trans_err, 30, [0.49 0.18 0.56], 'filled', 'MarkerEdgeColor', 'k', 'MarkerFaceAlpha', 0.7);
+    xlabel('Transverse Scale Error (I_{xx}, I_{yy})'); ylabel('Pitch/Yaw RMSE (rad)');
+    title('Pitch/Yaw vs. Transverse Scale');
+
+    % 6. Pitch/Yaw Error vs Lever Axial Shift
+    nexttile; grid on; hold on;
+    scatter(Lever_Axial, att_trans_err, 30, [0.30 0.75 0.93], 'filled', 'MarkerEdgeColor', 'k', 'MarkerFaceAlpha', 0.7);
+    xlabel('Lever Axial Shift (m)'); ylabel('Pitch/Yaw RMSE (rad)');
+    title('Pitch/Yaw vs. CG Forward/Aft');
+
+    %% Plot 4: Estimator Filter Performance Histogram
     figure('Name', 'Estimator RMSE Distribution', 'Color', 'w', 'WindowStyle', 'docked');
     hold on; grid on;
 
-    % Extract individual raw RPY errors
     filt_yaw   = RMSE_Filter_all(1, :);
     filt_pitch = RMSE_Filter_all(2, :);
     filt_roll  = RMSE_Filter_all(3, :);
 
-    histogram(clipUpper(filt_yaw), num_bins, 'FaceColor', '#0072BD', 'FaceAlpha', 0.6, 'EdgeColor', 'none', 'DisplayName', 'Yaw Error');
+    histogram(clipUpper(filt_yaw), num_bins, 'FaceColor', '#EDB120', 'FaceAlpha', 0.6, 'EdgeColor', 'none', 'DisplayName', 'Yaw Error');
     histogram(clipUpper(filt_pitch), num_bins, 'FaceColor', '#D95319', 'FaceAlpha', 0.6, 'EdgeColor', 'none', 'DisplayName', 'Pitch Error');
-    histogram(clipUpper(filt_roll), num_bins, 'FaceColor', '#EDB120', 'FaceAlpha', 0.6, 'EdgeColor', 'none', 'DisplayName', 'Roll Error');
-
-    xlabel('Filter RMSE (degrees)'); 
-    ylabel('Frequency'); 
-    title('Estimator Component RMSE (Outliers Clipped)');
+    histogram(clipUpper(filt_roll), num_bins, 'FaceColor', '#0072BD', 'FaceAlpha', 0.6, 'EdgeColor', 'none', 'DisplayName', 'Roll Error');
+    
+    xlabel('Filter RMSE (rad)'); ylabel('Frequency'); 
+    title('Estimator Component RMSE');
     legend('show', 'Location', 'northeast');
 
-    %% Plot 5: 3D Scatter (Filter Error Baselined to Median)
-    figure('Name', 'Robustness Scatter: Estimator Filter', 'Color', 'w', 'WindowStyle', 'docked');
-    hold on; grid on;
-
-    Err_base_filt = median(metric_Filter, 'omitnan');
-    metric_Filt_c = metric_Filter - Err_base_filt;
-
-    p98_filt = prctile(metric_Filt_c, 98);
-    p01_filt = prctile(metric_Filt_c, 1);
-    idx_filt = (metric_Filt_c <= p98_filt) & (metric_Filt_c >= p01_filt);
-
-    scatter3(J_mag(idx_filt), Lever_mag(idx_filt), metric_Filt_c(idx_filt), 75, [126 47 142]/255, 'filled', 'MarkerEdgeColor', 'k');
-    xlabel('MoI Disturbance (Norm)');
-    ylabel('Lever Arm Disturbance (Norm)');
-    zlabel('\Delta Filter Total RMSE (degrees) [From Median]');
-    title('Estimator Robustness (Extreme Outliers Omitted)');
-    view(45, 30);
-    
     disp('Plot generation complete.');
 end
