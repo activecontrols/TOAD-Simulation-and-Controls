@@ -1,7 +1,7 @@
 %% Parallel Monte Carlo Setup & Disturbance Generation
 % --- Configuration ---
 model_name = 'TOAD_Simulation';
-num_sims = 200;
+num_sims = 500;
 
 % Nominal parameters (Ensure constantsTOAD is loaded in base workspace first)
 J_nom = constantsTOAD.J;
@@ -11,8 +11,8 @@ J_d_vals  = cell(1, num_sims);
 TB_d_vals = cell(1, num_sims);
 
 % Preallocate arrays for the final SSE vectors to save memory
-SSE_Controls_all = zeros(9, num_sims); 
-SSE_Filter_all   = zeros(3, num_sims); % 3x1 for Roll, Pitch, Yaw Error
+RMSE_Controls_all = zeros(9, num_sims); 
+RMSE_Filter_all   = zeros(3, num_sims); % 3x1 for Roll, Pitch, Yaw Error
 
 disp(['Generating disturbances for ', num2str(num_sims), ' runs...']);
 
@@ -61,20 +61,18 @@ out = parsim(simIn, 'ShowProgress', 'on');
 
 %% Extract Data 
 disp('Simulations Complete. Extracting Data...');
-
+t_sim = 60;
 for i = 1:num_sims
     if isempty(out(i).ErrorMessage)
         
-        % The timeseries .Data property holds the exact vector we need.
-        % The (:) forces it into a strict column vector, absolutely 
-        % guaranteeing MATLAB won't corrupt the dimensions.
-        SSE_Controls_all(:, i) = out(i).SSE_Controls.Data(:); 
-        SSE_Filter_all(:, i)   = out(i).SSE_Filter.Data(:);
+        % Calculate running RMSE from the SSE Simulink outputs
+        RMSE_Controls_all(:, i) = sqrt(out(i).SSE_Controls(:) ./ t_sim); 
+        RMSE_Filter_all(:, i)   = sqrt(out(i).SSE_Filter(:) ./ t_sim);
         
     else
         warning('Simulation %d failed: %s', i, out(i).ErrorMessage);
-        SSE_Controls_all(:, i) = NaN;
-        SSE_Filter_all(:, i)   = NaN;
+        RMSE_Controls_all(:, i) = NaN;
+        RMSE_Filter_all(:, i)   = NaN;
     end
 end
 
@@ -95,12 +93,12 @@ for i = 1:num_sims
     Lever_mag(i) = norm(TB_d_vals{i});
     
     % Split the 9x1 Controller SSE into its physical domains
-    metric_Ctrl_Att(i) = norm(SSE_Controls_all(1:3, i)); 
-    metric_Ctrl_Pos(i) = norm(SSE_Controls_all(4:6, i)); 
-    metric_Ctrl_Vel(i) = norm(SSE_Controls_all(7:9, i)); 
+    metric_Ctrl_Att(i) = norm(RMSE_Controls_all(1:3, i)); 
+    metric_Ctrl_Pos(i) = norm(RMSE_Controls_all(4:6, i)); 
+    metric_Ctrl_Vel(i) = norm(RMSE_Controls_all(7:9, i)); 
     
     % Filter Metric
-    metric_Filter(i) = norm(SSE_Filter_all(:, i));
+    metric_Filter(i) = norm(RMSE_Filter_all(:, i));
 end
 
 disp('-----------------------------------');
