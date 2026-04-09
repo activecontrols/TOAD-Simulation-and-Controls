@@ -1,7 +1,8 @@
 %% Parallel Monte Carlo Setup & Disturbance Generation
 % --- Configuration ---
 model_name = 'TOAD_Simulation';
-num_sims = 500;
+num_sims = 512;
+clear simIn out
 
 % Nominal parameters (Ensure constantsTOAD is loaded in base workspace first)
 J_nom = constantsTOAD.J;
@@ -9,6 +10,7 @@ J_nom = constantsTOAD.J;
 % Preallocate arrays for parameters
 J_d_vals  = cell(1, num_sims);
 TB_d_vals = cell(1, num_sims);
+GyroNoisePower_vals = cell(1, num_sims);
 
 % Preallocate arrays for the final SSE vectors to save memory
 RMSE_Controls_all = zeros(9, num_sims); 
@@ -32,6 +34,8 @@ for i = 1:num_sims
     % 2. Lever Arm Disturbances (Delta Lever Arm)
     sigma_lever = [0.04; 0.04; 0.15]; 
     TB_d_vals{i} = randn(3, 1) .* sigma_lever;
+
+    GyroNoisePower_vals{i} = 8 * rand() * 10^-6;
 end
 
 %% Setup Simulation Inputs for Parallel Execution
@@ -44,7 +48,8 @@ for i = 1:num_sims
     % Securely attach this iteration's variables
     simIn(i) = simIn(i).setVariable('J_d', J_d_vals{i});
     simIn(i) = simIn(i).setVariable('TB_d', TB_d_vals{i});
-    
+    simIn(i) = simIn(i).setVariable('gyroNoisePower', GyroNoisePower_vals{i});
+
     % Save RAM & Comment out other timeseries logs
     simIn(i) = simIn(i).setBlockParameter('TOAD_Simulation/state_log', 'Commented', 'on');
     simIn(i) = simIn(i).setBlockParameter('TOAD_Simulation/meas_log', 'Commented', 'on');
@@ -57,7 +62,10 @@ end
 %% Execute Parallel Simulations
 disp('Starting Parallel Monte Carlo Simulations (parsim)...');
 
-out = parsim(simIn, 'ShowProgress', 'on');
+out = parsim(simIn, 'ShowProgress', 'on', 'UseFastRestart', 'on');
+
+% Close workers
+delete(gcp('nocreate'))
 
 %% Extract Data 
 disp('Simulations Complete. Extracting Data...');
