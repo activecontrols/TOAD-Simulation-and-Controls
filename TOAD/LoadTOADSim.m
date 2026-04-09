@@ -67,10 +67,11 @@ TB_d = zeros(3,1);
 accelBias = 0.09 * ones(3,1);
 gyroBias = 0.05 * ones(3, 1);
 distMode = 0;
+gyroNoisePower = 10^-6;
 
-%% Load the data dictionary
-dictObj = Simulink.data.dictionary.open('Model_Vars.sldd');
-importFromBaseWorkspace(dictObj, 'varList', {'accelBias', 'constantsTOAD', 'distMode', 'dt', ...
-    'dt_SIM', 'gyroBias', 'IMU_Rate', 'J_d', 'magDistMatrix', 'MaxMdot_d', 'slBus1', 'TB_d', ...
-    'u0', 'x0', 'Waypoints', 'windMerid', 'windZonal'}, 'existingVarsAction', 'overwrite');
-saveChanges(dictObj);
+% %% Load the data dictionary
+% dictObj = Simulink.data.dictionary.open('Model_Vars.sldd');
+% importFromBaseWorkspace(dictObj, 'varList', {'accelBias', 'constantsTOAD', 'distMode', 'dt', 'dt_SIM', 'gyroBias', ...
+%     'gyroNoisePower', 'IMU_Rate', 'J_d', 'magDistMatrix', 'MaxMdot_d', 'slBus1', 'TB_d', 'u0', 'x0', 'Waypoints', ...
+%     'windMerid', 'windZonal'}, 'existingVarsAction', 'overwrite');
+% saveChanges(dictObj);

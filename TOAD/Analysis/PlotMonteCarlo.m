@@ -1,5 +1,14 @@
 function PlotMonteCarlo(filename)
     % PlotMonteCarlo Generates robustness and performance plots for MC runs.
+    close all
+
+    % Set background color
+    darkMode = 1;
+    if darkMode
+        bkgColor = 'k';
+    else
+        bkgColor = 'w';
+    end
 
     %% 1. Handle Input Arguments & Data Loading
     if nargin < 1 || isempty(filename)
@@ -27,7 +36,7 @@ function PlotMonteCarlo(filename)
     clipUpper = @(x) min(x, prctile(x, 99)); % Clip top 1% for cleaner histograms
 
     %% Plot 1: Bivariate Histograms (Disturbance Densities)
-    figure('Name', 'MC Disturbance Densities', 'Color', 'w', 'WindowStyle', 'docked');
+    figure('Name', 'MC Disturbance Densities', 'Color', bkgColor, 'WindowStyle', 'docked');
     tiledlayout(1, 2, 'TileSpacing', 'compact');
 
     % Lever Arm Distributions
@@ -49,7 +58,7 @@ function PlotMonteCarlo(filename)
     view(45, 45); grid on;
 
     %% Plot 2: Controller Performance Histograms
-    figure('Name', 'Controller RMSE Distributions', 'Color', 'w', 'WindowStyle', 'docked');
+    figure('Name', 'Controller RMSE Distributions', 'Color', bkgColor, 'WindowStyle', 'docked');
     tiledlayout(1, 3, 'TileSpacing', 'compact');
 
     % --- Attitude Histogram (Yaw, Pitch, Roll) ---
@@ -85,7 +94,7 @@ function PlotMonteCarlo(filename)
     legend('show', 'Location', 'northeast');
 
     %% Plot 3: Controller Sensitivities (Targeted Scatters)
-    figure('Name', 'Targeted Controller Sensitivities', 'Color', 'w', 'WindowStyle', 'docked');
+    figure('Name', 'Targeted Controller Sensitivities', 'Color', bkgColor, 'WindowStyle', 'docked');
     
     % 'flow' automatically wraps tiles to fit the window size optimally
     tiledlayout('flow', 'TileSpacing', 'compact'); 
@@ -130,7 +139,7 @@ function PlotMonteCarlo(filename)
     title('Pitch/Yaw vs. CG Forward/Aft');
 
     %% Plot 4: Estimator Filter Performance Histogram
-    figure('Name', 'Estimator RMSE Distribution', 'Color', 'w', 'WindowStyle', 'docked');
+    figure('Name', 'Estimator RMSE Distribution', 'Color', bkgColor, 'WindowStyle', 'docked');
     hold on; grid on;
 
     filt_yaw   = RMSE_Filter_all(1, :);
