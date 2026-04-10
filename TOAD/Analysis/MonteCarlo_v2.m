@@ -1,7 +1,7 @@
 %% Parallel Monte Carlo Setup & Disturbance Generation
 % --- Configuration ---
 model_name = 'TOAD_Simulation';
-num_sims = 256;
+num_sims = 500;
 clear simIn out
 
 % Nominal parameters (Ensure constantsTOAD is loaded in base workspace first)
@@ -35,7 +35,7 @@ for i = 1:num_sims
     sigma_lever = [0.04; 0.04; 0.15]; 
     TB_d_vals{i} = randn(3, 1) .* sigma_lever;
 
-    GyroNoisePower_vals{i} = 8 * rand() * 10^-6;
+    GyroNoisePower_vals{i} = LogNormal(10^-6, 1.2);
 end
 
 %% Setup Simulation Inputs for Parallel Execution
@@ -158,3 +158,11 @@ end
 
 %% Render Plots using the active workspace
 PlotMonteCarlo();
+
+function samples = LogNormal(target_mode, sigma)
+    % Calculate the underlying normal mean (mu) based on the target mode
+    mu_normal = log(target_mode) + (sigma^2);
+    
+    % Generate using standard normal (randn), scale, shift, and exponentiate
+    samples = exp(mu_normal + sigma * randn());
+end

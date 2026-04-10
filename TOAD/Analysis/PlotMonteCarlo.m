@@ -166,20 +166,20 @@ function PlotMonteCarlo(filename)
 
     % 1. Lateral Pos vs Lever Radial
     nexttile; grid on; hold on;
-    scatter(gyroVals, att_pitch, 30, 'r', 'filled', 'MarkerEdgeColor', 'k', 'MarkerFaceAlpha', 0.7);
-    xlabel('Gyro Drift Power'); ylabel('Pitch RMSE (rad)');
+    scatter(gyroVals, filt_yaw, 30, 'r', 'filled', 'MarkerEdgeColor', 'k', 'MarkerFaceAlpha', 0.7);
+    xlabel('Gyro Drift Power'); ylabel('Yaw RMSE (deg)');
     title('Pitch vs Gyro Drift');
 
     % 2. Lateral Pos vs Wobble Coupling
     nexttile; grid on; hold on;
-    scatter(gyroVals, att_yaw, 30, [0 0.7 0], 'filled', 'MarkerEdgeColor', 'k', 'MarkerFaceAlpha', 0.7);
-    xlabel('Gyro Drift Power'); ylabel('Yaw RMSE (rad)');
+    scatter(gyroVals, filt_pitch, 30, [0 0.7 0], 'filled', 'MarkerEdgeColor', 'k', 'MarkerFaceAlpha', 0.7);
+    xlabel('Gyro Drift Power'); ylabel('Pitch RMSE (deg)');
     title('Yaw vs Gyro Drift');
 
     % 3. Roll Error vs Axial Scale
     nexttile; grid on; hold on;
-    scatter(gyroVals, att_roll, 30, 'b', 'filled', 'MarkerEdgeColor', 'k', 'MarkerFaceAlpha', 0.7);
-    xlabel('Gyro Drift Power'); ylabel('Roll RMSE (rad)');
+    scatter(gyroVals, filt_roll, 30, 'b', 'filled', 'MarkerEdgeColor', 'k', 'MarkerFaceAlpha', 0.7);
+    xlabel('Gyro Drift Power'); ylabel('Roll RMSE (deg)');
     title('Roll vs. Gyro Drift');
 
 end
