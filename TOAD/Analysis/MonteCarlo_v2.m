@@ -1,7 +1,7 @@
 %% Parallel Monte Carlo Setup & Disturbance Generation
 % --- Configuration ---
 model_name = 'TOAD_Simulation';
-num_sims = 512;
+num_sims = 256;
 clear simIn out
 
 % Nominal parameters (Ensure constantsTOAD is loaded in base workspace first)
@@ -62,10 +62,13 @@ end
 %% Execute Parallel Simulations
 disp('Starting Parallel Monte Carlo Simulations (parsim)...');
 
+myCluster = parcluster('Processes');
+delete(myCluster.Jobs);
+
 out = parsim(simIn, 'ShowProgress', 'on', 'UseFastRestart', 'on');
 
 % Close workers
-delete(gcp('nocreate'))
+delete(gcp('nocreate'));
 
 %% Extract Data 
 disp('Simulations Complete. Extracting Data...');
