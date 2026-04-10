@@ -1,7 +1,7 @@
 %% Parallel Monte Carlo Setup & Disturbance Generation
 % --- Configuration ---
 model_name = 'TOAD_Simulation';
-num_sims = 500;
+num_sims = 96;
 clear simIn out
 
 % Nominal parameters (Ensure constantsTOAD is loaded in base workspace first)
@@ -20,9 +20,9 @@ disp(['Generating disturbances for ', num2str(num_sims), ' runs...']);
 
 for i = 1:num_sims
     % 1. Moment of Inertia Disturbances (Delta J)
-    dI_xx = (0.12 * J_nom(1,1)) * randn();
-    dI_yy = (0.12 * J_nom(2,2)) * randn();
-    dI_zz = (0.12 * J_nom(3,3)) * randn();
+    dI_xx = (0.10 * J_nom(1,1)) * randn();
+    dI_yy = (0.10 * J_nom(2,2)) * randn();
+    dI_zz = (0.10 * J_nom(3,3)) * randn();
     dI_xy = 1 * randn();
     dI_xz = 1 * randn();
     dI_yz = 1 * randn();
@@ -32,10 +32,10 @@ for i = 1:num_sims
                    dI_xz, dI_yz, dI_zz];
                
     % 2. Lever Arm Disturbances (Delta Lever Arm)
-    sigma_lever = [0.04; 0.04; 0.15]; 
+    sigma_lever = [0.01; 0.01; 0.02]; 
     TB_d_vals{i} = randn(3, 1) .* sigma_lever;
 
-    GyroNoisePower_vals{i} = LogNormal(10^-6, 1.2);
+    GyroNoisePower_vals{i} = LogNormal(10^-6, 1.4);
 end
 
 %% Setup Simulation Inputs for Parallel Execution
@@ -49,6 +49,8 @@ for i = 1:num_sims
     simIn(i) = simIn(i).setVariable('J_d', J_d_vals{i});
     simIn(i) = simIn(i).setVariable('TB_d', TB_d_vals{i});
     simIn(i) = simIn(i).setVariable('gyroNoisePower', GyroNoisePower_vals{i});
+
+    simIn(i) = setModelParameter(simIn(i), TimeOut=20);
 
     % Save RAM & Comment out other timeseries logs
     simIn(i) = simIn(i).setBlockParameter('TOAD_Simulation/state_log', 'Commented', 'on');
@@ -65,10 +67,7 @@ disp('Starting Parallel Monte Carlo Simulations (parsim)...');
 myCluster = parcluster('Processes');
 delete(myCluster.Jobs);
 
-out = parsim(simIn, 'ShowProgress', 'on', 'UseFastRestart', 'on');
-
-% Close workers
-delete(gcp('nocreate'));
+out = parsim(simIn, 'ShowProgress', 'on', 'UseFastRestart', 'on')
 
 %% Extract Data 
 disp('Simulations Complete. Extracting Data...');
