@@ -5,7 +5,7 @@ function PlotMonteCarlo(filename)
     close all
 
     % Set background color
-    darkMode = 1;
+    darkMode = 0;
     if darkMode
         bkgColor = 'k';
     else
@@ -16,8 +16,10 @@ function PlotMonteCarlo(filename)
     if nargin < 1 || isempty(filename)
         disp('No file provided. Pulling data from the base workspace...');
         
+        % Added Kg2_vals and G_RMAX_vals to requested variables
         reqVars = {'Lever_Radial', 'Lever_Axial', 'J_Trans_Scale', 'J_Axial_Scale', ...
-                   'J_Wobble_Coup', 'J_Trans_Coup', 'RMSE_Controls_all', 'RMSE_Filter_all', 'GyroNoisePower_vals'};
+                   'J_Wobble_Coup', 'J_Trans_Coup', 'RMSE_Controls_all', 'RMSE_Filter_all', ...
+                   'GyroNoisePower_vals', 'Kg2_vals', 'G_RMAX_vals'};
         
         for i = 1:length(reqVars)
             varName = reqVars{i};
@@ -28,14 +30,31 @@ function PlotMonteCarlo(filename)
             end
         end
     else
+        % Added Kg2_vals and G_RMAX_vals to file loader
         load(filename, 'Lever_Radial', 'Lever_Axial', 'J_Trans_Scale', 'J_Axial_Scale', ...
-                       'J_Wobble_Coup', 'J_Trans_Coup', 'RMSE_Controls_all', 'RMSE_Filter_all', 'GyroNoisePower_vals');
+                       'J_Wobble_Coup', 'J_Trans_Coup', 'RMSE_Controls_all', 'RMSE_Filter_all', ...
+                       'GyroNoisePower_vals', 'Kg2_vals', 'G_RMAX_vals');
     end
 
     %% 2. Setup Plotting Parameters
     disp('Generating plots...');
     num_bins = 50; 
     clipUpper = @(x) min(x, prctile(x, 99)); % Clip top 1% for cleaner histograms
+
+    % Safely extract arrays (in case they were preallocated as cells in the MC script)
+    gyroVals = cell2mat(GyroNoisePower_vals);
+    
+    if iscell(Kg2_vals)
+        kg2Vals = cell2mat(Kg2_vals);
+    else
+        kg2Vals = Kg2_vals;
+    end
+    
+    if iscell(G_RMAX_vals)
+        grmaxVals = cell2mat(G_RMAX_vals);
+    else
+        grmaxVals = G_RMAX_vals;
+    end
 
     %% Plot 1: Bivariate Histograms (Disturbance Densities)
     figure('Name', 'MC Disturbance Densities', 'Color', bkgColor, 'WindowStyle', 'docked');
@@ -161,51 +180,133 @@ function PlotMonteCarlo(filename)
 
     disp('Plot generation complete.');
 
-    %% Plot 5: Controller attituide with gimbal drift
+    %% Plot 5: Controller attitude with gimbal drift
     figure('Name', 'Controller attitude Err w/ Gyro Drift', 'Color', bkgColor, 'WindowStyle', 'docked');
     tiledlayout(1, 3, 'TileSpacing', 'compact');
 
-    gyroVals = cell2mat(GyroNoisePower_vals);
-
-    % 1. Lateral Pos vs Lever Radial
+    % 1. Yaw vs Drift
     nexttile; grid on; hold on;
     scatter(gyroVals, att_yaw, 30, 'r', 'filled', 'MarkerEdgeColor', 'k', 'MarkerFaceAlpha', 0.7);
     xlabel('Gyro Drift Power'); ylabel('Yaw RMSE (deg)');
-    title('Pitch vs Gyro Drift');
-    % yscale log
+    title('Yaw vs Gyro Drift');
     xscale log
 
-    % 2. Lateral Pos vs Wobble Coupling
+    % 2. Pitch vs Drift
     nexttile; grid on; hold on;
     scatter(gyroVals, att_pitch, 30, [0 0.7 0], 'filled', 'MarkerEdgeColor', 'k', 'MarkerFaceAlpha', 0.7);
     xlabel('Gyro Drift Power'); ylabel('Pitch RMSE (deg)');
-    title('Yaw vs Gyro Drift');
-    % yscale log
+    title('Pitch vs Gyro Drift');
     xscale log
 
-    % 3. Roll Error vs Axial Scale
+    % 3. Roll Error vs Drift
     nexttile; grid on; hold on;
     scatter(gyroVals, att_roll, 30, 'b', 'filled', 'MarkerEdgeColor', 'k', 'MarkerFaceAlpha', 0.7);
     xlabel('Gyro Drift Power'); ylabel('Roll RMSE (deg)');
     title('Roll vs. Gyro Drift');
-    % yscale log
     xscale log
 
-    %% Plot 6: Filter attituide with gimbal drift combined
+    %% Plot 6: Filter attitude with gimbal drift combined
     figure('Name', 'Filter attitude Err w/ Gyro Drift combined', 'Color', bkgColor, 'WindowStyle', 'docked');
 
-    % 1. Lateral Pos vs Lever Radial
     scatter(gyroVals, filt_yaw, 30, 'r', 'filled', 'MarkerEdgeColor', 'k', 'MarkerFaceAlpha', 0.7); hold on
-
-    % 2. Lateral Pos vs Wobble Coupling
     scatter(gyroVals, filt_pitch, 30, [0 0.7 0], 'filled', 'MarkerEdgeColor', 'k', 'MarkerFaceAlpha', 0.7);
-
-    % 3. Roll Error vs Axial Scale
     scatter(gyroVals, filt_roll, 30, 'b', 'filled', 'MarkerEdgeColor', 'k', 'MarkerFaceAlpha', 0.7);
-    xlabel('Gyro Drift Power'); ylabel('Roll RMSE (deg)');
-    title('Roll vs. Gyro Drift');
-    % yscale log
+    
+    xlabel('Gyro Drift Power'); ylabel('Attitude RMSE (deg)');
+    title('Filter Attitude Error vs. Gyro Drift');
+    legend('Yaw', 'Pitch', 'Roll', 'Location', 'best');
     xscale log
+    grid on
+
+    %% Plot 7: Bias & Noise Sampling Distributions
+    figure('Name', 'Bias & Noise Sampling Distributions', 'Color', bkgColor, 'WindowStyle', 'docked');
+    tiledlayout(1, 3, 'TileSpacing', 'compact');
+    
+    % Gyro Drift Power Dist
+    nexttile;
+    histogram(gyroVals, num_bins, 'FaceColor', '#7E2F8E', 'FaceAlpha', 0.6);
+    set(gca, 'XScale', 'log');
+    xlabel('Gyro Drift Power'); ylabel('Frequency'); title('Gyro Noise Power Dist');
+    grid on;
+
+    % Kg2 Bias Dist
+    nexttile;
+    histogram(kg2Vals, num_bins, 'FaceColor', '#77AC30', 'FaceAlpha', 0.6);
+    xlabel('Kg2 (g^2 bias)'); ylabel('Frequency'); title('Kg2 Bias Sensitivity Dist');
+    grid on;
+    
+    % G_RMAX Dist
+    nexttile;
+    histogram(grmaxVals, num_bins, 'FaceColor', '#4DBEEE', 'FaceAlpha', 0.6);
+    xlabel('G\_RMAX'); ylabel('Frequency'); title('G\_RMAX Distribution');
+    grid on;
+
+    %% Plot 8: Controller attitude Err w/ Kg2 Bias
+    figure('Name', 'Controller attitude Err w/ Kg2 Bias', 'Color', bkgColor, 'WindowStyle', 'docked');
+    tiledlayout(1, 3, 'TileSpacing', 'compact');
+
+    % 1. Yaw vs Kg2
+    nexttile; grid on; hold on;
+    scatter(kg2Vals, att_yaw, 30, 'r', 'filled', 'MarkerEdgeColor', 'k', 'MarkerFaceAlpha', 0.7);
+    xlabel('Kg2 Bias Sensitivity'); ylabel('Yaw RMSE (deg)');
+    title('Yaw vs Kg2 Bias');
+
+    % 2. Pitch vs Kg2
+    nexttile; grid on; hold on;
+    scatter(kg2Vals, att_pitch, 30, [0 0.7 0], 'filled', 'MarkerEdgeColor', 'k', 'MarkerFaceAlpha', 0.7);
+    xlabel('Kg2 Bias Sensitivity'); ylabel('Pitch RMSE (deg)');
+    title('Pitch vs Kg2 Bias');
+
+    % 3. Roll vs Kg2
+    nexttile; grid on; hold on;
+    scatter(kg2Vals, att_roll, 30, 'b', 'filled', 'MarkerEdgeColor', 'k', 'MarkerFaceAlpha', 0.7);
+    xlabel('Kg2 Bias Sensitivity'); ylabel('Roll RMSE (deg)');
+    title('Roll vs Kg2 Bias');
+
+    %% Plot 9: Filter attitude Err w/ Kg2 Bias combined
+    figure('Name', 'Filter attitude Err w/ Kg2 Bias combined', 'Color', bkgColor, 'WindowStyle', 'docked');
+
+    scatter(kg2Vals, filt_yaw, 30, 'r', 'filled', 'MarkerEdgeColor', 'k', 'MarkerFaceAlpha', 0.7); hold on
+    scatter(kg2Vals, filt_pitch, 30, [0 0.7 0], 'filled', 'MarkerEdgeColor', 'k', 'MarkerFaceAlpha', 0.7);
+    scatter(kg2Vals, filt_roll, 30, 'b', 'filled', 'MarkerEdgeColor', 'k', 'MarkerFaceAlpha', 0.7);
+    
+    xlabel('Kg2 Bias Sensitivity'); ylabel('Attitude RMSE (deg)');
+    title('Filter Attitude Error vs Kg2 Bias');
+    legend('Yaw', 'Pitch', 'Roll', 'Location', 'best');
+    grid on
+
+    %% Plot 10: Controller attitude Err w/ G_RMAX 
+    figure('Name', 'Controller attitude Err w/ G_RMAX', 'Color', bkgColor, 'WindowStyle', 'docked');
+    tiledlayout(1, 3, 'TileSpacing', 'compact');
+
+    % 1. Yaw vs G_RMAX
+    nexttile; grid on; hold on;
+    scatter(grmaxVals, att_yaw, 30, 'r', 'filled', 'MarkerEdgeColor', 'k', 'MarkerFaceAlpha', 0.7);
+    xlabel('G\_RMAX'); ylabel('Yaw RMSE (deg)');
+    title('Yaw vs G\_RMAX');
+
+    % 2. Pitch vs G_RMAX
+    nexttile; grid on; hold on;
+    scatter(grmaxVals, att_pitch, 30, [0 0.7 0], 'filled', 'MarkerEdgeColor', 'k', 'MarkerFaceAlpha', 0.7);
+    xlabel('G\_RMAX'); ylabel('Pitch RMSE (deg)');
+    title('Pitch vs G\_RMAX');
+
+    % 3. Roll vs G_RMAX
+    nexttile; grid on; hold on;
+    scatter(grmaxVals, att_roll, 30, 'b', 'filled', 'MarkerEdgeColor', 'k', 'MarkerFaceAlpha', 0.7);
+    xlabel('G\_RMAX'); ylabel('Roll RMSE (deg)');
+    title('Roll vs G\_RMAX');
+
+    %% Plot 11: Filter attitude Err w/ G_RMAX combined
+    figure('Name', 'Filter attitude Err w/ G_RMAX combined', 'Color', bkgColor, 'WindowStyle', 'docked');
+
+    scatter(grmaxVals, filt_yaw, 30, 'r', 'filled', 'MarkerEdgeColor', 'k', 'MarkerFaceAlpha', 0.7); hold on
+    scatter(grmaxVals, filt_pitch, 30, [0 0.7 0], 'filled', 'MarkerEdgeColor', 'k', 'MarkerFaceAlpha', 0.7);
+    scatter(grmaxVals, filt_roll, 30, 'b', 'filled', 'MarkerEdgeColor', 'k', 'MarkerFaceAlpha', 0.7);
+    
+    xlabel('G\_RMAX'); ylabel('Attitude RMSE (deg)');
+    title('Filter Attitude Error vs G\_RMAX');
+    legend('Yaw', 'Pitch', 'Roll', 'Location', 'best');
     grid on
 
 end
