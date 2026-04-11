@@ -5,7 +5,7 @@ num_sims = 100;
 clear simIn out
 
 % Nominal parameters (Ensure constantsTOAD is loaded in base workspace first)
-GrommetIDX = 1;
+GrommetIDX = 3;
 J_nom = constantsTOAD.J;
 G = GrommetSelect(GrommetIDX);
 m_FC = 0.1;
@@ -67,6 +67,7 @@ for i = 1:num_sims
     simIn(i) = simIn(i).setVariable('kGrom', kGrom_vals{i});
     simIn(i) = simIn(i).setVariable('bGrom', bGrom_vals{i});
     simIn(i) = simIn(i).setVariable('Kg2', Kg2_vals{i});
+    simIn(i) = simIn(i).setVariable('G_RMAX', G_RMAX_vals{i});
 
     % Save RAM & Comment out other timeseries logs
     simIn(i) = simIn(i).setBlockParameter('TOAD_Simulation/state_log', 'Commented', 'on');
