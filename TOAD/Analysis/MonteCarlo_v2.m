@@ -11,6 +11,10 @@ J_nom = constantsTOAD.J;
 J_d_vals  = cell(1, num_sims);
 TB_d_vals = cell(1, num_sims);
 GyroNoisePower_vals = cell(1, num_sims);
+G_RMAX_vals = call(1, num_sims);
+kGrom_vals = cell(1, num_sims);
+bGrom_vals = cell(1, num_sims);
+Kg2_vals = cell(1, num_sims);
 
 % Preallocate arrays for the final SSE vectors to save memory
 RMSE_Controls_all = zeros(9, num_sims); 
@@ -35,7 +39,17 @@ for i = 1:num_sims
     sigma_lever = [0.01; 0.01; 0.02]; 
     TB_d_vals{i} = randn(3, 1) .* sigma_lever;
 
+    % 3. Gyro Biases
     GyroNoisePower_vals{i} = LogNormal(10^-6, 1.2);
+
+    G_RMAX_vals(i) = (20 - 4) * rand() + 4;
+    
+    kGrom_nom = Grom.k;
+    kGrom = kGrom_nom * (1 + 0.05 * randn());
+    bGrom_nom = Grom.c / 1 / sqrt(kGrom_nom * 0.1);
+    bGrom = bGrom_nom * (1 + 0.05 * randn());
+
+    Kg2_vals(i) = (0.08-0.005) * rand() + 0.005;
 end
 
 %% Setup Simulation Inputs for Parallel Execution
