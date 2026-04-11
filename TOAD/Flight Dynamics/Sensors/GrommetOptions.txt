@@ -1,0 +1,10 @@
+Material Name,Durometer,Stiffness k (N/m),Damping c (N s/m)
+Sorbothane (Standard),50 OO,8500,45.0
+Sorbothane (Firm),70 OO,16000,75.0
+Silicone (Soft),30 A,12000,14.5
+Silicone (Standard),40 A,18000,18.0
+Fluorosilicone (Aero),40 A,19500,25.0
+Natural Rubber,40 A,22000,11.0
+Neoprene,50 A,28000,28.0
+Polyurethane,60 A,45000,40.0
+Wire Mesh (Micro),N/A,35000,55.0
