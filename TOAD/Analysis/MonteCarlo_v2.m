@@ -1,7 +1,7 @@
 %% Parallel Monte Carlo Setup & Disturbance Generation
 % --- Configuration ---
 model_name = 'TOAD_Simulation';
-num_sims = 500;
+num_sims = 200;
 clear simIn out
 
 % Nominal parameters (Ensure constantsTOAD is loaded in base workspace first)
