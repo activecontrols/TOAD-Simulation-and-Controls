@@ -1,7 +1,7 @@
 %% Parallel Monte Carlo Setup & Disturbance Generation
 % --- Configuration ---
 model_name = 'TOAD_Simulation';
-num_sims = 200;
+num_sims = 100;
 clear simIn out
 
 % Nominal parameters (Ensure constantsTOAD is loaded in base workspace first)
@@ -36,12 +36,12 @@ for i = 1:num_sims
     dI_xz = 1 * randn();
     dI_yz = 1 * randn();
     
-    J_d_vals{i} = [dI_xx, dI_xy, dI_xz;
+    J_d_vals{i} = 0 * [dI_xx, dI_xy, dI_xz;
                    dI_xy, dI_yy, dI_yz;
                    dI_xz, dI_yz, dI_zz];
                
     % 2. Lever Arm Disturbances (Delta Lever Arm)
-    sigma_lever = [0.01; 0.01; 0.02]; 
+    sigma_lever = 0 * [0.01; 0.01; 0.02]; 
     TB_d_vals{i} = randn(3, 1) .* sigma_lever;
 
     % 3. Gyro Biases
