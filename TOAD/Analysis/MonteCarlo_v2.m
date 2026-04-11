@@ -47,10 +47,10 @@ for i = 1:num_sims
     % 3. Gyro Biases
     GyroNoisePower_vals{i} = LogNormal(10^-8, 1.2);
 
-    G_RMAX_vals(i) = (20 - 4) * rand() + 4;
-    kGrom = K_nom * (1 + 0.05 * randn());
-    bGrom = B_nom * (1 + 0.05 * randn());
-    Kg2_vals(i) = (0.08-0.005) * rand() + 0.005;
+    G_RMAX_vals{i} = (20 - 4) * rand() + 4;
+    kGrom_vals{i} = K_nom * (1 + 0.05 * randn());
+    bGrom_vals{i} = B_nom * (1 + 0.05 * randn());
+    Kg2_vals{i} = (0.08-0.005) * rand() + 0.005;
 end
 
 %% Setup Simulation Inputs for Parallel Execution
