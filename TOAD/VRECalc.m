@@ -1,4 +1,4 @@
-Num = 10^6;
+Num = 10^6; %
 f = linspace(0, 10000, Num);
 
 Broadband = 6;
