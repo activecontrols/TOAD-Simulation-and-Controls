@@ -32,7 +32,7 @@ for i = 1:num_sims
                    dI_xz, dI_yz, dI_zz];
                
     % 2. Lever Arm Disturbances (Delta Lever Arm)
-    sigma_lever = [0.04; 0.04; 0.15]; 
+    sigma_lever = [0.01; 0.01; 0.02]; 
     TB_d_vals{i} = randn(3, 1) .* sigma_lever;
 
     GyroNoisePower_vals{i} = LogNormal(10^-6, 1.2);
@@ -66,9 +66,6 @@ myCluster = parcluster('Processes');
 delete(myCluster.Jobs);
 
 out = parsim(simIn, 'ShowProgress', 'on', 'UseFastRestart', 'on');
-
-% Close workers
-delete(gcp('nocreate'));
 
 %% Extract Data 
 disp('Simulations Complete. Extracting Data...');

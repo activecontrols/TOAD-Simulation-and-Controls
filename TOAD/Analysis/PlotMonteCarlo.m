@@ -49,6 +49,7 @@ function PlotMonteCarlo(filename)
     zlabel('MC Runs');
     title('Lever Arm Disturbances');
     view(45, 45); grid on;
+    
 
     % Inertia Coupling Distributions
     nexttile;
@@ -109,12 +110,14 @@ function PlotMonteCarlo(filename)
     scatter(Lever_Radial, lat_pos_err, 30, 'b', 'filled', 'MarkerEdgeColor', 'k', 'MarkerFaceAlpha', 0.7);
     xlabel('Lever Radial Shift (m)'); ylabel('Lateral Pos RMSE (m)');
     title('Pos vs. Off-Center CG');
+    ylim([0 3]);
 
     % 2. Lateral Pos vs Wobble Coupling
     nexttile; grid on; hold on;
     scatter(J_Wobble_Coup, lat_pos_err, 30, 'r', 'filled', 'MarkerEdgeColor', 'k', 'MarkerFaceAlpha', 0.7);
     xlabel('Wobble Coupling (XZ/YZ)'); ylabel('Lateral Pos RMSE (m)');
     title('Pos vs. Inertia Wobble');
+    ylim([0 3]);
 
     % 3. Roll Error vs Axial Scale
     nexttile; grid on; hold on;
@@ -158,28 +161,51 @@ function PlotMonteCarlo(filename)
 
     disp('Plot generation complete.');
 
-    %% Plot 5: Attituide with gimbal drift
-    figure('Name', 'Attitude Err w/ Gyro Drift', 'Color', bkgColor, 'WindowStyle', 'docked');
+    %% Plot 5: Controller attituide with gimbal drift
+    figure('Name', 'Controller attitude Err w/ Gyro Drift', 'Color', bkgColor, 'WindowStyle', 'docked');
     tiledlayout(1, 3, 'TileSpacing', 'compact');
 
     gyroVals = cell2mat(GyroNoisePower_vals);
 
     % 1. Lateral Pos vs Lever Radial
     nexttile; grid on; hold on;
-    scatter(gyroVals, filt_yaw, 30, 'r', 'filled', 'MarkerEdgeColor', 'k', 'MarkerFaceAlpha', 0.7);
+    scatter(gyroVals, att_yaw, 30, 'r', 'filled', 'MarkerEdgeColor', 'k', 'MarkerFaceAlpha', 0.7);
     xlabel('Gyro Drift Power'); ylabel('Yaw RMSE (deg)');
     title('Pitch vs Gyro Drift');
+    % yscale log
+    xscale log
 
     % 2. Lateral Pos vs Wobble Coupling
     nexttile; grid on; hold on;
-    scatter(gyroVals, filt_pitch, 30, [0 0.7 0], 'filled', 'MarkerEdgeColor', 'k', 'MarkerFaceAlpha', 0.7);
+    scatter(gyroVals, att_pitch, 30, [0 0.7 0], 'filled', 'MarkerEdgeColor', 'k', 'MarkerFaceAlpha', 0.7);
     xlabel('Gyro Drift Power'); ylabel('Pitch RMSE (deg)');
     title('Yaw vs Gyro Drift');
+    % yscale log
+    xscale log
 
     % 3. Roll Error vs Axial Scale
     nexttile; grid on; hold on;
+    scatter(gyroVals, att_roll, 30, 'b', 'filled', 'MarkerEdgeColor', 'k', 'MarkerFaceAlpha', 0.7);
+    xlabel('Gyro Drift Power'); ylabel('Roll RMSE (deg)');
+    title('Roll vs. Gyro Drift');
+    % yscale log
+    xscale log
+
+    %% Plot 6: Filter attituide with gimbal drift combined
+    figure('Name', 'Filter attitude Err w/ Gyro Drift combined', 'Color', bkgColor, 'WindowStyle', 'docked');
+
+    % 1. Lateral Pos vs Lever Radial
+    scatter(gyroVals, filt_yaw, 30, 'r', 'filled', 'MarkerEdgeColor', 'k', 'MarkerFaceAlpha', 0.7); hold on
+
+    % 2. Lateral Pos vs Wobble Coupling
+    scatter(gyroVals, filt_pitch, 30, [0 0.7 0], 'filled', 'MarkerEdgeColor', 'k', 'MarkerFaceAlpha', 0.7);
+
+    % 3. Roll Error vs Axial Scale
     scatter(gyroVals, filt_roll, 30, 'b', 'filled', 'MarkerEdgeColor', 'k', 'MarkerFaceAlpha', 0.7);
     xlabel('Gyro Drift Power'); ylabel('Roll RMSE (deg)');
     title('Roll vs. Gyro Drift');
+    % yscale log
+    xscale log
+    grid on
 
 end
