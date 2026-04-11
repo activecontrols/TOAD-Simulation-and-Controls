@@ -47,10 +47,10 @@ for i = 1:num_sims
     % 3. Gyro Biases
     GyroNoisePower_vals{i} = LogNormal(10^-8, 1.2);
 
-    G_RMAX_vals{i} = (20 - 4) * rand() + 4;
+    G_RMAX_vals{i} = (20 - 3) * rand() + 3;
     kGrom_vals{i} = K_nom * (1 + 0.05 * randn());
     bGrom_vals{i} = B_nom * (1 + 0.05 * randn());
-    Kg2_vals{i} = (0.08-0.005) * rand() + 0.005;
+    Kg2_vals{i} = (0.08-0.002) * rand() + 0.002;
 end
 
 %% Setup Simulation Inputs for Parallel Execution
@@ -64,6 +64,9 @@ for i = 1:num_sims
     simIn(i) = simIn(i).setVariable('J_d', J_d_vals{i});
     simIn(i) = simIn(i).setVariable('TB_d', TB_d_vals{i});
     simIn(i) = simIn(i).setVariable('gyroNoisePower', GyroNoisePower_vals{i});
+    simIn(i) = simIn(i).setVariable('kGrom', kGrom_vals{i});
+    simIn(i) = simIn(i).setVariable('bGrom', bGrom_vals{i});
+    simIn(i) = simIn(i).setVariable('Kg2', Kg2_vals{i});
 
     % Save RAM & Comment out other timeseries logs
     simIn(i) = simIn(i).setBlockParameter('TOAD_Simulation/state_log', 'Commented', 'on');
