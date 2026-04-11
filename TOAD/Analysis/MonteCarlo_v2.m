@@ -5,7 +5,12 @@ num_sims = 200;
 clear simIn out
 
 % Nominal parameters (Ensure constantsTOAD is loaded in base workspace first)
+GrommetIDX = 1;
 J_nom = constantsTOAD.J;
+G = GrommetSelect(GrommetIDX);
+m_FC = 0.1;
+K_nom = G.K;
+B_nom = G.C / (2 * sqrt(K_nom * m_FC));
 
 % Preallocate arrays for parameters
 J_d_vals  = cell(1, num_sims);
@@ -40,7 +45,7 @@ for i = 1:num_sims
     TB_d_vals{i} = randn(3, 1) .* sigma_lever;
 
     % 3. Gyro Biases
-    GyroNoisePower_vals{i} = LogNormal(10^-6, 1.2);
+    GyroNoisePower_vals{i} = LogNormal(10^-8, 1.2);
 
     G_RMAX_vals(i) = (20 - 4) * rand() + 4;
     
