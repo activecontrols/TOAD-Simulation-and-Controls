@@ -1,25 +1,30 @@
-Num = 10^6; %
-f = linspace(0, 10000, Num);
-
-Broadband = 6;
-lowEnd = 50;
-highEnd = 3000;
+% Samples
+Num = 10^6; 
+f = linspace(0.01, 10000, Num);
+lowEnd = 40;        % TADPOLE chug frequency, uncertain
+highEnd = 3000;     % uncertain
+G_RMAX = 6;         % uncertain, anywhere from 4-20
+Broadband = G_RMAX^2 / (highEnd - lowEnd);
 n = 2;
 m = 8;
 
+% Driving PSD
 inPSD = Broadband .* abs(1 ./ (1 + (lowEnd ./ f) .^ (2 * n))) .* abs( 1 ./ (1 + (f / highEnd) .^ (2 * m)));
 
-kGrom = 20;
-bGrom = 0.05;
-mBoard = 0.050;
+% Grommet params
+kGrom = 20000;      % design param
+bGrom = 0.1;        % design param
+mBoard = 0.1;
 
-T = sqrt((1 + (2 * bGrom * f / ((0.5/pi) * sqrt(kGrom/mBoard))).^2) / ...
-    (1 - (f / ((0.5/pi) * sqrt(kGrom/mBoard))).^2).^2 + ...
-    (2 * bGrom * f / ((0.5/pi) * sqrt(kGrom/mBoard))).^2);
+%% Resonance calculations via 1DoF Transmissibility
+f_n = 1 / (2 * pi) * sqrt(kGrom / mBoard);
+r = f ./ f_n;
+T = sqrt((1 + (2 * bGrom * r).^2) ./ ((1 - r.^2).^2 + (2 * bGrom * r).^2));
 
+% Output PSD & GRMS
 outPSD = T.^2 .* inPSD;
+GrmsIMU = sqrt(trapz(f, outPSD));
 
-GrmsIMU = sqrt(trapz(f, outPSD))
-
-Kg2 = 0.04;
-VRE = Kg2 * GrmsIMU^2
+% VRE Induced bias
+Kg2 = 0.04; %deg/s/g^2 (UNCERTAIN, 0.002-0.08)
+VRE = Kg2 * GrmsIMU^2;
