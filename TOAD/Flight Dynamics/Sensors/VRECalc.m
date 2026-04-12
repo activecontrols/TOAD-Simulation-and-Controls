@@ -1,9 +1,9 @@
 function [VRE, T, f] = VRECalc(throttle, G_RMAX, kGrom, bGrom, Kg2)
     % Samples
-    Num = 2 * 10^2; 
+    Num = 5 * 10^2; 
     f = logspace(-2, 4, Num);
-    lowEnd = 40;                    % TADPOLE chug frequency, uncertain
-    highEnd = 3000;                 % uncertain
+    lowEnd = 70;                    % uncertain for now
+    highEnd = 2000;                 % uncertain (1L mode)
     GrmsIN = G_RMAX * throttle;
     Broadband = GrmsIN^2 / (highEnd - lowEnd);
     n = 4;
@@ -20,7 +20,7 @@ function [VRE, T, f] = VRECalc(throttle, G_RMAX, kGrom, bGrom, Kg2)
     
     % Output PSD & GRMS
     outPSD = T.^2 .* inPSD;
-    GrmsIMU = sqrt(trapz(f, outPSD));
+    GrmsIMU = sqrt(trapz(log(f), outPSD .* f));
     
     % VRE Induced bias
     VRE = Kg2 * GrmsIMU^2;

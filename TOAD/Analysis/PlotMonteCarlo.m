@@ -260,6 +260,8 @@ function PlotMonteCarlo(filename)
     scatter(filt_roll, lat_pos_err, 30, 'filled', 'MarkerFaceColor', '#EDB120', 'MarkerEdgeColor', 'k', 'MarkerFaceAlpha', 0.7, 'DisplayName', 'Magnitude');
     
     set(gca, 'YScale', 'log'); % Set Y-axis to logarithmic
+    max_y_val = max([max(pos_x(:)), max(pos_y(:)), max(lat_pos_err(:))]);
+    ylim([prctile(lat_pos_err, 0.02), max_y_val * 1.2]); 
     xlabel('Filter Roll RMSE (deg)'); ylabel('Lateral Pos RMSE (m)');
     title('Lateral Position Error vs Filter Roll Error (Log Scale)');
     legend('show', 'Location', 'best');

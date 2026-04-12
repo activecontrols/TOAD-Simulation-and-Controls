@@ -1,11 +1,11 @@
 %% Parallel Monte Carlo Setup & Disturbance Generation
 % --- Configuration ---
 model_name = 'TOAD_Simulation';
-num_sims = 500;
+num_sims = 600;
 clear simIn out
 
 % Nominal parameters (Ensure constantsTOAD is loaded in base workspace first)
-GrommetIDX = 3;
+GrommetIDX = 1;
 J_nom = constantsTOAD.J;
 G = GrommetSelect(GrommetIDX);
 m_FC = 0.1;
@@ -29,9 +29,9 @@ disp(['Generating disturbances for ', num2str(num_sims), ' runs...']);
 
 for i = 1:num_sims
     % 1. Moment of Inertia Disturbances (Delta J)
-    dI_xx = (0.12 * J_nom(1,1)) * randn();
-    dI_yy = (0.12 * J_nom(2,2)) * randn();
-    dI_zz = (0.12 * J_nom(3,3)) * randn();
+    dI_xx = (0.075 * J_nom(1,1)) * randn();
+    dI_yy = (0.075 * J_nom(2,2)) * randn();
+    dI_zz = (0.075 * J_nom(3,3)) * randn();
     dI_xy = 0;
     dI_xz = 0;
     dI_yz = 0;
@@ -45,12 +45,12 @@ for i = 1:num_sims
     TB_d_vals{i} = randn(3, 1) .* sigma_lever;
 
     % 3. Gyro Biases
-    GyroNoisePower_vals{i} = LogNormal(10^-7, 1.2);
+    GyroNoisePower_vals{i} = LogNormal(10^-7, 1);
 
-    G_RMAX_vals{i} = (12 - 3) * rand() + 3;
+    G_RMAX_vals{i} = (10 - 3) * rand() + 3;
     kGrom_vals{i} = K_nom * (1 + 0.075 * randn());
     bGrom_vals{i} = B_nom * (1 + 0.100 * randn());
-    Kg2_vals{i} = (0.08-0.002) * rand() + 0.002;
+    Kg2_vals{i} = (0.05-0.001) * rand() + 0.001;
 end
 
 %% Setup Simulation Inputs for Parallel Execution
