@@ -1,11 +1,11 @@
 %% Parallel Monte Carlo Setup & Disturbance Generation
 % --- Configuration ---
 model_name = 'TOAD_Simulation';
-num_sims = 100;
+num_sims = 500;
 clear simIn out
 
 % Nominal parameters (Ensure constantsTOAD is loaded in base workspace first)
-GrommetIDX = 1;
+GrommetIDX = 3;
 J_nom = constantsTOAD.J;
 G = GrommetSelect(GrommetIDX);
 m_FC = 0.1;
@@ -32,24 +32,24 @@ for i = 1:num_sims
     dI_xx = (0.12 * J_nom(1,1)) * randn();
     dI_yy = (0.12 * J_nom(2,2)) * randn();
     dI_zz = (0.12 * J_nom(3,3)) * randn();
-    dI_xy = 1 * randn();
-    dI_xz = 1 * randn();
-    dI_yz = 1 * randn();
+    dI_xy = 0;
+    dI_xz = 0;
+    dI_yz = 0;
     
-    J_d_vals{i} = 0 * [dI_xx, dI_xy, dI_xz;
+    J_d_vals{i} = [dI_xx, dI_xy, dI_xz;
                    dI_xy, dI_yy, dI_yz;
                    dI_xz, dI_yz, dI_zz];
                
     % 2. Lever Arm Disturbances (Delta Lever Arm)
-    sigma_lever = 0 * [0.01; 0.01; 0.02]; 
+    sigma_lever = [0.02; 0.02; 0.02]; 
     TB_d_vals{i} = randn(3, 1) .* sigma_lever;
 
     % 3. Gyro Biases
-    GyroNoisePower_vals{i} = LogNormal(10^-8, 1.2);
+    GyroNoisePower_vals{i} = LogNormal(10^-7, 1.2);
 
-    G_RMAX_vals{i} = (20 - 3) * rand() + 3;
-    kGrom_vals{i} = K_nom * (1 + 0.05 * randn());
-    bGrom_vals{i} = B_nom * (1 + 0.05 * randn());
+    G_RMAX_vals{i} = (12 - 3) * rand() + 3;
+    kGrom_vals{i} = K_nom * (1 + 0.075 * randn());
+    bGrom_vals{i} = B_nom * (1 + 0.100 * randn());
     Kg2_vals{i} = (0.08-0.002) * rand() + 0.002;
 end
 

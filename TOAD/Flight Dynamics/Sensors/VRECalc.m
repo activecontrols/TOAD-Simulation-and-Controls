@@ -1,4 +1,4 @@
-function VRE = VRECalc(throttle, G_RMAX, kGrom, bGrom, Kg2)
+function [VRE, T, f] = VRECalc(throttle, G_RMAX, kGrom, bGrom, Kg2)
     % Samples
     Num = 2 * 10^2; 
     f = logspace(-2, 4, Num);

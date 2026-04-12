@@ -8,3 +8,5 @@ Natural Rubber,40 A,22000,11.0
 Neoprene,50 A,28000,28.0
 Polyurethane,60 A,45000,40.0
 Wire Mesh (Micro),N/A,35000,55.0
+PTFE (Teflon),60 D,5000000,30.0
+PEEK,85 D,35000000,15.0
