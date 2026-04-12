@@ -21,7 +21,7 @@ MEKF_Constants;
 constantsTOAD.m_dry = 132.5;
 constantsTOAD.g = 9.80145; 
 constantsTOAD.rTB = 1.1;
-constantsTOAD.J = diag([50 50 15]);
+constantsTOAD.J = diag([110 110 20]);
 constantsTOAD.MaxThrust = 2446.52;
 constantsTOAD.MaxMdot = 1.3204;
 constantsTOAD.OF = 1;
