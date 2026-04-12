@@ -1,11 +1,11 @@
 %% Parallel Monte Carlo Setup & Disturbance Generation
 % --- Configuration ---
 model_name = 'TOAD_Simulation';
-num_sims = 100;
+num_sims = 500;
 clear simIn out
 
 % Nominal parameters (Ensure constantsTOAD is loaded in base workspace first)
-GrommetIDX = 1;
+GrommetIDX = 3;
 J_nom = constantsTOAD.J;
 G = GrommetSelect(GrommetIDX);
 m_FC = 0.1;
@@ -16,7 +16,7 @@ B_nom = G.C / (2 * sqrt(K_nom * m_FC));
 J_d_vals  = cell(1, num_sims);
 TB_d_vals = cell(1, num_sims);
 GyroNoisePower_vals = cell(1, num_sims);
-G_RMAX_vals = call(1, num_sims);
+G_RMAX_vals = cell(1, num_sims);
 kGrom_vals = cell(1, num_sims);
 bGrom_vals = cell(1, num_sims);
 Kg2_vals = cell(1, num_sims);
@@ -32,29 +32,25 @@ for i = 1:num_sims
     dI_xx = (0.12 * J_nom(1,1)) * randn();
     dI_yy = (0.12 * J_nom(2,2)) * randn();
     dI_zz = (0.12 * J_nom(3,3)) * randn();
-    dI_xy = 1 * randn();
-    dI_xz = 1 * randn();
-    dI_yz = 1 * randn();
+    dI_xy = 0;
+    dI_xz = 0;
+    dI_yz = 0;
     
-    J_d_vals{i} = 0 * [dI_xx, dI_xy, dI_xz;
+    J_d_vals{i} = [dI_xx, dI_xy, dI_xz;
                    dI_xy, dI_yy, dI_yz;
                    dI_xz, dI_yz, dI_zz];
                
     % 2. Lever Arm Disturbances (Delta Lever Arm)
-    sigma_lever = 0 * [0.01; 0.01; 0.02]; 
+    sigma_lever = [0.02; 0.02; 0.02]; 
     TB_d_vals{i} = randn(3, 1) .* sigma_lever;
 
     % 3. Gyro Biases
-    GyroNoisePower_vals{i} = LogNormal(10^-8, 1.2);
+    GyroNoisePower_vals{i} = LogNormal(10^-7, 1.2);
 
-    G_RMAX_vals(i) = (20 - 4) * rand() + 4;
-    
-    kGrom_nom = Grom.k;
-    kGrom = kGrom_nom * (1 + 0.05 * randn());
-    bGrom_nom = Grom.c / 1 / sqrt(kGrom_nom * 0.1);
-    bGrom = bGrom_nom * (1 + 0.05 * randn());
-
-    Kg2_vals(i) = (0.08-0.005) * rand() + 0.005;
+    G_RMAX_vals{i} = (12 - 3) * rand() + 3;
+    kGrom_vals{i} = K_nom * (1 + 0.075 * randn());
+    bGrom_vals{i} = B_nom * (1 + 0.100 * randn());
+    Kg2_vals{i} = (0.08-0.002) * rand() + 0.002;
 end
 
 %% Setup Simulation Inputs for Parallel Execution
@@ -68,6 +64,10 @@ for i = 1:num_sims
     simIn(i) = simIn(i).setVariable('J_d', J_d_vals{i});
     simIn(i) = simIn(i).setVariable('TB_d', TB_d_vals{i});
     simIn(i) = simIn(i).setVariable('gyroNoisePower', GyroNoisePower_vals{i});
+    simIn(i) = simIn(i).setVariable('kGrom', kGrom_vals{i});
+    simIn(i) = simIn(i).setVariable('bGrom', bGrom_vals{i});
+    simIn(i) = simIn(i).setVariable('Kg2', Kg2_vals{i});
+    simIn(i) = simIn(i).setVariable('G_RMAX', G_RMAX_vals{i});
 
     % Save RAM & Comment out other timeseries logs
     simIn(i) = simIn(i).setBlockParameter('TOAD_Simulation/state_log', 'Commented', 'on');
