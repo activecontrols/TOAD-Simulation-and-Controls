@@ -11,16 +11,16 @@ Waypoints = repmat(dummyWP, 1, 5);
 
 % Trajectory
 Waypoints(1) = TOADWaypoint([0; 0; 0], 'Label', 'PAD HLD 1', 'HoldTime', 20.0, ...
-    'PosTol',   1);
+    'PosTol',  1);
 
 Waypoints(2) = TOADWaypoint([0; 0; 5], 'Label', 'PAD DIV 1', 'MaxVel', ...
-    [3; 3; 6], 'PosTol', 3, 'VelFF', [0; 0; 6]);
+    [3; 3; 6], 'PosTol', 3, 'VelFF', [0; 0; 6], 'MaxTime', 5);
 
 Waypoints(3) = TOADWaypoint([5; 5; 50], 'Label', 'FLT HOV 1', 'PosTol', 1, ...
-    'HoldTime', 10);
+    'HoldTime', 10, 'MaxTime', 25);
 
 Waypoints(4) = TOADWaypoint([5; 5; 35], 'Label', 'FLT DIV 2', 'MaxVel', ...
-    [3; 3; 6], 'PosTol', 3, 'VelFF', [0; 0; -6]);
+    [3; 3; 6], 'PosTol', 3, 'VelFF', [0; 0; -6], 'MaxTime', 5);
 
 Waypoints(5) = TOADWaypoint([10; 10; 0], 'Label', 'FLT END 1', 'PosTol', 1, ...
-    'HoldTime', 10, 'MaxVel', [3; 3; 6]);
+    'HoldTime', 2, 'MaxVel', [3; 3; 6]);

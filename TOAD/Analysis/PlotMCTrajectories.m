@@ -40,6 +40,46 @@ function PlotMCTrajectories(filename)
     for i = 1:size(pos_all, 1)
         % Find the last valid (non-NaN) index for this trajectory
         last_valid = find(~isnan(pos_all(i,:,1)), 1, 'last');
+        
+        if ~isempty(last_valid)
+            % 1. Final Position Criterion
+            final_pos = [pos_all(i, last_valid, 1), pos_all(i, last_valid, 2), pos_all(i, last_valid, 3)];
+            pos_met = all(abs(final_pos(:) - final_wp(:)) <= final_tol);
+            
+            % 2. Approach Criteria (Evaluated at 2m crossing)
+            appr_met = false;
+            alts = pos_all(i, 1:last_valid, 3);
+            idx_above = find(alts > 2.0, 1, 'last'); % Find last time above 2m
+            
+            if ~isempty(idx_above)
+                appr_idx = min(idx_above + 1, last_valid);
+                appr_alt = max(alts(appr_idx), 0.01); % Prevent division by zero
+                
+                % Lateral Error & Glideslope Angle
+                appr_pos_xy = [pos_all(i, appr_idx, 1), pos_all(i, appr_idx, 2)];
+                lat_err = norm(appr_pos_xy - final_wp(1:2));
+                glideslope_deg = atan2d(lat_err, appr_alt); % Angle relative to vertical
+                
+                % Lateral Velocity
+                appr_vel_xy = [vel_all(i, appr_idx, 1), vel_all(i, appr_idx, 2)];
+                lat_vel = norm(appr_vel_xy);
+                
+                % Check if approach conditions are within bounds
+                if glideslope_deg <= 10.0 && lat_vel <= 0.3
+                    appr_met = true;
+                end
+            end
+            
+            % Classify as success if ALL conditions are met
+            if pos_met && appr_met
+                is_success(i) = true;
+            end
+        end
+    end
+    
+    for i = 1:size(pos_all, 1)
+        % Find the last valid (non-NaN) index for this trajectory
+        last_valid = find(~isnan(pos_all(i,:,1)), 1, 'last');
         if ~isempty(last_valid)
             final_pos = [pos_all(i, last_valid, 1), pos_all(i, last_valid, 2), pos_all(i, last_valid, 3)];
             % Classify as success if final position is within the bounding box of the final WP

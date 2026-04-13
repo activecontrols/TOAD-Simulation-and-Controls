@@ -1,7 +1,7 @@
 %% Parallel Monte Carlo Trajectory Setup & Extraction
 % --- Configuration ---
 model_name = 'TOAD_Simulation';
-num_sims = 50; % Reduced for trajectory logging
+num_sims = 100; % Reduced for trajectory logging
 clear simIn out
 
 % Nominal parameters (Ensure constantsTOAD is loaded in base workspace first)
@@ -88,7 +88,7 @@ out = parsim(simIn, 'ShowProgress', 'on', 'UseFastRestart', 'on');
 
 %% Extract Data 
 disp('Simulations Complete. Extracting and Interpolating Trajectories...');
-t_sim = 60;
+t_sim = 75;
 t_common = (0:0.1:t_sim)'; % Common time vector at 10Hz
 pos_all = nan(num_sims, length(t_common), 3);
 vel_all = nan(num_sims, length(t_common), 3);

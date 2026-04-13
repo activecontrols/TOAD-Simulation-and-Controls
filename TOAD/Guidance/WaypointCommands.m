@@ -9,6 +9,7 @@ function [trg, MaxVel, VelFF] = WaypointCommands(x, t)
     persistent timeFlag
     persistent i
     persistent timeCounter
+    persistent wpTotalTime
     persistent prevTime
     persistent HoldMode
     persistent errorAccum
@@ -20,6 +21,7 @@ function [trg, MaxVel, VelFF] = WaypointCommands(x, t)
         timeFlag = 999;
         i = 1;
         timeCounter = 0;
+        wpTotalTime = 0;
         prevTime = 0;
         HoldMode = 0;
         errorAccum = zeros(3, 1);
@@ -39,6 +41,11 @@ function [trg, MaxVel, VelFF] = WaypointCommands(x, t)
     % Retrieve current waypoint from array
     wp = Waypoints(i);
     currentPosTarget = wp.Position;
+
+    % Accumulate total time spent on this waypoint (pauses during aborts)
+    if isABORT == 0
+        wpTotalTime = wpTotalTime + dt; 
+    end
     
     if isABORT
         if HoldMode == 0
@@ -68,12 +75,13 @@ function [trg, MaxVel, VelFF] = WaypointCommands(x, t)
             errorAccum = errorAccum + PosError * dt;
         end
         
-        % Advance based solely on position & hold time
-        advanceNow = CriteriaMet(wp, X_full) && ...
-                     (wp.IsPassAndGo || timeCounter >= wp.HoldTime);
+        % Advance logic
+        advanceNow = (CriteriaMet(wp, X_full) && (wp.IsPassAndGo || timeCounter >= wp.HoldTime)) ...
+                     || (wpTotalTime >= wp.MaxTime);
         
         if advanceNow && i < numel(Waypoints)
             i = i + 1;
+            wpTotalTime = 0;
             timeCounter = 0;
         end
     end
