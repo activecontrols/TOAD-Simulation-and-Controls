@@ -1,4 +1,4 @@
-function [trg, MaxVel, VelFF] = WaypointCommands(x, t)
+function [trg, MaxVel, VelFF, GND] = WaypointCommands(x, t)
 
     % Store full 13-state vector before slicing for CriteriaMet evaluation
     X_full = x; 
@@ -56,7 +56,7 @@ function [trg, MaxVel, VelFF] = WaypointCommands(x, t)
             HoldMode = 1;
         end
         % Build a temporary waypoint to safely bypass CriteriaMet during abort
-        wp = TOADWaypoint(currentPosTarget, 'PosTol', 1.0);
+        wp = TOADWaypoint(currentPosTarget, 'PosTol', [1.0; 1.0; 1.0]); % <-- Changed to (3,1) array
     end
     
     PosError = currentPosTarget - x(5:7);
@@ -87,7 +87,16 @@ function [trg, MaxVel, VelFF] = WaypointCommands(x, t)
     end
     
     trg = currentPosTarget;
+
+    if i == 1
+        GND = 1;
+    elseif i == numel(Waypoints) && CriteriaMet(wp, X_full) && (wp.IsPassAndGo || timeCounter >= wp.HoldTime)
+        GND = 1;
+    else
+        GND = 0;
+    end
 end
+
 function met = CriteriaMet(wp, X)
-    met = norm(X(5:7) - wp.Position) < wp.PosTol;
+    met = all(abs(X(5:7) - wp.Position) < wp.PosTol);
 end

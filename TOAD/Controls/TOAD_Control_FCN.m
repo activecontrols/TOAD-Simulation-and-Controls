@@ -42,7 +42,7 @@ U = zeros(4,1);
     PosError = PosTarget - X(5:7, :);
     
     % Velocity Command
-    K_P = [0.5; 0.5; 0.75];
+    K_P = [0.57; 0.57; 0.75];
     VelTarget = K_P .* PosError + VelFF;
 
     % Velocity Saturation Step
@@ -73,7 +73,7 @@ U = zeros(4,1);
     K_I = K_I .* Gate;
     VelErrorI = VelErrorI + K_I .* VelError .* dT;
     VelErrorI = max(min(VelErrorI, Clamp), -Clamp);
-    K_P = [1.8; 1.8; 7];
+    K_P = [1.7; 1.7; 7];
 
     % Acceleration Target
     AccelTarget = K_P .* VelError + VelErrorI  + [0; 0; constantsTOAD.g];
@@ -114,7 +114,7 @@ U = zeros(4,1);
     lastAttError = AttError(2:4);
 
     % Error accumulation and clamping
-    Clamp = [3; 3; 0.4];
+    Clamp = [0.4; 0.4; 0.4];
     AttErrorI = AttErrorI + AttError(2:4) .* dT;
     AttErrorI = max(min(AttErrorI, Clamp), -Clamp);
 

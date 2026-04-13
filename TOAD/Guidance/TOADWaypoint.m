@@ -5,7 +5,7 @@ function wp = TOADWaypoint(pos, options)
         options.VelFF       (3,1) double = [0; 0; 0]
         options.HoldTime    (1,1) double = nan
         options.MaxTime     (1,1) double = inf
-        options.PosTol      (1,1) double = 1.0
+        options.PosTol      (3,1) double = [1; 1; 1]
         options.Label       (1,:) char   = ''
     end
     

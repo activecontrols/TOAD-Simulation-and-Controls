@@ -8,7 +8,7 @@ function PlotMCTrajectories(filename)
    %% 1. Handle Input Arguments & Data Loading
     if nargin < 1 || isempty(filename)
         disp('Pulling data from the base workspace...');
-        reqVars = {'pos_all', 'vel_all', 'pos_avg', 't_common', 'pos_targ_ref', ...
+        reqVars = {'pos_all', 'vel_all', 'pos_avg', 't_common',...
                    'Lever_Radial', 'Lever_Axial', 'J_Trans_Scale', 'J_Axial_Scale', ...
                    'RMSE_Controls_all', 'RMSE_Filter_all', ...
                    'GyroNoisePower_vals', 'Kg2_vals', 'G_RMAX_vals'};
@@ -42,14 +42,14 @@ function PlotMCTrajectories(filename)
         last_valid = find(~isnan(pos_all(i,:,1)), 1, 'last');
         
         if ~isempty(last_valid)
-            % 1. Final Position Criterion
+            % 1. Final Position Criterion (Using vector PosTol)
             final_pos = [pos_all(i, last_valid, 1), pos_all(i, last_valid, 2), pos_all(i, last_valid, 3)];
-            pos_met = all(abs(final_pos(:) - final_wp(:)) <= final_tol);
+            pos_met = all(abs(final_pos(:) - final_wp(:)) <= final_tol(:));
             
             % 2. Approach Criteria (Evaluated at 2m crossing)
             appr_met = false;
             alts = pos_all(i, 1:last_valid, 3);
-            idx_above = find(alts > 2.0, 1, 'last'); % Find last time above 2m
+            idx_above = find(alts > 3.0, 1, 'last'); % Find last time above 2m
             
             if ~isempty(idx_above)
                 appr_idx = min(idx_above + 1, last_valid);
@@ -72,18 +72,6 @@ function PlotMCTrajectories(filename)
             
             % Classify as success if ALL conditions are met
             if pos_met && appr_met
-                is_success(i) = true;
-            end
-        end
-    end
-    
-    for i = 1:size(pos_all, 1)
-        % Find the last valid (non-NaN) index for this trajectory
-        last_valid = find(~isnan(pos_all(i,:,1)), 1, 'last');
-        if ~isempty(last_valid)
-            final_pos = [pos_all(i, last_valid, 1), pos_all(i, last_valid, 2), pos_all(i, last_valid, 3)];
-            % Classify as success if final position is within the bounding box of the final WP
-            if all(abs(final_pos(:) - final_wp(:)) <= final_tol)
                 is_success(i) = true;
             end
         end
@@ -126,8 +114,12 @@ function PlotMCTrajectories(filename)
         wp = Waypoints(idx);
         if ~wp.IsPassAndGo && wp.Position(3) >= 0
             tol = wp.PosTol;
-            v_cube = 2 * tol * [0.5 -0.5 -0.5; 0.5 0.5 -0.5; -0.5 0.5 -0.5; -0.5 -0.5 -0.5; ...
-                                0.5 -0.5 0.5; 0.5 0.5 0.5; -0.5 0.5 0.5; -0.5 -0.5 0.5] + wp.Position'; 
+            unit_cube = [0.5 -0.5 -0.5; 0.5 0.5 -0.5; -0.5 0.5 -0.5; -0.5 -0.5 -0.5; ...
+                         0.5 -0.5 0.5; 0.5 0.5 0.5; -0.5 0.5 0.5; -0.5 -0.5 0.5];
+            
+            % Scale each column (X, Y, Z) by its respective component tolerance
+            v_cube = 2 * (unit_cube .* tol') + wp.Position'; 
+            
             [f_cube, ~] = convhull(v_cube);
             patch(axMain, 'Vertices', v_cube, 'Faces', f_cube, 'FaceColor', 'g', ...
                   'FaceAlpha', 0.1, 'EdgeColor', '#4DBEEE');
@@ -220,61 +212,53 @@ function PlotMCTrajectories(filename)
     tiledlayout(1, 2, 'TileSpacing', 'compact');
     
     appr_lat_error = nan(num_sims, 1);
-    appr_vel = nan(num_sims, 3);
-    alt_threshold = 1; % Evaluate approach conditions at 1 meters
+    appr_lat_vel   = nan(num_sims, 1); 
+    alt_threshold  = 3.0; % <-- Updated to evaluate at 2 meters
     
     final_wp = Waypoints(end).Position;
     
     for i = 1:num_sims
-        % Find the last valid state of this simulation run
         last_valid = find(~isnan(pos_all(i,:,1)), 1, 'last');
         
         if ~isempty(last_valid)
             alts = pos_all(i, 1:last_valid, 3);
-            
-            % Find the LAST index where altitude was ABOVE the threshold.
-            % This ensures we catch the final descent, ignoring the takeoff phase.
             idx_above = find(alts > alt_threshold, 1, 'last');
             
             if ~isempty(idx_above)
-                % The approach point is the index right after it crossed below 2m
                 appr_idx = min(idx_above + 1, last_valid);
             else
-                % Fallback if it never went above 2m
                 appr_idx = last_valid; 
             end
             
-            % 1. Approach Lateral Error (Euclidean distance to target in X-Y plane)
+            % 1. Approach Lateral Error
             appr_pos_xy = [pos_all(i, appr_idx, 1), pos_all(i, appr_idx, 2)];
             appr_lat_error(i) = norm(appr_pos_xy - final_wp(1:2));
             
-            % 2. Approach Velocity
-            appr_vel(i, :) = vel_all(i, appr_idx, :);
+            % 2. Approach Lateral Velocity Magnitude
+            appr_vel_xy = [vel_all(i, appr_idx, 1), vel_all(i, appr_idx, 2)];
+            appr_lat_vel(i) = norm(appr_vel_xy);
         end
     end
+
+    % Calculate max allowable lateral distance for a 10 deg glideslope at this altitude
+    % tan(10 deg) = opposite(lat_err) / adjacent(alt)
+    max_lat_err = alt_threshold * tand(10);
     
-    % --- Tile 1: Approach Lateral Error (Successful Runs Only) ---
+    % --- Tile 1: Approach Lateral Error ---
     nexttile; hold on; grid on;
-    
-    % Filter to only include successful trajectories
-    appr_lat_error_success = appr_lat_error(is_success); 
-    
-    if ~isempty(appr_lat_error_success)
-        histogram(appr_lat_error_success, num_bins, 'FaceColor', '#7E2F8E', 'FaceAlpha', 0.6);
-    end
+    histogram(appr_lat_error, num_bins, 'FaceColor', '#7E2F8E', 'FaceAlpha', 0.6);
+    xline(max_lat_err, 'r--', 'LineWidth', 2, 'Label', '10^\circ Glideslope Limit');
     xlabel('Lateral Distance from Target (m)', 'FontWeight', 'bold');
     ylabel('Frequency');
-    title(sprintf('Approach Lateral Error (Alt = %.1f m)', alt_threshold));
+    title(sprintf('Lateral Error at %.1fm', alt_threshold));
     
-    % --- Tile 2: Approach Velocity (Overlay Histogram) ---
+    % --- Tile 2: Approach Lateral Velocity ---
     nexttile; hold on; grid on;
-    histogram(appr_vel(:, 1), num_bins, 'FaceColor', '#0072BD', 'FaceAlpha', 0.6, 'DisplayName', 'V_x');
-    histogram(appr_vel(:, 2), num_bins, 'FaceColor', '#D95319', 'FaceAlpha', 0.6, 'DisplayName', 'V_y');
-    histogram(appr_vel(:, 3), num_bins, 'FaceColor', '#EDB120', 'FaceAlpha', 0.6, 'DisplayName', 'V_z');
-    xlabel('Velocity (m/s)', 'FontWeight', 'bold');
+    histogram(appr_lat_vel, num_bins, 'FaceColor', '#0072BD', 'FaceAlpha', 0.6);
+    xline(0.3, 'r--', 'LineWidth', 2, 'Label', '0.3 m/s Limit');
+    xlabel('Lateral Velocity Magnitude (m/s)', 'FontWeight', 'bold');
     ylabel('Frequency');
-    title(sprintf('Approach Velocity (Alt = %.1f m)', alt_threshold));
-    legend('show');
+    title(sprintf('Lateral Velocity at %.1fm', alt_threshold));
 end
 
 %% Helper function for drawing orthographic trajectory projections
@@ -288,8 +272,13 @@ function drawMCTraj(ax, pos_all, pos_avg, wp_coords, Waypoints, x_idx, y_idx, x_
             tol = wp.PosTol;
             px = wp.Position(x_idx);
             py = wp.Position(y_idx);
-            vx = [px-tol, px+tol, px+tol, px-tol];
-            vy = [py-tol, py-tol, py+tol, py+tol];
+            
+            % Extract specific component tolerances
+            tol_x = tol(x_idx);
+            tol_y = tol(y_idx);
+            
+            vx = [px-tol_x, px+tol_x, px+tol_x, px-tol_x];
+            vy = [py-tol_y, py-tol_y, py+tol_y, py+tol_y];
             patch(ax, vx, vy, 'g', 'FaceAlpha', 0.1, 'EdgeColor', '#4DBEEE');
         end
     end

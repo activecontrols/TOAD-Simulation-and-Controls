@@ -18,9 +18,9 @@ MEKF_Constants;
 
 %% Create constants struct for TOAD (Approximate values, all metric)
 % Vehicle Parameters
-constantsTOAD.m_dry = 132.5;
+constantsTOAD.m_dry = 137.5;
 constantsTOAD.g = 9.80145; 
-constantsTOAD.rTB = 1.1;
+constantsTOAD.rTB = 0.75;
 constantsTOAD.J = diag([110 110 20]);
 constantsTOAD.MaxThrust = 2446.52;
 constantsTOAD.MaxMdot = 1.3204;

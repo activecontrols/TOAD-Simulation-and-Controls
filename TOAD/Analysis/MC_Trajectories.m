@@ -1,7 +1,7 @@
 %% Parallel Monte Carlo Trajectory Setup & Extraction
 % --- Configuration ---
 model_name = 'TOAD_Simulation';
-num_sims = 100; % Reduced for trajectory logging
+num_sims = 250; % Reduced for trajectory logging
 clear simIn out
 
 % Nominal parameters (Ensure constantsTOAD is loaded in base workspace first)
@@ -47,7 +47,7 @@ for i = 1:num_sims
     G_RMAX_vals{i} = (8 - 3) * rand() + 3;
     kGrom_vals{i} = K_nom * (1 + 0.150 * randn());
     bGrom_vals{i} = B_nom * (1 + 0.150 * randn());
-    Kg2_vals{i} = (0.05-0.0005) * rand() + 0.0005;
+    Kg2_vals{i} = (0.02-0.0005) * rand() + 0.0005;
 end
 
 %% Setup Simulation Inputs for Parallel Execution
@@ -81,8 +81,8 @@ end
 
 %% Execute Parallel Simulations
 disp('Starting Parallel Monte Carlo Trajectory Simulations (parsim)...');
-myCluster = parcluster('Processes');
-delete(myCluster.Jobs);
+% myCluster = parcluster('Processes');
+% delete(myCluster.Jobs);
 
 out = parsim(simIn, 'ShowProgress', 'on', 'UseFastRestart', 'on');
 
