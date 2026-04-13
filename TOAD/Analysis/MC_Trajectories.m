@@ -29,9 +29,9 @@ disp(['Generating disturbances for ', num2str(num_sims), ' runs...']);
 
 for i = 1:num_sims
     % 1. Moment of Inertia Disturbances (Delta J)
-    dI_xx = (0.06 * J_nom(1,1)) * randn();
-    dI_yy = (0.06 * J_nom(2,2)) * randn();
-    dI_zz = (0.06 * J_nom(3,3)) * randn();
+    dI_xx = (0.1 * J_nom(1,1)) * rand();
+    dI_yy = (0.1 * J_nom(2,2)) * rand();
+    dI_zz = (0.1 * J_nom(3,3)) * rand();
     dI_xy = 0; dI_xz = 0; dI_yz = 0;
     
     J_d_vals{i} = [dI_xx, dI_xy, dI_xz;
@@ -39,7 +39,7 @@ for i = 1:num_sims
                    dI_xz, dI_yz, dI_zz];
                
     % 2. Lever Arm Disturbances (Delta Lever Arm)
-    sigma_lever = [0.015; 0.015; 0.02]; 
+    sigma_lever = [0.005; 0.005; 0.005]; 
     TB_d_vals{i} = randn(3, 1) .* sigma_lever;
 
     % 3. Gyro Biases & Params
