@@ -33,7 +33,8 @@ constantsTOAD.m_wet = constantsTOAD.m_dry + constantsTOAD.OxMass + constantsTOAD
 
 % Dynamic Files Generation & Control
 % FlightDynamicsGen(constantsTOAD);
-[K_Att, ~] = TOAD_Controller_Gen(constantsTOAD, constantsTOAD.OxMass, constantsTOAD.FuMass);
+[K_Att_Wet, ~] = TOAD_Controller_Gen(constantsTOAD, constantsTOAD.OxMass, constantsTOAD.FuMass);
+[K_Att_Dry, ~] = TOAD_Controller_Gen(constantsTOAD, 0, 0);
 x0 = [1; zeros(12,1); constantsTOAD.OxMass; constantsTOAD.FuMass];
 u0 = [0; 0; constantsTOAD.g * constantsTOAD.m_wet; 0];
 
@@ -46,7 +47,8 @@ constantsTOAD.mag = [cos(pi/6); 0; -sin(pi/6)];
 magDistMatrix = eye(3) + 0.02 * randn(3);
 magDistMatrix = (magDistMatrix + magDistMatrix') / 2;
 magDistMatrix = eye(3);
-constantsTOAD.K_Att = K_Att;
+constantsTOAD.K_Att_Wet = K_Att_Wet;
+constantsTOAD.K_Att_Dry = K_Att_Dry;
 covar_vec = [accel_proc_cov; gyro_cov; mag_proc_cov];
 IMU_Rate = 1000;
 Checkpoints =  [0, 5, 5,  5;
@@ -67,7 +69,16 @@ TB_d = zeros(3,1);
 accelBias = 0.09 * ones(3,1);
 gyroBias = 0.05 * ones(3, 1);
 distMode = 0;
+
+% MC Variables
 gyroNoisePower = 10^-6;
+GrommetIDX = 1;
+G = GrommetSelect(GrommetIDX);
+m_FC = 0.1;
+kGrom = G.K;
+bGrom = G.C / (2 * sqrt(kGrom * m_FC));
+Kg2 = 0.03;
+G_RMAX = 6;
 
 % %% Load the data dictionary
 % dictObj = Simulink.data.dictionary.open('Model_Vars.sldd');

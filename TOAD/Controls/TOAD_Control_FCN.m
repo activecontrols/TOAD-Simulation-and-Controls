@@ -26,7 +26,7 @@ if isempty(lastT)
 end
 dT = t - lastT;
 lastT = t;
-K_Att = constantsTOAD.K_Att;
+K_Att = constantsTOAD.K_Att_Dry + (constantsTOAD.K_Att_Wet - constantsTOAD.K_Att_Dry) * (X(14) / constantsTOAD.OxMass);
 
 % Controller Limits
 thrustMax = constantsTOAD.MaxThrust;   %N
