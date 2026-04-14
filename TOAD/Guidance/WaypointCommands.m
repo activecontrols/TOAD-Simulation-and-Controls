@@ -1,4 +1,4 @@
-function [trg, MaxVel, VelFF, GND] = WaypointCommands(x, t)
+function [trg, MaxVel, VelFF, HDGRef, GND] = WaypointCommands(x, t)
 
     % Store full 13-state vector before slicing for CriteriaMet evaluation
     X_full = x; 
@@ -63,8 +63,10 @@ function [trg, MaxVel, VelFF, GND] = WaypointCommands(x, t)
     MaxVel = wp.MaxVel;
     if isABORT == 0
         VelFF = wp.VelFF;
+        HDGRef = wp.HDGRef;
     else
         VelFF = zeros(3,1);
+        HDGRef = [1; 0; 0]; % Default safe heading during abort
     end
 
     % Advance logic

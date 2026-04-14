@@ -1,7 +1,7 @@
 %% Parallel Monte Carlo Trajectory Setup & Extraction (V3)
 % --- Configuration ---
 model_name = 'TOAD_Simulation';
-num_sims = 100; % Kept from V2 (Trajectory version)
+num_sims = 150;
 clear simIn out
 
 % Nominal parameters
@@ -50,7 +50,7 @@ for i = 1:num_sims
     G_RMAX_vals{i} = (8 - 3) * rand() + 3;
     kGrom_vals{i} = K_nom * (1 + 0.150 * randn());
     bGrom_vals{i} = B_nom * (1 + 0.150 * randn());
-    Kg2_vals{i} = (0.05-0.0005) * rand() + 0.0005;
+    Kg2_vals{i} = (0.01-0.0001) * rand() + 0.0001;
 
     % 4. Wind
     Wind_Gain_vals{i} = wblrnd(0.4, 2);

@@ -1,15 +1,15 @@
 
 %Taken from example implementation
 p2.est_cov = 1.0;
-gyro_bias_cov = 1e-9;
+gyro_bias_cov = 1e-8;
 accel_proc_cov = 1e-2;
 accel_bias_cov = 1e-12;
-mag_proc_cov = 5e-2;
-mag_bias_cov = 1e-15; % * 3000;
+mag_proc_cov = 1e-1;
+mag_bias_cov = 1e-12; % * 3000;
 
 gyro_cov = 3e-5;
 accel_obs_cov = 6e-2;
-mag_obs_cov = 2e-3;
+mag_obs_cov = 3e-1;
 
 %Init constants
 dt = 0.005;

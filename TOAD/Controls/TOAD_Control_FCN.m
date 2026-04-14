@@ -14,7 +14,7 @@
 % channels.
 %
 % By: Pablo Plata   -   11/27/25 (Happy Thanksgiving!)
-function [U, State_ERR] = TOAD_Control_FCN(PosTarget, X, constantsTOAD, t, MaxVel, VelFF)
+function [U, State_ERR] = TOAD_Control_FCN(PosTarget, X, constantsTOAD, t, MaxVel, VelFF, HDGRef)
 
 % Time Counter
 persistent lastT VelErrorI AttErrorI lastAttError
@@ -53,7 +53,7 @@ U = zeros(4,1);
     VelError = VelTarget - X(8:10, :);
 
     % Integral Accumulator
-    K_I = [0.64; 0.64; 2];
+    K_I = [0.6; 0.6; 2];
     Leak = 0.05;
     Clamp = [5; 5; 5];
 
@@ -73,7 +73,7 @@ U = zeros(4,1);
     K_I = K_I .* Gate;
     VelErrorI = VelErrorI + K_I .* VelError .* dT;
     VelErrorI = max(min(VelErrorI, Clamp), -Clamp);
-    K_P = [1.6; 1.6; 7];
+    K_P = [1.5; 1.5; 7];
 
     % Acceleration Target
     AccelTarget = K_P .* VelError + VelErrorI  + [0; 0; constantsTOAD.g];
@@ -93,7 +93,6 @@ U = zeros(4,1);
     Z_b = AccelTarget / norm(AccelTarget);
 
     % Heading reference (+X axis rolled to north)
-    HDGRef = [1; 0; 0];
     Y_b = cross(Z_b, HDGRef);
     Y_b = Y_b / norm(Y_b);
 
@@ -119,9 +118,13 @@ U = zeros(4,1);
     AttErrorI = max(min(AttErrorI, Clamp), -Clamp);
 
     % State vector and error
-    X_Err = [-AttError(2:4, :); X(11:13, :); AttErrorI];
     State_ERR = [AttError(2:4); PosError; VelError].^2;
-
+    MaxRollErr = 0.15;
+    if abs(AttError(4)) > MaxRollErr
+        AttError(4) = sign(AttError(4)) * MaxRollErr;
+    end
+    X_Err = [-AttError(2:4, :); X(11:13, :); AttErrorI];
+    
     % LQR Controller
     U([1 2 4]) = -K_Att * X_Err;
 

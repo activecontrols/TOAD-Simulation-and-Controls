@@ -43,10 +43,17 @@ constantsTOAD.Q = p2.Q;
 constantsTOAD.R = p2.obsv_cov_mat;
 constantsTOAD.BSigma = 5e-2;
 constantsTOAD.BBias = 1e-8;
-constantsTOAD.mag = [cos(pi/6); 0; -sin(pi/6)];
-magDistMatrix = eye(3) + 0.02 * randn(3);
-magDistMatrix = (magDistMatrix + magDistMatrix') / 2;
-magDistMatrix = eye(3);
+
+% Magnetometer
+constantsTOAD.mag = [0.385202; 0.030609; -0.922324];
+dM_xx = 0.025;      % 2.5% Scaling from SS Rods
+dM_zz = 0.050;      % 5.0% Scaling from crown
+dM_xz = 0.0075;     % 0.75% Coupling from offset
+dM_xy = 0.002;      % 0.20% Coupling from rotational offset
+magDistMatrix = [dM_xx, dM_xy, dM_xz;
+                 dM_xy, dM_xx, dM_xz;
+                 dM_xz, dM_xz, dM_zz] + eye(3);
+
 constantsTOAD.K_Att_Wet = K_Att_Wet;
 constantsTOAD.K_Att_Dry = K_Att_Dry;
 covar_vec = [accel_proc_cov; gyro_cov; mag_proc_cov];
@@ -67,7 +74,7 @@ TB_d = zeros(3,1);
 % Constant vars (varied usage)
 [windMerid, windZonal] = atmoshwm(40.4258686, -86.9080655, 186 + 50);
 accelBias = 0.09 * ones(3,1);
-gyroBias = 0.05 * ones(3, 1);
+gyroBias = 0.0 * ones(3, 1);
 distMode = 0;
 
 % MC Variables

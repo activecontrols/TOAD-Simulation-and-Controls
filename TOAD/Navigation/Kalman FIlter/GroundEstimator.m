@@ -30,11 +30,11 @@ z(13:15) = z(13:15) - R_b2i * cross(z(4:6), rGPS);
 % Process Covariance Matrix
 persistent P lastZ 
 if isempty(P)
-    P = 1 * eye(18); 
-    P(1:3,1:3) = 0.5;
-    P(10:12, 10:12) = 0.03;
-    P(13:15, 13:15) = 0.25;
-    P(16:18, 16:18) = 10;
+    P = eye(18); 
+    P(1:3, 1:3)     = 0.5  * eye(3);  % Attitude
+    P(10:12, 10:12) = 0.05 * eye(3);  % Gyro Bias
+    P(13:15, 13:15) = 0.05 * eye(3);  % Accel Bias
+    P(16:18, 16:18) = 0.01   * eye(3);  % Mag Bias
     lastZ = zeros(15,1);
 end
 
@@ -79,6 +79,7 @@ if any(lastZ(1:9) ~= z(1:9))
 
     % A priori covariance and Kalman gain
     L = P * H' / (H * P * H' + R);
+    L(16:18, :) = 0;
     
     % Kalman Gain Weighting based on predicted acceleration
     ILH = (eye(18) - L * H);
@@ -103,7 +104,7 @@ if any(lastZ(10:15) ~= z(10:15))
 
     % A priori covariance and Kalman gain
     L = P * H' / (H * P * H' + R);
-    L(10:18, :) = 0;
+    L(16:18, :) = 0;
 
     % Predicted measurements 
     z_hat = [x_est(5:7);
