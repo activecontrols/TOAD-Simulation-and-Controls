@@ -79,6 +79,8 @@ kGrom = G.K;
 bGrom = G.C / (2 * sqrt(kGrom * m_FC));
 Kg2 = 0.03;
 G_RMAX = 6;
+Wind_Gain = 1;
+Wind_Covar = 1;
 
 % %% Load the data dictionary
 % dictObj = Simulink.data.dictionary.open('Model_Vars.sldd');

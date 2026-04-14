@@ -1,7 +1,7 @@
 function PlotMC_v3(filename)
     % PlotMC_v3 Generates combined trajectory and sensitivity overlays
     close all;
-    bkgColor = 'w';
+    bkgColor = 'k';
     alphaVal = 0.2; % Transparency for 3D lines
 
    %% 1. Handle Input Arguments & Data Loading
@@ -11,7 +11,7 @@ function PlotMC_v3(filename)
                    'Lever_Radial', 'Lever_Axial', 'J_Trans_Scale', 'J_Axial_Scale', ...
                    'RMSE_Controls_all', 'RMSE_Filter_all', ...
                    'GyroNoisePower_vals', 'Kg2_vals', 'G_RMAX_vals', ...
-                   'kGrom_vals', 'bGrom_vals', 'G'};
+                   'kGrom_vals', 'bGrom_vals', 'G', 'Gust_all'};
         
         for i = 1:length(reqVars)
             try
@@ -273,6 +273,15 @@ function PlotMC_v3(filename)
     xlabel('Lateral Velocity (m/s)'); ylabel('Frequency'); title('Approach Lateral Velocity Distribution');
     xline(0.3, 'r--', 'LineWidth', 2, 'DisplayName', 'Criterion');
     xlim([0, min(prctile(lv_criteria_all, 99.5), 2)]);
+    legend('show', 'Location', 'best');
+
+    %% Plot 8: Targeted Sensitivities (Colorized by Success)
+    figure('Name', 'Pos Error w/ Wind', 'Color', bkgColor, 'WindowStyle', 'docked');
+    tiledlayout('horizontal', 'TileSpacing', 'compact');  
+
+    nexttile; plotSuccessScatter(Gust_all(1,:), lat_pos_err, 'Max Gust X (m/s)', 'Lat Pos RMSE (m)', 'Pos vs X Wind', idx_pass, idx_fail);
+    nexttile; plotSuccessScatter(Gust_all(2,:), lat_pos_err, 'Max Gust Y (m/s)', 'Lat Pos RMSE (m)', 'Pos vs Y Wind', idx_pass, idx_fail);
+    nexttile; plotSuccessScatter(Gust_all(3,:), lat_pos_err, 'Max Gust Z (m/s)', 'Lat Pos RMSE (m)', 'Pos vs Z Wind', idx_pass, idx_fail);
     legend('show', 'Location', 'best');
 end
 

@@ -1,7 +1,7 @@
 %% Parallel Monte Carlo Trajectory Setup & Extraction (V3)
 % --- Configuration ---
 model_name = 'TOAD_Simulation';
-num_sims = 1000; % Kept from V2 (Trajectory version)
+num_sims = 100; % Kept from V2 (Trajectory version)
 clear simIn out
 
 % Nominal parameters
@@ -20,10 +20,13 @@ G_RMAX_vals = cell(1, num_sims);
 kGrom_vals = cell(1, num_sims);
 bGrom_vals = cell(1, num_sims);
 Kg2_vals = cell(1, num_sims);
+Wind_Gain_vals = cell(1, num_sims);
+Wind_Covar_vals = cell(1, num_sims);
 
 % Preallocate arrays for final outputs
 RMSE_Controls_all = zeros(9, num_sims); 
 RMSE_Filter_all   = zeros(3, num_sims); 
+Gust_all = zeros(3, num_sims);
 
 disp(['Generating disturbances for ', num2str(num_sims), ' runs...']);
 
@@ -48,6 +51,10 @@ for i = 1:num_sims
     kGrom_vals{i} = K_nom * (1 + 0.150 * randn());
     bGrom_vals{i} = B_nom * (1 + 0.150 * randn());
     Kg2_vals{i} = (0.05-0.0005) * rand() + 0.0005;
+
+    % 4. Wind
+    Wind_Gain_vals{i} = wblrnd(0.4, 2);
+    Wind_Covar_vals{i} = 5 * rand();
 end
 
 %% Setup Simulation Inputs for Parallel Execution
@@ -62,6 +69,8 @@ for i = 1:num_sims
     simIn(i) = simIn(i).setVariable('bGrom', bGrom_vals{i});
     simIn(i) = simIn(i).setVariable('Kg2', Kg2_vals{i});
     simIn(i) = simIn(i).setVariable('G_RMAX', G_RMAX_vals{i});
+    simIn(i) = simIn(i).setVariable('Wind_Gain', Wind_Gain_vals{i});
+    simIn(i) = simIn(i).setVariable('Wind_Covar', Wind_Covar_vals{i});
 
     % Trajectory logging on, unused datalogs off to save RAM
     simIn(i) = simIn(i).setBlockParameter('TOAD_Simulation/state_log', 'Commented', 'off');
@@ -91,6 +100,7 @@ for i = 1:num_sims
         % Metric extraction
         RMSE_Controls_all(:, i) = sqrt(out(i).SSE_Controls(:) ./ t_sim); 
         RMSE_Filter_all(:, i)   = sqrt(out(i).SSE_Filter(:) ./ t_sim);
+        Gust_all(:, i) = out(i).maxGust(:);
         
         % State extraction 
         ts_state = out(i).state_log;
