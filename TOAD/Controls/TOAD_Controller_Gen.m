@@ -104,7 +104,7 @@ a_weights = ones(6,1);
 a_weights = a_weights / norm(a_weights);
 max_x = [0.25, 0.25, 0.25, 18, 18, 1.0];
 Q = eye(6) .* a_weights ./ max_x.^2;
-R = diag([6.75, 6.75, 2]);
+R = diag([8, 8, 2]);
 
 % Augment Q with integral states
 Qi = diag([2.0, 2.0, 5]);

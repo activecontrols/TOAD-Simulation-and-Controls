@@ -42,7 +42,7 @@ U = zeros(4,1);
     PosError = PosTarget - X(5:7, :);
     
     % Velocity Command
-    K_P = [0.58; 0.58; 0.75];
+    K_P = [0.45; 0.45; 0.75];
     VelTarget = K_P .* PosError + VelFF;
 
     % Velocity Saturation Step
@@ -53,7 +53,7 @@ U = zeros(4,1);
     VelError = VelTarget - X(8:10, :);
 
     % Integral Accumulator
-    K_I = [0.8; 0.8; 2];
+    K_I = [0.64; 0.64; 2];
     Leak = 0.05;
     Clamp = [5; 5; 5];
 
