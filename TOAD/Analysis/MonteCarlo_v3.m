@@ -1,7 +1,7 @@
 %% Parallel Monte Carlo Trajectory Setup & Extraction (V3)
 % --- Configuration ---
 model_name = 'TOAD_Simulation';
-num_sims = 50;
+num_sims = 300;
 clear simIn out
 
 % Nominal parameters
@@ -42,7 +42,7 @@ for i = 1:num_sims
                    dI_xz, dI_yz, dI_zz];
                
     % 2. Lever Arm Disturbances (V2 Parameters)
-    sigma_lever = [0.005; 0.005; 0.005]; 
+    sigma_lever = [0.01; 0.01; 0.01]; 
     TB_d_vals{i} = randn(3, 1) .* sigma_lever;
 
     % 3. Gyro Biases & Params
@@ -50,7 +50,7 @@ for i = 1:num_sims
     G_RMAX_vals{i} = (8 - 3) * rand() + 3;
     kGrom_vals{i} = K_nom * (1 + 0.150 * randn());
     bGrom_vals{i} = B_nom * (1 + 0.150 * randn());
-    Kg2_vals{i} = (0.08-0.005) * rand() + 0.005;
+    Kg2_vals{i} = (0.08-0.002) * rand() + 0.002;
 
     % 4. Wind
     a = 0.4;       b = 2;
