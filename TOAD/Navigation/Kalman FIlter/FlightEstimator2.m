@@ -50,7 +50,7 @@ Q = constantsASTRA.Q(1:12, 1:12);
 R = constantsASTRA.R(4:6, 4:6);
 
 % Matrix updates for the mags
-R(1:3, 1:3) = 8e-2 * MagMatrix + 3e-5 * (z(7:9) * z(7:9)');
+R(1:3, 1:3) = 3e-1 * MagMatrix + 7e-7 * (z(7:9) * z(7:9)');
 
 % Process Noise Covariance and a-priori propagation step
 P = Phi * P * Phi' + Q;
@@ -88,7 +88,7 @@ if any(lastZ(10:15) ~= z(10:15))
 
     % Measurement Covariance Matrix
     gps_pos_covar = 1 * RTK + 10 * (1 - RTK);
-    gps_vel_covar = gps_pos_covar * 1;
+    gps_vel_covar = gps_pos_covar * 2;
     R = diag([gps_pos_covar^2 * ones(3,1); gps_vel_covar^2 * ones(3,1)]);
 
     % A priori covariance and Kalman gain

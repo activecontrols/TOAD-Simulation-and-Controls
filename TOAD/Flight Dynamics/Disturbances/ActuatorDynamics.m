@@ -27,7 +27,7 @@ function xdot = ActuatorDynamics(x, u)
                 a*(u(2) - x(3)) - b*x(4)];
 
     % Assume first order response for thrust
-    tau = 0.05;
+    tau = 0.03;
     xdot(5) = (1/tau) * (u(3) - x(5));
 
     % Since torque depends on thrust changes on two fans, response time is

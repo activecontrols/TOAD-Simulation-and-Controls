@@ -56,7 +56,7 @@ Q = constantsASTRA.Q;
 R = constantsASTRA.R;
 
 % Matrix updates for the mags
-R(4:6, 4:6) = 1e-1 * MagMatrix + 2e-6 * (z(7:9) * z(7:9)');
+R(4:6, 4:6) = 2e-1 * MagMatrix + 1e-6 * (z(7:9) * z(7:9)');
 
 % Process Noise Covariance and a-priori propagation step
 P = Phi * P * Phi' + Q;

@@ -17,12 +17,13 @@
 function [U, State_ERR] = TOAD_Control_FCN(PosTarget, X, constantsTOAD, t, MaxVel, VelFF, HDGRef, GND)
 
 % Time Counter
-persistent lastT VelErrorI AttErrorI lastAttError lastAccelZ
+persistent lastT VelErrorI AttErrorI lastAttError lastAccelZ LatTrim
 if isempty(lastT)
     lastT = 0;
     VelErrorI = zeros(3,1);
     AttErrorI = zeros(3,1);
     lastAttError = zeros(3,1);
+    LatTrim = zeros(3,1);
 end
 dT = t - lastT;
 lastT = t;
@@ -52,31 +53,30 @@ U = zeros(4,1);
     % Velocity Error Vector
     VelError = VelTarget - X(8:10, :);
 
-    % Integral Accumulator
-    K_I = [0.25; 0.25; 0.4];
+    % Steady-State Trim Observer (Handles MEKF/CG bias)
+    SteadyState = norm(VelTarget(1:2)) < 0.5 && norm(lastAttError(2:3)) < 0.1;
+    K_Trim = [0.05; 0.05; 0];
+    
+    LatTrim = LatTrim + (K_Trim .* VelError .* dT .* (1 - GND) .* SteadyState);
+    LatTrim(1:2) = max(min(LatTrim(1:2), 0.7), -0.7);
+
+    % Dynamic Integrator Gating (Lorentzian)
     Leak = 0.1;
+    GateWidth = 0.5;
+    ErrorMag = norm(VelError) + 5.0 * norm(lastAttError(2:3));
+    Gate = Leak + (1 - Leak) * (1 / (1 + (ErrorMag / GateWidth)^2));
+
+    % Dynamic Integrator
+    K_I = [0.25; 0.25; 0.3];
     Clamp = [5; 5; 5];
-
-    % Normalize errors (0 to 1 scale)
-    MaxAttError = [0.25; 0.25; 0.15];
-    MaxVelError = [0.35; 0.35; 0.35];
-    NormAttErr = abs(lastAttError) ./ MaxAttError;
-    NormVelErr = abs(VelError) ./ MaxVelError;
     
-    % Combine errors (Vector magnitude)
-    TotalErrorMetric = NormAttErr + NormVelErr;
-    
-    % Calculate Gate using Gaussian function
-    Gate = (1 - Leak) * exp(-2 * TotalErrorMetric.^2) + Leak;
-
-    % Integrator
     K_I = K_I .* Gate;
     VelErrorI = VelErrorI + K_I .* VelError .* dT .* (1 - GND);
     VelErrorI = max(min(VelErrorI, Clamp), -Clamp);
-    K_P = [2.4; 2.4; 1.8];
-
+    
     % Acceleration Target
-    AccelTarget = K_P .* VelError + VelErrorI  + [0; 0; constantsTOAD.g];
+    K_P = [2.4; 2.4; 2.0];
+    AccelTarget = K_P .* VelError + VelErrorI + [0; 0; constantsTOAD.g];
 
     % Acceleration Saturation Step
     MaxAccelUp = [2.3 2.3 15]';
@@ -92,10 +92,15 @@ U = zeros(4,1);
     DeltaZ = AccelTarget(3) - lastAccelZ;
     AccelTarget(3) = lastAccelZ + max(min(DeltaZ, MaxDeltaZ), -MaxDeltaZ);
     lastAccelZ = AccelTarget(3);
+
+    % Inject Trim Acceleration from the Low Rate Integrator, scaled to
+    % maintain physical tilt
+    TrimAccel = LatTrim .* (AccelTarget(3) / constantsTOAD.g);
+    AccelTarget(1:2) = AccelTarget(1:2) + TrimAccel(1:2);
     
 %% Kinematics Step
     % Compute thrust target (Update to use estimated mass, for now I gain takes care)
-    TargetForce_I = constantsTOAD.m_dry * AccelTarget;
+    TargetForce_I = (constantsTOAD.m_dry + X(14) + X(15)) * AccelTarget;
     U(3) = norm(TargetForce_I);
     
     % Compute target attitude via GSP.
@@ -122,7 +127,7 @@ U = zeros(4,1);
     lastAttError = AttError(2:4);
 
     % Error accumulation and clamping
-    Clamp = [0.4; 0.4; 0.4];
+    Clamp = [0.0; 0.0; 0.4];
     AttErrorI = AttErrorI + AttError(2:4) .* dT .* (1 - GND);
     AttErrorI = max(min(AttErrorI, Clamp), -Clamp);
 

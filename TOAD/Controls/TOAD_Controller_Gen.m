@@ -102,7 +102,7 @@ lin.B = double(subs(lin.B, [x; u], [delx; delu]));
 % Hand tuning for Q for now
 a_weights = ones(6,1);
 a_weights = a_weights / norm(a_weights);
-max_x = [0.15, 0.15, 0.04, 1e3, 1e3, 20];
+max_x = [0.15, 0.15, 0.04, 1.5, 1.5, 20];
 Q = eye(6) .* a_weights ./ max_x.^2;
 R = diag([11.0, 11.0, 1]);
 
