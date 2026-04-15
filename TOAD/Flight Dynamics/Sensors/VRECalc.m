@@ -33,5 +33,5 @@ function [VRE, T, f] = VRECalc(throttle, G_RMAX, kGrom, bGrom, Kg2)
     GrmsIMU = sqrt(trapz(log(f), outPSD .* f));
     
     % VRE Induced bias
-    VRE = Kg2 * GrmsIMU^2;
+    VRE = Kg2 * GrmsIMU^2 * pi / 180;
 end

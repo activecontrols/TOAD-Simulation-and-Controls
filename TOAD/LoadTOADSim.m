@@ -62,7 +62,7 @@ Checkpoints =  [0, 5, 5,  5;
                 0, 5, 10, 10;
                 0, 50, 0, 0];
 HoldTimeReqs = [20, 10, 2, 3];
-dt_SIM = 1/250;
+dt_SIM = 1/1000;
 
 % Create slBus
 TOAD = Simulink.Bus.createObject(constantsTOAD);
