@@ -17,7 +17,7 @@
 function [U, State_ERR] = TOAD_Control_FCN(PosTarget, X, constantsTOAD, t, MaxVel, VelFF, HDGRef, GND)
 
 % Time Counter
-persistent lastT VelErrorI AttErrorI lastAttError
+persistent lastT VelErrorI AttErrorI lastAttError lastAccelZ
 if isempty(lastT)
     lastT = 0;
     VelErrorI = zeros(3,1);
@@ -34,7 +34,7 @@ gimbalMax = pi/18;
 InputBounds = [-gimbalMax       gimbalMax;
                -gimbalMax       gimbalMax;
                .4 * thrustMax   thrustMax;
-               -10              10];
+               -7               7];
 U = zeros(4,1);
 
 %% First Loop (P Loop)
@@ -73,7 +73,7 @@ U = zeros(4,1);
     K_I = K_I .* Gate;
     VelErrorI = VelErrorI + K_I .* VelError .* dT .* (1 - GND);
     VelErrorI = max(min(VelErrorI, Clamp), -Clamp);
-    K_P = [2.4; 2.4; 5];
+    K_P = [2.4; 2.4; 1.8];
 
     % Acceleration Target
     AccelTarget = K_P .* VelError + VelErrorI  + [0; 0; constantsTOAD.g];
@@ -83,13 +83,22 @@ U = zeros(4,1);
     MaxAccelDown = [-2.3 -2.3 4]';
     AccelTarget = max(min(AccelTarget, MaxAccelUp), MaxAccelDown);
 
+    % Acceleration Rate Limit
+    MaxJerkZ = 10;
+    if isempty(lastAccelZ)
+        lastAccelZ = AccelTarget(3);
+    end
+    MaxDeltaZ = MaxJerkZ * dT;
+    DeltaZ = AccelTarget(3) - lastAccelZ;
+    AccelTarget(3) = lastAccelZ + max(min(DeltaZ, MaxDeltaZ), -MaxDeltaZ);
+    lastAccelZ = AccelTarget(3);
+    
 %% Kinematics Step
     % Compute thrust target (Update to use estimated mass, for now I gain takes care)
     TargetForce_I = constantsTOAD.m_dry * AccelTarget;
     U(3) = norm(TargetForce_I);
     
     % Compute target attitude via GSP.
-    AccelTarget(3) = constantsTOAD.g;
     Z_b = AccelTarget / norm(AccelTarget);
 
     % Heading reference (+X axis rolled to north)

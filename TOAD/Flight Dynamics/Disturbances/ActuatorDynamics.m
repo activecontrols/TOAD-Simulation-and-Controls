@@ -9,8 +9,8 @@ function xdot = ActuatorDynamics(x, u)
     % x(6) Roll
 
     % Assume identical servos for gimbal
-    a = 800;
-    b = 70;
+    a = 625;
+    b = 40;
 
     k1 = 0;
     k2 = 0;
@@ -27,7 +27,7 @@ function xdot = ActuatorDynamics(x, u)
                 a*(u(2) - x(3)) - b*x(4)];
 
     % Assume first order response for thrust
-    tau = 0.2;
+    tau = 0.05;
     xdot(5) = (1/tau) * (u(3) - x(5));
 
     % Since torque depends on thrust changes on two fans, response time is
