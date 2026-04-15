@@ -1,7 +1,7 @@
 %% Parallel Monte Carlo Trajectory Setup & Extraction (V3)
 % --- Configuration ---
 model_name = 'TOAD_Simulation';
-num_sims = 100;
+num_sims = 50;
 clear simIn out
 
 % Nominal parameters

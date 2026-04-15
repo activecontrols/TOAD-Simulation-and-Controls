@@ -42,7 +42,7 @@ U = zeros(4,1);
     PosError = PosTarget - X(5:7, :);
     
     % Velocity Command
-    K_P = [0.35; 0.35; 0.75];
+    K_P = [0.43; 0.43; 0.75];
     VelTarget = K_P .* PosError + VelFF;
 
     % Velocity Saturation Step
@@ -53,7 +53,7 @@ U = zeros(4,1);
     VelError = VelTarget - X(8:10, :);
 
     % Integral Accumulator
-    K_I = [0.25; 0.25; 1];
+    K_I = [0.25; 0.25; 0.75];
     Leak = 0.1;
     Clamp = [5; 5; 5];
 
@@ -73,14 +73,14 @@ U = zeros(4,1);
     K_I = K_I .* Gate;
     VelErrorI = VelErrorI + K_I .* VelError .* dT .* (1 - GND);
     VelErrorI = max(min(VelErrorI, Clamp), -Clamp);
-    K_P = [2.15; 2.15; 5];
+    K_P = [2.4; 2.4; 4];
 
     % Acceleration Target
     AccelTarget = K_P .* VelError + VelErrorI  + [0; 0; constantsTOAD.g];
 
     % Acceleration Saturation Step
-    MaxAccelUp = [2 2 15]';
-    MaxAccelDown = [-2 -2 4]';
+    MaxAccelUp = [2.3 2.3 15]';
+    MaxAccelDown = [-2.3 -2.3 4]';
     AccelTarget = max(min(AccelTarget, MaxAccelUp), MaxAccelDown);
 
 %% Kinematics Step
@@ -89,7 +89,7 @@ U = zeros(4,1);
     U(3) = norm(TargetForce_I);
     
     % Compute target attitude via GSP.
-    AccelTarget(3) = max(AccelTarget(3), constantsTOAD.g);
+    AccelTarget(3) = constantsTOAD.g;
     Z_b = AccelTarget / norm(AccelTarget);
 
     % Heading reference (+X axis rolled to north)
@@ -119,7 +119,7 @@ U = zeros(4,1);
 
     % State vector and error
     State_ERR = [AttError(2:4); PosError; VelError].^2;
-    MaxRollErr = 0.15;
+    MaxRollErr = 0.25;
     if abs(AttError(4)) > MaxRollErr
         AttError(4) = sign(AttError(4)) * MaxRollErr;
     end
