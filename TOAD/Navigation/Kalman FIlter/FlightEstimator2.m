@@ -89,7 +89,7 @@ if any(lastZ(10:15) ~= z(10:15))
     GyroCovar = eye(3) * 1e-3;
     R = zeros(6);
     R(1:3, 1:3) = 0.1;
-    R(4:6, 4:6) = 0.1 * eye(3) + R_b2i * zetaCross(rGPS) * GyroCovar * (R_b2i * zetaCross(rGPS))';
+    R(4:6, 4:6) = 0.2;
 
     % A priori covariance and Kalman gain
     L = P * H' / (H * P * H' + R);
