@@ -7,7 +7,7 @@ function PlotMC_v3(filename)
    %% 1. Handle Input Arguments & Data Loading
     if nargin < 1 || isempty(filename)
         disp('Pulling data from the base workspace...');
-        reqVars = {'pos_all', 'vel_all', 'pos_avg', 't_common',...
+        reqVars = {'pos_all', 'vel_all', 'quat_all', 'pos_avg', 't_common',...
                    'Lever_Radial', 'Lever_Axial', 'J_Trans_Scale', 'J_Axial_Scale', ...
                    'RMSE_Controls_all', 'RMSE_Filter_all', ...
                    'GyroNoisePower_vals', 'Kg2_vals', 'G_RMAX_vals', ...
@@ -38,8 +38,8 @@ function PlotMC_v3(filename)
     is_success = false(num_sims, 1);
     meets_final_pos = false(num_sims, 1); 
     
-    % New: Pre-allocate for approach criteria storage
-    gs_criteria_all = NaN(num_sims, 1);
+    % Pre-allocate for approach criteria storage
+    tilt_criteria_all = NaN(num_sims, 1);
     lv_criteria_all = NaN(num_sims, 1);
 
     for i = 1:num_sims
@@ -57,20 +57,25 @@ function PlotMC_v3(filename)
             
             if ~isempty(idx_above)
                 appr_idx = min(idx_above + 1, last_valid);
-                appr_alt = max(alts(appr_idx), 0.01); 
                 
-                appr_pos_xy = [pos_all(i, appr_idx, 1), pos_all(i, appr_idx, 2)];
-                lat_err = norm(appr_pos_xy - final_wp(1:2));
-                glideslope_deg = atan2d(lat_err, appr_alt); 
+                % Touchdown angle
+                q = squeeze(quat_all(i, appr_idx, :));
+                q = q / norm(q);
+                qw = q(1); qx = q(2); qy = q(3); qz = q(4);
+                
+                % Projection of the local Z-axis onto the inertial Z-axis
+                R33 = qw^2 - qx^2 - qy^2 + qz^2; 
+                tilt_deg = acosd(max(min(R33, 1), -1)); % Angle from vertical
                 
                 appr_vel_xy = [vel_all(i, appr_idx, 1), vel_all(i, appr_idx, 2)];
                 lat_vel = norm(appr_vel_xy);
                 
-                % New: Save calculated values for *all* sims to plot later
-                gs_criteria_all(i) = glideslope_deg;
+                % Save calculated values for sims to plot later
+                tilt_criteria_all(i) = tilt_deg;
                 lv_criteria_all(i) = lat_vel;
 
-                if glideslope_deg <= 15.0 && lat_vel <= 0.3
+                % Check against criteria (Assuming 20 deg tilt limit, 0.3 m/s velocity limit)
+                if tilt_deg <= 20.0 && lat_vel <= 0.5
                     appr_met = true;
                 end
             end
@@ -249,19 +254,19 @@ function PlotMC_v3(filename)
     xlabel('Frequency (Hz)'); ylabel('Transmissibility (T)');
     title(sprintf('Transmissibility Uncertainty: %s\n(Durometer: %s | K: %g | C: %g)', string(G.Name), string(G.Durometer), str2double(string(G.K)), str2double(string(G.C))), 'Interpreter', 'none'); 
 
-   %% New Plot 7: Approach Criteria Distributions (Corrected Binning)
+    %% New Plot 7: Approach Criteria Distributions (Corrected Binning)
     figure('Name', 'Approach Criteria Distributions', 'Color', bkgColor, 'WindowStyle', 'docked');
     tiledlayout(1, 2, 'TileSpacing', 'compact'); 
 
     nexttile; hold on; grid on;
     % Plot All Sims and grab the object to extract its BinEdges
-    h_gs = histogram(gs_criteria_all, 40, 'DisplayName', 'All Sims');
+    h_gs = histogram(tilt_criteria_all, 40, 'DisplayName', 'All Sims');
     % Force the Failed histogram to use the EXACT same bins
-    histogram(gs_criteria_all(idx_fail), h_gs.BinEdges, 'DisplayName', 'Failed');
+    histogram(tilt_criteria_all(idx_fail), h_gs.BinEdges, 'DisplayName', 'Failed');
     
-    xlabel('Glideslope Angle (deg)'); ylabel('Frequency'); title('Approach Glideslope Angle Distribution');
-    xline(10, 'r--', 'LineWidth', 2, 'DisplayName', 'Criterion');
-    xlim([0, min(prctile(gs_criteria_all, 99.5), 180)]);
+    xlabel('Touchdown Angle from Vertical (deg)'); ylabel('Frequency'); title('Touchdown Angle Distribution');
+    xline(10, 'r--', 'LineWidth', 2, 'DisplayName', 'Criterion'); % Adjust threshold here if needed
+    xlim([0, min(prctile(tilt_criteria_all, 99.5), 180)]);
     legend('show', 'Location', 'best');
 
     nexttile; hold on; grid on;
@@ -271,7 +276,7 @@ function PlotMC_v3(filename)
     histogram(lv_criteria_all(idx_fail), h_lv.BinEdges, 'DisplayName', 'Failed');
     
     xlabel('Lateral Velocity (m/s)'); ylabel('Frequency'); title('Approach Lateral Velocity Distribution');
-    xline(0.3, 'r--', 'LineWidth', 2, 'DisplayName', 'Criterion');
+    xline(0.5, 'r--', 'LineWidth', 2, 'DisplayName', 'Criterion'); % <--- UPDATED to 1.0
     xlim([0, min(prctile(lv_criteria_all, 99.5), 2)]);
     legend('show', 'Location', 'best');
 

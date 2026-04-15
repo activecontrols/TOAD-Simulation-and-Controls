@@ -1,7 +1,7 @@
 %% Parallel Monte Carlo Trajectory Setup & Extraction (V3)
 % --- Configuration ---
 model_name = 'TOAD_Simulation';
-num_sims = 250;
+num_sims = 100;
 clear simIn out
 
 % Nominal parameters
@@ -50,10 +50,11 @@ for i = 1:num_sims
     G_RMAX_vals{i} = (8 - 3) * rand() + 3;
     kGrom_vals{i} = K_nom * (1 + 0.150 * randn());
     bGrom_vals{i} = B_nom * (1 + 0.150 * randn());
-    Kg2_vals{i} = (0.08-0.0001) * rand() + 0.0001;
+    Kg2_vals{i} = (0.08-0.005) * rand() + 0.005;
 
     % 4. Wind
-    Wind_Gain_vals{i} = wblrnd(0.4, 2);
+    a = 0.4;       b = 2;
+    Wind_Gain_vals{i} = a * (-log(rand(1, 1))).^(1/b);
     Wind_Covar_vals{i} = 5 * rand();
 end
 
@@ -90,10 +91,11 @@ out = parsim(simIn, 'ShowProgress', 'on', 'UseFastRestart', 'on');
 
 %% Extract Data 
 disp('Simulations Complete. Extracting and Interpolating Trajectories...');
-t_sim = 75; 
+t_sim = 50; 
 t_common = (0:0.1:t_sim)'; 
 pos_all = nan(num_sims, length(t_common), 3);
 vel_all = nan(num_sims, length(t_common), 3);
+quat_all = nan(num_sims, length(t_common), 4);
 
 for i = 1:num_sims
     if isempty(out(i).ErrorMessage)
@@ -110,11 +112,15 @@ for i = 1:num_sims
             data_raw = data_raw';
         end
         pos_raw = data_raw(:, 5:7);
-        vel_raw = data_raw(:, 8:10); 
+        vel_raw = data_raw(:, 8:10);
+        quat_raw = data_raw(:, 1:4);
         
         for dim = 1:3
             pos_all(i, :, dim) = interp1(t_raw, pos_raw(:,dim), t_common, 'linear', 'extrap');
             vel_all(i, :, dim) = interp1(t_raw, vel_raw(:,dim), t_common, 'linear', 'extrap');
+        end
+        for dim = 1:4
+            quat_all(i, :, dim) = interp1(t_raw, quat_raw(:,dim), t_common, 'linear', 'extrap');
         end
     else
         warning('Simulation %d failed: %s', i, out(i).ErrorMessage);
