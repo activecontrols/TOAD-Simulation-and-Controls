@@ -2,7 +2,7 @@ function PlotMC_v3(filename)
     % PlotMC_v3 Generates combined trajectory and sensitivity overlays
     close all;
     bkgColor = 'w';
-    alphaVal = 0.2; % Transparency for 3D lines
+    alphaVal = 0.15; % Transparency for 3D lines
 
    %% 1. Handle Input Arguments & Data Loading
     if nargin < 1 || isempty(filename)
@@ -122,7 +122,7 @@ function PlotMC_v3(filename)
                  c(1)+t(1) c(2)+t(2) c(3)+t(3); c(1)-t(1) c(2)+t(2) c(3)+t(3)];
             % Define Faces
             F = [1 2 3 4; 5 6 7 8; 1 2 6 5; 2 3 7 6; 3 4 8 7; 4 1 5 8];
-            patch(axMain, 'Vertices', V, 'Faces', F, 'FaceColor', 'g', 'FaceAlpha', 0.1, 'EdgeColor', '#4DBEEE');
+            patch(axMain, 'Vertices', V, 'Faces', F, 'FaceColor', 'y', 'FaceAlpha', 0.1, 'EdgeColor', '#4DBEEE');
         end
     end
 
@@ -287,6 +287,20 @@ function PlotMC_v3(filename)
     nexttile; plotSuccessScatter(Gust_all(1,:), lat_pos_err, 'Max Gust X (m/s)', 'Lat Pos RMSE (m)', 'Pos vs X Wind', idx_pass, idx_fail);
     nexttile; plotSuccessScatter(Gust_all(2,:), lat_pos_err, 'Max Gust Y (m/s)', 'Lat Pos RMSE (m)', 'Pos vs Y Wind', idx_pass, idx_fail);
     nexttile; plotSuccessScatter(Gust_all(3,:), lat_pos_err, 'Max Gust Z (m/s)', 'Lat Pos RMSE (m)', 'Pos vs Z Wind', idx_pass, idx_fail);
+    legend('show', 'Location', 'best');
+
+    %% Filter Attitude RMSE Distributions
+    figure('Name', 'Filter Attitude RMSE', 'Color', bkgColor, 'WindowStyle', 'docked');
+    hold on; grid on;
+    
+    % Create histograms with shared bin edges for comparison
+    histogram(RMSE_Filter_all(1, :), 30, 'FaceAlpha', 0.4, 'DisplayName', 'Yaw RMSE');
+    histogram(RMSE_Filter_all(2, :), 30, 'FaceAlpha', 0.4, 'DisplayName', 'Pitch RMSE');
+    histogram(RMSE_Filter_all(3, :), 30, 'FaceAlpha', 0.4, 'DisplayName', 'Roll RMSE');
+    
+    xlabel('RMSE (degrees)');
+    ylabel('Frequency');
+    title('Filter Attitude Estimation Accuracy');
     legend('show', 'Location', 'best');
 end
 

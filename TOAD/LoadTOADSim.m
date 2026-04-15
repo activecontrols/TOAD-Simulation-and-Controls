@@ -48,8 +48,8 @@ constantsTOAD.BBias = 1e-8;
 constantsTOAD.mag = [0.385202; 0.030609; -0.922324];
 dM_xx = 0.035;      % 3.5% Scaling from SS Rods
 dM_zz = 0.060;      % 6.0% Scaling from crown
-dM_xz = 0.010;     % 1.00% Coupling from offset
-dM_xy = 0.005;      % 0.50% Coupling from rotational offset
+dM_xz = 0.010;      % 1.00% Coupling
+dM_xy = 0.005;      % 0.50% Coupling
 magDistMatrix = [dM_xx, dM_xy, dM_xz;
                  dM_xy, dM_xx, dM_xz;
                  dM_xz, dM_xz, dM_zz] + eye(3);

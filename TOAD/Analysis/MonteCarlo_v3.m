@@ -50,12 +50,12 @@ for i = 1:num_sims
     G_RMAX_vals{i} = (8 - 3) * rand() + 3;
     kGrom_vals{i} = K_nom * (1 + 0.150 * randn());
     bGrom_vals{i} = B_nom * (1 + 0.150 * randn());
-    Kg2_vals{i} = (0.08-0.002) * rand() + 0.002;
+    Kg2_vals{i} = (0.1-0.002) * rand() + 0.002;
 
     % 4. Wind
-    a = 0.4;       b = 2;
+    a = 0.35;       b = 2;
     Wind_Gain_vals{i} = a * (-log(rand(1, 1))).^(1/b);
-    Wind_Covar_vals{i} = 5 * rand();
+    Wind_Covar_vals{i} = 3 * rand();
 end
 
 %% Setup Simulation Inputs for Parallel Execution
@@ -158,7 +158,7 @@ if save_data
     disp('Saving workspace data...');
     save_dir = fullfile(pwd, 'Analysis', 'Monte Carlo Runs');
     if ~exist(save_dir, 'dir'), mkdir(save_dir); end
-    mat_filename = fullfile(save_dir, sprintf('MC_%druns_%s.mat', num_sims, datestr(now, 'yyyymmdd_HHMM')));
+    mat_filename = fullfile(save_dir, sprintf('MC3_%druns_%s.mat', num_sims, datestr(now, 'yyyymmdd_HHMM')));
     save(mat_filename, '-v7.3');
     disp(['Data saved successfully to: ', mat_filename]);
 end

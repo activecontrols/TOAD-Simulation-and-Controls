@@ -1,7 +1,7 @@
 
 %Taken from example implementation
 p2.est_cov = 1.0;
-gyro_bias_cov = 3e-8;
+gyro_bias_cov = 1e-8;
 accel_proc_cov = 1e-2;
 accel_bias_cov = 1e-12;
 mag_proc_cov = 1e-1;

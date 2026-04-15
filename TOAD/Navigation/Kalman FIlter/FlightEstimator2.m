@@ -50,7 +50,7 @@ Q = constantsASTRA.Q(1:12, 1:12);
 R = constantsASTRA.R(4:6, 4:6);
 
 % Matrix updates for the mags
-R(1:3, 1:3) = 5e-1 * MagMatrix + 1e-7 * (z(7:9) * z(7:9)');
+R(1:3, 1:3) = 5e-1 * MagMatrix + 6e-9 * (z(7:9) * z(7:9)');
 
 % Process Noise Covariance and a-priori propagation step
 P = Phi * P * Phi' + Q;
@@ -86,7 +86,7 @@ if any(lastZ(10:15) ~= z(10:15))
     H(4:6, 7:9) = eye(3);
 
     % Measurement Covariance Matrix
-    GyroCovar = eye(3) * 1e-2;
+    GyroCovar = eye(3) * 5e-2;
     R = zeros(6);
     R(1:3, 1:3) = 0.1 * eye(3);
     R(4:6, 4:6) = 0.3 * eye(3) + R_b2i * zetaCross(rGPS) * GyroCovar * (R_b2i * zetaCross(rGPS))';
