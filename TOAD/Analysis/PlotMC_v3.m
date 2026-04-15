@@ -53,7 +53,7 @@ function PlotMC_v3(filename)
             % Approach Criteria Check (2m crossing)
             appr_met = false;
             alts = pos_all(i, 1:last_valid, 3);
-            idx_above = find(alts > 2.0, 1, 'last'); 
+            idx_above = find(alts > 1.0, 1, 'last'); 
             
             if ~isempty(idx_above)
                 appr_idx = min(idx_above + 1, last_valid);
@@ -70,7 +70,7 @@ function PlotMC_v3(filename)
                 gs_criteria_all(i) = glideslope_deg;
                 lv_criteria_all(i) = lat_vel;
 
-                if glideslope_deg <= 12.0 && lat_vel <= 0.4
+                if glideslope_deg <= 15.0 && lat_vel <= 0.3
                     appr_met = true;
                 end
             end

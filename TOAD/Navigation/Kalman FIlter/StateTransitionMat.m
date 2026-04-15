@@ -16,7 +16,7 @@ else
     % F(7:9,1:3) = -R_b2i * zetaCross(accel);
 
     %% FlightEstimator2.m
-    F = zeros(15);
+    F = zeros(12);
     F(1:3,1:3) = -zetaCross(gyro);
     F(1:3,10:12) = -eye(3);
     F(4:6,7:9) = eye(3);
