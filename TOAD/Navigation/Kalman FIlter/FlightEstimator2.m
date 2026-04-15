@@ -55,7 +55,6 @@ R(1:3, 1:3) = 3e-1 * MagMatrix + 7e-7 * (z(7:9) * z(7:9)');
 % Process Noise Covariance and a-priori propagation step
 P = Phi * P * Phi' + Q;
 P = (P + P') / 2;
-RTK = 1;
 
 %% IMU Update
 if any(lastZ(1:9) ~= z(1:9))
@@ -87,9 +86,10 @@ if any(lastZ(10:15) ~= z(10:15))
     H(4:6, 7:9) = eye(3);
 
     % Measurement Covariance Matrix
-    gps_pos_covar = 1 * RTK + 10 * (1 - RTK);
-    gps_vel_covar = gps_pos_covar * 2;
-    R = diag([gps_pos_covar^2 * ones(3,1); gps_vel_covar^2 * ones(3,1)]);
+    GyroCovar = eye(3) * 1e-3;
+    R = zeros(6);
+    R(1:3, 1:3) = 0.1;
+    R(4:6, 4:6) = 0.1 * eye(3) + R_b2i * zetaCross(rGPS) * GyroCovar * (R_b2i * zetaCross(rGPS))';
 
     % A priori covariance and Kalman gain
     L = P * H' / (H * P * H' + R);
