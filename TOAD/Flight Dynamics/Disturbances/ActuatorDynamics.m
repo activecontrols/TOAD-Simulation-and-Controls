@@ -9,11 +9,11 @@ function xdot = ActuatorDynamics(x, u)
     % x(6) Roll
 
     % Assume identical servos for gimbal
-    a = 850;
+    a = 800;
     b = 70;
 
-    k1 = 0.2;
-    k2 = 0.2;
+    k1 = 0;
+    k2 = 0;
 
     theta_error = k1 * (1 - cos(x(1)));
     phi_error = k2 * (1 - cos(x(3)));

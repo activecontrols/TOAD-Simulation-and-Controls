@@ -42,7 +42,7 @@ U = zeros(4,1);
     PosError = PosTarget - X(5:7, :);
     
     % Velocity Command
-    K_P = [0.43; 0.43; 0.75];
+    K_P = [0.43; 0.43; 0.8];
     VelTarget = K_P .* PosError + VelFF;
 
     % Velocity Saturation Step
@@ -53,13 +53,13 @@ U = zeros(4,1);
     VelError = VelTarget - X(8:10, :);
 
     % Integral Accumulator
-    K_I = [0.25; 0.25; 0.75];
+    K_I = [0.25; 0.25; 0.4];
     Leak = 0.1;
     Clamp = [5; 5; 5];
 
     % Normalize errors (0 to 1 scale)
     MaxAttError = [0.25; 0.25; 0.15];
-    MaxVelError = [0.35; 0.35; 0.25];
+    MaxVelError = [0.35; 0.35; 0.35];
     NormAttErr = abs(lastAttError) ./ MaxAttError;
     NormVelErr = abs(VelError) ./ MaxVelError;
     
@@ -73,7 +73,7 @@ U = zeros(4,1);
     K_I = K_I .* Gate;
     VelErrorI = VelErrorI + K_I .* VelError .* dT .* (1 - GND);
     VelErrorI = max(min(VelErrorI, Clamp), -Clamp);
-    K_P = [2.4; 2.4; 4];
+    K_P = [2.4; 2.4; 5];
 
     % Acceleration Target
     AccelTarget = K_P .* VelError + VelErrorI  + [0; 0; constantsTOAD.g];
