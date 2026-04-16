@@ -302,6 +302,73 @@ function PlotMC_v3(filename)
     ylabel('Frequency');
     title('Filter Attitude Estimation Accuracy');
     legend('show', 'Location', 'best');
+
+    %% Plot 9: Position & Velocity Distributions with 5-Sigma Bounds
+    figure('Name', 'State Distributions (5-Sigma)', 'Color', bkgColor, 'WindowStyle', 'docked');
+    tiledlayout(2, 3, 'TileSpacing', 'compact');
+
+    % Standard MATLAB colors matching the filter attitude histograms (Blue, Orange, Yellow)
+    ax_colors = [0, 0.4470, 0.7410;   % X Axis
+                 0.8500, 0.3250, 0.0980;   % Y Axis
+                 0.9290, 0.6940, 0.1250];  % Z Axis
+
+    axis_lbls = {'X', 'Y', 'Z'};
+    
+    % Calculate Mean and Standard Deviation across all simulations (omitting NaNs)
+    % Arrays are structured as [num_sims, time_steps, 3]
+    mu_pos = squeeze(mean(pos_all, 1, 'omitnan'));
+    sigma_pos = squeeze(std(pos_all, 0, 1, 'omitnan'));
+    
+    mu_vel = squeeze(mean(vel_all, 1, 'omitnan'));
+    sigma_vel = squeeze(std(vel_all, 0, 1, 'omitnan'));
+
+    for c = 1:3
+        % ---------------------------------------------------------
+        % ROW 1: POSITION (Tiles 1, 2, 3)
+        % ---------------------------------------------------------
+        nexttile(c); hold on; grid on;
+        
+        % 1. Individual Trajectories (semitransparent, hidden from legend)
+        for i = 1:num_sims
+            plot(t_common, pos_all(i, :, c), 'Color', [ax_colors(c, :), alphaVal], 'HandleVisibility', 'off');
+        end
+        
+        % 2. 5-Sigma Bounds + 2m Tolerance 
+        plot(t_common, mu_pos(:, c) + 5 * sigma_pos(:, c), 'r--', 'LineWidth', 1.5, 'DisplayName', '+5\sigma');
+        plot(t_common, mu_pos(:, c) - 5 * sigma_pos(:, c), 'r--', 'LineWidth', 1.5, 'DisplayName', '-5\sigma');
+        
+        % 3. Average Trajectory
+        plot(t_common, mu_pos(:, c), 'k', 'LineWidth', 2, 'DisplayName', 'Average');
+        
+        xlabel('Time (s)'); ylabel(sprintf('Pos %s (m)', axis_lbls{c}));
+        title(sprintf('Position - %s Axis', axis_lbls{c}));
+        xlim([min(t_common), max(t_common)]);
+        
+        % Add legend to the first subplot just for reference
+        if c == 1, legend('show', 'Location', 'best'); end
+
+        % Velocity
+        nexttile(c + 3); hold on; grid on;
+        
+        % 1. Individual Velocities (semitransparent, hidden from legend)
+        for i = 1:num_sims
+            plot(t_common, vel_all(i, :, c), 'Color', [ax_colors(c, :), alphaVal], 'HandleVisibility', 'off');
+        end
+        
+        % 2. 5-Sigma Bounds + 2m/s Tolerance
+        plot(t_common, mu_vel(:, c) + 5 * sigma_vel(:, c), 'r--', 'LineWidth', 1.5, 'DisplayName', '+5\sigma');
+        plot(t_common, mu_vel(:, c) - 5 * sigma_vel(:, c), 'r--', 'LineWidth', 1.5, 'DisplayName', '-5\sigma');
+        
+        % 3. Average Velocity
+        plot(t_common, mu_vel(:, c), 'k', 'LineWidth', 2, 'DisplayName', 'Average');
+        
+        xlabel('Time (s)'); ylabel(sprintf('Vel %s (m/s)', axis_lbls{c}));
+        title(sprintf('Velocity - %s Axis', axis_lbls{c}));
+        xlim([min(t_common), max(t_common)]);
+        
+        % Optional: Add legend to the first velocity subplot too
+        if c == 1, legend('show', 'Location', 'best'); end
+    end
 end
 
 %% Local Helper function for Success/Fail Scatters
