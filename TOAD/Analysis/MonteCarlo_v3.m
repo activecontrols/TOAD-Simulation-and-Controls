@@ -1,7 +1,7 @@
 %% Parallel Monte Carlo Trajectory Setup & Extraction (V3)
 % --- Configuration ---
 model_name = 'TOAD_Simulation';
-num_sims = 48;
+num_sims = 100;
 clear simIn out
 
 % Nominal parameters
@@ -60,8 +60,8 @@ for i = 1:num_sims
     Wind_Covar_vals{i} = 8 * rand();
 
     % 5. PSD Frequencies
-    PSD_Low_vals{i} = 10 + (100 - 10) * rand();
-    PSD_High_vals{i} = 500 + (1000 - 5000) * rand();
+    PSD_Low_vals{i} = 20 + (100 - 20) * rand();
+    PSD_High_vals{i} = 500 + (1000 - 500) * rand();
 end
 
 %% Setup Simulation Inputs for Parallel Execution
@@ -79,7 +79,7 @@ for i = 1:num_sims
     simIn(i) = simIn(i).setVariable('Wind_Gain', Wind_Gain_vals{i});
     simIn(i) = simIn(i).setVariable('Wind_Covar', Wind_Covar_vals{i});
     simIn(i) = simIn(i).setVariable('lowEnd', PSD_Low_vals{i});
-    simIn(i) = simIn(i).setVariable('highEnd', PSD_High_vaxls{i});
+    simIn(i) = simIn(i).setVariable('highEnd', PSD_High_vals{i});
 
     % Trajectory logging on, unused datalogs off to save RAM
     simIn(i) = simIn(i).setBlockParameter('TOAD_Simulation/state_log', 'Commented', 'off');
