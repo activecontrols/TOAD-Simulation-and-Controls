@@ -5,7 +5,7 @@ num_sims = 100;
 clear simIn out
 
 % Nominal parameters
-GrommetIDX = 1;
+GrommetIDX = 11;
 J_nom = constantsTOAD.J;
 G = GrommetSelect(GrommetIDX);
 m_FC = 0.1;
