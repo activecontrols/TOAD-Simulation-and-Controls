@@ -20,16 +20,12 @@ function linear_system = fluidMechanics(t,y,u)
     l_o = 1200 * 0.0254; % [m], oxygen line length
     l_f = 600 * 0.0254; % [m], fuel line length
     d = (0.5 - 2 * 0.065) * 0.0254; % [m], line diameter
-    dens_o = 1141; % [kg/m^3], liquid oxygen density, at 90 K and 1 atm
-    dens_f = 786; % [kg/m^3], fuel density, at 293 K and 1 atm
-    dens_w = 1000; % [kg/m^3], water density
-    g = 9.81; % [m/s^2], acceleration due to gravity
-    a_t = 1.0948365 * 1e-3; % [m^2], throat area
-    r = 442.234043; % [J/kg-K], specific gas constant of natural gas (molecular weight 18.8 g/mol)
+    
+   
+ 
     v_c = 1.103170594 * 1e-3; % [m^3], chamber volume
     a_l = pi * (d / 2) ^ 2; % [m^2], line area
-    a_i_o = 3.14577787810908e-5; % [m^2]
-    a_i_f = 2.60064441031368e-5; % [m^2]
+  
     v_l_o = a_l * l_eq_o;
     v_l_f = a_l * l_eq_f;
     t_o = 90; 
@@ -41,7 +37,7 @@ function linear_system = fluidMechanics(t,y,u)
     p_tank_o = 4.137e+6; % [Pa]
     p_tank_f = 4.137e+6; % [Pa]
     t_c = 3570; % [K], chamber temperature
-    c_star = 1750; % [m/s]
+    
 
     del_p_i_o = 1 / (2 * dens_o * (c_d_o * a_i_o) ^ 2); 
     del_p_l_o = c_fric * l_eq_o / (2 * d * dens_o * a_l ^ 2);

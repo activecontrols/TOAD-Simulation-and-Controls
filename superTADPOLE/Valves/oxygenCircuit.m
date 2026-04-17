@@ -1,4 +1,13 @@
-function valve_coeff_ox_cmd = oxygenCircuit(thrust, chamber_pressure_m, tank_pressure_ox_m)
+function valve_coeff_ox_cmd = oxygenCircuit(thrust, chamber_pressure_m, tank_pressure_ox_m, t)
+    persistent lastT trimOx
+    if isempty(lastT)
+        lastT = 0;
+        trimOx = 0;
+    
+    end
+    % if you have a better way to do this please do
+    dT = t - lastT;
+    lastT = t;
     
     % thrust [N]
     % chamber_pressure_m [Pa]
@@ -26,7 +35,8 @@ function valve_coeff_ox_cmd = oxygenCircuit(thrust, chamber_pressure_m, tank_pre
     % unsure how to do integral (based on time)
     
     error_ox = chamber_pressure_cmd - chamber_pressure_m;
-    trim_ox = k_ox * integral(error_ox); % This has got to be wrong
+    trim_ox = trimOx + k_ox * (error_ox) * dT; % less wrong probably??
+    trimOx = trim_ox;
     valve_coeff_ox_cmd = valve_coeff_ox_cmd + trim_ox; % [unitless?]
 
     % Technically, the function should output valve angle, but idk what the
