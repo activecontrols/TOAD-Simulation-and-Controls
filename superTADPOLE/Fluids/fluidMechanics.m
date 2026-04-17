@@ -1,4 +1,4 @@
-function linear_system = fluidMechanics(t,y,u)
+function linear_system = fluidMechanics(t,y,u, constantsSTADPOLE)
     
     % y(1)' = time rate of mass flow oxygen [kg/s^2]
     % y(2)' = time rate of mass flow fuel [kg/s^2]
@@ -12,6 +12,18 @@ function linear_system = fluidMechanics(t,y,u)
     % y(4) = oxygen pressure [Pa]
     % y(5) = fuel pressure [Pa]
     
+    a_t= constantsSTADPOLE.a_t ; % [m^2], throat area
+    
+    dens_o = constantsSTADPOLE.dens_o; % [kg/m^3], liquid oxygen density, at 90 K and 1 atm
+    dens_f = constantsSTADPOLE.dens_f ; % [kg/m^3], fuel density, at 293 K and 1 atm
+    dens_w = constantsSTADPOLE.dens_w ; % [kg/m^3], water density
+    g = constantsSTADPOLE.g ; % [m/s^2], acceleration due to gravity
+    a_i_o = constantsSTADPOLE.a_i_o; % [m^2] area injector ox
+    a_i_f = constantsSTADPOLE.a_i_f ; % [m^2] area injector fuel
+    r = constantsSTADPOLE.r ; % [J/kg-K], specific gas constant of exhaust (molecular weight 18.8 g/mol)
+    c_star = constantsSTADPOLE.c_star ; % [m/s] characteristic velocity
+    of = constantsSTADPOLE.OF_target;
+
     c_fric = 0.03; % [unitless], line friction coefficient
     c_d_o = 0.445; % [unitless], oxygen injector coefficient
     c_d_f = 0.7; % [unitless], fuel injector coefficient

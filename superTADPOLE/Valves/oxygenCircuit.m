@@ -1,4 +1,4 @@
-function valve_coeff_ox_cmd = oxygenCircuit(thrust, chamber_pressure_m, tank_pressure_ox_m, t)
+function valve_coeff_ox_cmd = oxygenCircuit(thrust, chamber_pressure_m, tank_pressure_ox_m, t, constants)
     persistent lastT trimOx
     if isempty(lastT)
         lastT = 0;
@@ -11,10 +11,10 @@ function valve_coeff_ox_cmd = oxygenCircuit(thrust, chamber_pressure_m, tank_pre
     
     % thrust [N]
     % chamber_pressure_m [Pa]
-    throat_area = ; % [m^2]
-    thrust_coeff = ; % [unitless]
-    char_vel = ; % [m/s]
-    of_ratio = ; % [unitless]
+    throat_area = constantsSTADPOLE.a_t; % [m^2]
+    thrust_coeff = constantsSTADPOLE.c_f; % [unitless]
+    char_vel = constants.c_star; % [m/s]
+    of_ratio = constants.OF_target; % [unitless]
     rho_ox = ; % [kg/m^3]
     discharge_coeff_ox = []; % [unitless]
     orifice_area_ox = []; % [m^2]
