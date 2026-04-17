@@ -1,11 +1,11 @@
-function [VRE, T, f] = VRECalc(throttle, G_RMAX, kGrom, bGrom, Kg2)
+function [VRE, T, f] = VRECalc(throttle, G_RMAX, kGrom, bGrom, Kg2, lowEnd, highEnd)
     % Samples: Focus only on the relevant spectrum
     Num = 500; 
     f = logspace(log10(10), log10(2500), Num); % 10 Hz to 2500 Hz
     
     % Tuned parameters based on general launch vehicle data
-    lowEnd = 50;       % Start of the plateau (typical for GEVS/SpaceX)
-    highEnd = 800;     % Start of the high-frequency roll-off
+    % lowEnd is start of the plateau (typical for GEVS/SpaceX)
+    % highEnd is start of the high-frequency roll-off
     GrmsIN = G_RMAX * throttle;
     
     % Slopes: n=1 and m=1 roughly approximate a +/- 6 dB/oct power slope

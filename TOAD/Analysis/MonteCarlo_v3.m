@@ -1,7 +1,7 @@
 %% Parallel Monte Carlo Trajectory Setup & Extraction (V3)
 % --- Configuration ---
 model_name = 'TOAD_Simulation';
-num_sims = 300;
+num_sims = 48;
 clear simIn out
 
 % Nominal parameters
@@ -22,6 +22,8 @@ bGrom_vals = cell(1, num_sims);
 Kg2_vals = cell(1, num_sims);
 Wind_Gain_vals = cell(1, num_sims);
 Wind_Covar_vals = cell(1, num_sims);
+PSD_Low_vals = cell(1, num_sims);
+PSD_High_vals = cell(1, num_sims);
 
 % Preallocate arrays for final outputs
 RMSE_Controls_all = zeros(9, num_sims); 
@@ -48,14 +50,18 @@ for i = 1:num_sims
     % 3. Gyro Biases & Params
     GyroNoisePower_vals{i} = LogNormal(10^-7, 1);
     G_RMAX_vals{i} = (8 - 3) * rand() + 3;
-    kGrom_vals{i} = K_nom * (1 + 0.150 * randn());
-    bGrom_vals{i} = B_nom * (1 + 0.150 * randn());
+    kGrom_vals{i} = K_nom * (0.5 * (1 + 2 * rand()));
+    bGrom_vals{i} = B_nom * (0.5 * (1 + 2 * rand()));
     Kg2_vals{i} = (0.1-0.002) * rand() + 0.002;
 
     % 4. Wind
     a = 0.35;       b = 2;
     Wind_Gain_vals{i} = a * (-log(rand(1, 1))).^(1/b);
-    Wind_Covar_vals{i} = 3 * rand();
+    Wind_Covar_vals{i} = 8 * rand();
+
+    % 5. PSD Frequencies
+    PSD_Low_vals{i} = 10 + (100 - 10) * rand();
+    PSD_High_vals{i} = 500 + (1000 - 5000) * rand();
 end
 
 %% Setup Simulation Inputs for Parallel Execution
@@ -72,6 +78,8 @@ for i = 1:num_sims
     simIn(i) = simIn(i).setVariable('G_RMAX', G_RMAX_vals{i});
     simIn(i) = simIn(i).setVariable('Wind_Gain', Wind_Gain_vals{i});
     simIn(i) = simIn(i).setVariable('Wind_Covar', Wind_Covar_vals{i});
+    simIn(i) = simIn(i).setVariable('lowEnd', PSD_Low_vals{i});
+    simIn(i) = simIn(i).setVariable('highEnd', PSD_High_vaxls{i});
 
     % Trajectory logging on, unused datalogs off to save RAM
     simIn(i) = simIn(i).setBlockParameter('TOAD_Simulation/state_log', 'Commented', 'off');

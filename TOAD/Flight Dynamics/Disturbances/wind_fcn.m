@@ -12,7 +12,7 @@ moment = [0, 0, 0.120] * quatRot(q); % Distance from CoM to CoP rotated by Earth
 rel_vel = wind_vel + ASTRA_vel;
 
 % Constants needed for force calculation
-AREA = 0.07 * 0.8;          % Lateral surface area of ASTRA - m^2
+AREA = 1.115;               % Lateral surface area of TOAD - m^2 (Vincent said 12 ft^2)
 AIR_DENSITY = 1.246656;     % Estimated air desnsity - kg/m^3
 Cd = 0.95;                  % Estimated Drag coefficient
 
