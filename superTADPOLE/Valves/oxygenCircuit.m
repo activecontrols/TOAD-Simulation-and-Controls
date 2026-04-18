@@ -1,4 +1,4 @@
-function valve_coeff_ox_cmd = oxygenCircuit(thrust, chamber_pressure_m, tank_pressure_ox_m)
+function valve_coeff_ox_cmd = oxygenCircuit(thrust_cmd, chamber_pressure_m, tank_pressure_ox_m)
     
     % Notes:
     % - Oxygen valve is the lead valve
@@ -19,15 +19,15 @@ function valve_coeff_ox_cmd = oxygenCircuit(thrust, chamber_pressure_m, tank_pre
     thrust_coeff = constantsSTADPOLE.c_f; % [unitless]
     char_vel = constants.c_star; % [m/s]
     of_ratio = constants.OF_target; % [unitless]
-    rho_ox = ; % [kg/m^3]
-    discharge_coeff_ox = ; % [unitless]
-    orifice_area_ox = ; % [m^2]
-    friction_pressure_drop_ox = ; % [Pa]
-    rho_water = ; % [kg/m^3]
+    rho_ox = constantsSTADPOLE.dens_o; % [kg/m^3]
+    discharge_coeff_ox = 0.65; % [unitless],  -------------Random value just to get the code to run
+    orifice_area_ox = 3E-05; % [m^2],  -------------Random value just to get the code to run
+    friction_pressure_drop_ox = 2E05; % [Pa],  -------------Random value just to get the code to run
+    rho_water = constantsSTADPOLE.dens_w; % [kg/m^3]
     
     % Feedback trim variables
-    k_ox = ; % [unitless], integral gain for oxygen trim
-    time_step = ; % [s], based on loop time
+    k_ox = 1E-10; % [unitless], integral gain for oxygen trim,  -------------Random value just to get the code to run
+    time_step = 0.01; % [s], based on loop time,  -------------Random value just to get the code to run
 
     persistent integral_error_ox
    
@@ -36,7 +36,7 @@ function valve_coeff_ox_cmd = oxygenCircuit(thrust, chamber_pressure_m, tank_pre
     end
 
     % Valve coefficient equations
-    chamber_pressure_cmd = thrust / (throat_area * thrust_coeff); % [Pa]
+    chamber_pressure_cmd = thrust_cmd / (throat_area * thrust_coeff); % [Pa]
     massflow_tot_cmd = chamber_pressure_cmd * throat_area / char_vel; % [kg/s]
     massflow_ox_cmd = massflow_tot_cmd * of_ratio / (of_ratio + 1); % [kg/s]
     term_1 = (massflow_ox_cmd ^ 2) / (2 * rho_ox * (discharge_coeff_ox * orifice_area_ox) ^ 2); % [Pa]
