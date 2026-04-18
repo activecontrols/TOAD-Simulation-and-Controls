@@ -16,18 +16,18 @@ function valve_coeff_fu_cmd = fuelCircuit(chamber_pressure_m, injector_pressure_
 
     % Variables
     of_ratio = constants.OF_target; % [unitless]
-    rho_ox = ; % [kg/m^3]
-    rho_fu = ; % [kg/m^3]
-    discharge_coeff_ox = ; % [unitless]
-    discharge_coeff_fu = ; % [unitless]
-    orifice_area_ox = ; % [m^2]
-    orifice_area_fu = ; % [m^2]
-    friction_pressure_drop_fu = ; % [Pa]
-    rho_water = ; % [kg/m^3]
+    rho_ox = constantsSTADPOLE.dens_o; % [kg/m^3]
+    rho_fu = constantsSTADPOLE.dens_f; % [kg/m^3]
+    discharge_coeff_ox = 0.65; % [unitless],  -------------Random value just to get the code to run
+    discharge_coeff_fu = 0.65; % [unitless],  -------------Random value just to get the code to run
+    orifice_area_ox = 3E-05; % [m^2],  -------------Random value just to get the code to run
+    orifice_area_fu = 3E-05; % [m^2],  -------------Random value just to get the code to run
+    friction_pressure_drop_fu = 2E05 ; % [Pa],  -------------Random value just to get the code to run
+    rho_water = constantsSTADPOLE.dens_w; % [kg/m^3]
     
     % Feedback trim variables
-    k_fu = ; % [unitless], integral gain for fuel trim
-    time_step = ; % [s], based on loop time
+    k_fu = 1E-10; % [unitless], integral gain for fuel trim,  -------------Random value just to get the code to run
+    time_step = 0.01; % [s], based on loop time,  -------------Random value just to get the code to run
 
     persistent integral_error_fu
    
