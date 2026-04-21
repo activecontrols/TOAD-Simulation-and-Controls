@@ -17,13 +17,12 @@
 function [U, State_ERR] = TOAD_Control_FCN(PosTarget, X, constantsTOAD, t, MaxVel, VelFF, HDGRef, GND)
 
 % Time Counter
-persistent lastT VelErrorI AttErrorI lastAttError lastAccelZ LatTrim
+persistent lastT VelErrorI AttErrorI lastAttError lastAccelZ
 if isempty(lastT)
     lastT = 0;
     VelErrorI = zeros(3,1);
     AttErrorI = zeros(3,1);
     lastAttError = zeros(3,1);
-    LatTrim = zeros(3,1);
 end
 dT = t - lastT;
 lastT = t;
@@ -43,7 +42,7 @@ U = zeros(4,1);
     PosError = PosTarget - X(5:7, :);
     
     % Velocity Command
-    K_P = [0.43; 0.43; 0.8];
+    K_P = [0.35; 0.35; 0.8];
     VelTarget = K_P .* PosError + VelFF;
 
     % Velocity Saturation Step
@@ -53,13 +52,6 @@ U = zeros(4,1);
     % Velocity Error Vector
     VelError = VelTarget - X(8:10, :);
 
-    % Steady-State Trim Observer (Handles MEKF/CG bias)
-    SteadyState = norm(VelTarget(1:2)) < 0.5 && norm(lastAttError(2:3)) < 0.1;
-    K_Trim = [0.05; 0.05; 0];
-    
-    LatTrim = LatTrim + (K_Trim .* VelError .* dT .* (1 - GND) .* SteadyState);
-    LatTrim(1:2) = max(min(LatTrim(1:2), 0.7), -0.7);
-
     % Dynamic Integrator Gating (Lorentzian)
     Leak = 0.1;
     GateWidth = 0.5;
@@ -67,7 +59,7 @@ U = zeros(4,1);
     Gate = Leak + (1 - Leak) * (1 / (1 + (ErrorMag / GateWidth)^2));
 
     % Dynamic Integrator
-    K_I = [0.25; 0.25; 0.3];
+    K_I = [0.05; 0.05; 0.3];
     Clamp = [5; 5; 5];
     
     K_I = K_I .* Gate;
@@ -75,12 +67,12 @@ U = zeros(4,1);
     VelErrorI = max(min(VelErrorI, Clamp), -Clamp);
     
     % Acceleration Target
-    K_P = [2.4; 2.4; 2.0];
+    K_P = [1.1; 1.1; 2.0];
     AccelTarget = K_P .* VelError + VelErrorI + [0; 0; constantsTOAD.g];
 
     % Acceleration Saturation Step
-    MaxAccelUp = [2.3 2.3 15]';
-    MaxAccelDown = [-2.3 -2.3 4]';
+    MaxAccelUp = [1.3 1.3 15]';
+    MaxAccelDown = [-1.3 -1.3 4]';
     AccelTarget = max(min(AccelTarget, MaxAccelUp), MaxAccelDown);
 
     % Acceleration Rate Limit
@@ -92,11 +84,6 @@ U = zeros(4,1);
     DeltaZ = AccelTarget(3) - lastAccelZ;
     AccelTarget(3) = lastAccelZ + max(min(DeltaZ, MaxDeltaZ), -MaxDeltaZ);
     lastAccelZ = AccelTarget(3);
-
-    % Inject Trim Acceleration from the Low Rate Integrator, scaled to
-    % maintain physical tilt
-    TrimAccel = LatTrim .* (AccelTarget(3) / constantsTOAD.g);
-    AccelTarget(1:2) = AccelTarget(1:2) + TrimAccel(1:2);
     
 %% Kinematics Step
     % Compute thrust target (Update to use estimated mass, for now I gain takes care)
@@ -132,12 +119,13 @@ U = zeros(4,1);
     AttErrorI = max(min(AttErrorI, Clamp), -Clamp);
 
     % State vector and error
-    State_ERR = [AttError(2:4); PosError; VelError].^2;
+    State_ERR = [AttError(2:4); VelErrorI; VelError];
     MaxRollErr = 0.25;
     if abs(AttError(4)) > MaxRollErr
         AttError(4) = sign(AttError(4)) * MaxRollErr;
     end
-    X_Err = [-AttError(2:4, :); X(11:13, :); AttErrorI];
+    % X_Err = [-AttError(2:4, :); X(11:13, :); AttErrorI];
+    X_Err = [-AttError(2:4, :); X(11:13, :)];
     
     % LQR Controller
     U([1 2 4]) = -K_Att * X_Err;

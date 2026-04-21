@@ -8,8 +8,8 @@ mag_proc_cov = 1e-1;
 mag_bias_cov = 1e-12; % * 3000;
 
 gyro_cov = 5e-6;
-accel_obs_cov = 6e-2;
-mag_obs_cov = 8e-2;
+accel_obs_cov = 5e-2;
+mag_obs_cov = 1e-1;
 
 %Init constants
 dt = 0.005;

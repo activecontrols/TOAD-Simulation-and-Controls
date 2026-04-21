@@ -18,7 +18,7 @@ MEKF_Constants;
 
 %% Create constants struct for TOAD (Approximate values, all metric)
 % Vehicle Parameters
-constantsTOAD.m_dry = 137.5;
+constantsTOAD.m_dry = 141.521;
 constantsTOAD.g = 9.80145; 
 constantsTOAD.rTB = 0.75;
 constantsTOAD.J = diag([110 110 20]);
@@ -85,7 +85,7 @@ m_FC = 0.1;
 kGrom = G.K;
 bGrom = G.C / (2 * sqrt(kGrom * m_FC));
 Kg2 = 0.03;
-G_RMAX = 6;
+G_RMAX = 4;
 Wind_Gain = 1;
 Wind_Covar = 1;
 lowEnd = 50;
