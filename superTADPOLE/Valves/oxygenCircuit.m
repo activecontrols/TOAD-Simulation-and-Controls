@@ -1,4 +1,4 @@
-function valve_coeff_ox_cmd = oxygenCircuit(thrust_cmd, chamber_pressure_m, tank_pressure_ox_m)
+function valve_coeff_ox_cmd = oxygenCircuit(thrust_cmd, chamber_pressure_m, tank_pressure_ox_m, constantsSTADPOLE)
     
     % Notes:
     % - Oxygen valve is the lead valve
@@ -10,6 +10,7 @@ function valve_coeff_ox_cmd = oxygenCircuit(thrust_cmd, chamber_pressure_m, tank
     % - thrust: commanded thrust [N]
     % - chamber_pressure_m: measured chamber pressure [Pa]
     % - tank_pressure_ox_m: measured oxygen tank pressure [Pa]
+    % - constantsSTADPOLE: constant values
     
     % Output
     % - valve_coeff_ox_cmd: commanded valve coefficient [unitless]
@@ -17,8 +18,8 @@ function valve_coeff_ox_cmd = oxygenCircuit(thrust_cmd, chamber_pressure_m, tank
     % Variables
     throat_area = constantsSTADPOLE.a_t; % [m^2]
     thrust_coeff = constantsSTADPOLE.c_f; % [unitless]
-    char_vel = constants.c_star; % [m/s]
-    of_ratio = constants.OF_target; % [unitless]
+    char_vel = constantsSTADPOLE.c_star; % [m/s]
+    of_ratio = constantsSTADPOLE.OF_target; % [unitless]
     rho_ox = constantsSTADPOLE.dens_o; % [kg/m^3]
     discharge_coeff_ox = 0.65; % [unitless],  -------------Random value just to get the code to run
     orifice_area_ox = 3E-05; % [m^2],  -------------Random value just to get the code to run

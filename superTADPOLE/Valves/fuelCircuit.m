@@ -1,4 +1,4 @@
-function valve_coeff_fu_cmd = fuelCircuit(chamber_pressure_m, injector_pressure_ox_m, tank_pressure_fu_m)
+function valve_coeff_fu_cmd = fuelCircuit(chamber_pressure_m, injector_pressure_ox_m, tank_pressure_fu_m, constantsSTADPOLE)
     
     % Notes:
     % - Fuel valve is the follow valve
@@ -10,12 +10,13 @@ function valve_coeff_fu_cmd = fuelCircuit(chamber_pressure_m, injector_pressure_
     % - chamber_pressure_m: measured chamber pressure [Pa]
     % - injector_pressure_ox_m: measured oxygen injector pressure [Pa]
     % - tank_pressure_fu_m: measured fuel tank pressure [Pa]
+    % - constantsSTADPOLE: constant values
     
     % Output
     % - valve_coeff_ox_cmd: commanded valve coefficient [unitless]
 
     % Variables
-    of_ratio = constants.OF_target; % [unitless]
+    of_ratio = constantsSTADPOLE.OF_target; % [unitless]
     rho_ox = constantsSTADPOLE.dens_o; % [kg/m^3]
     rho_fu = constantsSTADPOLE.dens_f; % [kg/m^3]
     discharge_coeff_ox = 0.65; % [unitless],  -------------Random value just to get the code to run
