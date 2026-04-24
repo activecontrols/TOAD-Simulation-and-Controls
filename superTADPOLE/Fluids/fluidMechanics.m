@@ -1,17 +1,22 @@
 function linear_system = fluidMechanics(t,y,u, constantsSTADPOLE)
     
-    % y(1)' = time rate of mass flow oxygen [kg/s^2]
-    % y(2)' = time rate of mass flow fuel [kg/s^2]
-    % y(3)' = time rate of chamber pressure [Pa/s]
-    % y(4)' = time rate of oxygen pressure [Pa/s]
-    % y(5)' = time rate of fuel pressure [Pa/s]
-
+    % State vector y
+    
     % y(1) = mass flow oxygen [kg/s]
     % y(2) = mass flow fuel [kg/s]
     % y(3) = chamber pressure [Pa]
     % y(4) = oxygen pressure [Pa]
     % y(5) = fuel pressure [Pa]
     
+    % Derivative of state vector y'
+
+    % y(1)' = time rate of mass flow oxygen [kg/s^2]
+    % y(2)' = time rate of mass flow fuel [kg/s^2]
+    % y(3)' = time rate of chamber pressure [Pa/s]
+    % y(4)' = time rate of oxygen pressure [Pa/s]
+    % y(5)' = time rate of fuel pressure [Pa/s]
+
+
     a_t= constantsSTADPOLE.a_t ; % [m^2], throat area
     
     dens_o = constantsSTADPOLE.dens_o; % [kg/m^3], liquid oxygen density, at 90 K and 1 atm
