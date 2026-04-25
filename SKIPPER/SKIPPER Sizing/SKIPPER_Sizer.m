@@ -15,9 +15,7 @@ GrossMass(1) = 205; % Wet Mass Guess [kg]
 PropMass(1) = 41; % Total Propellant Mass Guess [kg]
 ThrustReq(1) = 2446; % Engine Thrust Guess [N]
 
-% Structures Mass (incl. all Avionics, Structures mass, COPVs, Fittings,
-% and all things constant with thrust) Replace with better value later [kg]
-StructMass = 157.45 - 5; % EXTREMELY SENSITIVE AND SUS
+StructMass = 157.45; % Structures Mass (w/o Prop or Tanks) (incl. all Avionics, Structures mass, COPVs, Fittings, and all things constant with thrust) [kg]
 Rho_FU = 786; % IPA [kg/m^3]
 Rho_OX = 1141.2; % Ox [kg/m^3]
 chillin = 2; % Mass required for TCA chill-in [kg]
@@ -137,8 +135,8 @@ function [TankMass, TankHeight] = TankSizer(PropMass, Rho_FU, Rho_OX, OF, chilli
     Mass_OX = PropMass * OF / (1 + OF) + chillin; % NOT SURE WHY HAS 2 (CHILLIN?)
 
     % Propellant Volume Requirements
-    Volume_FU = (1 + Ullage) * Mass_FU / Rho_FU;
-    Volume_OX = (1 + Ullage) * Mass_OX / Rho_OX;
+    Volume_FU = (Mass_FU / Rho_FU) / (1 - Ullage);
+    Volume_OX = (Mass_OX / Rho_OX) / (1 - Ullage);
 
     % Predetermined Tank Masses
     Bulkhead_mass = 11.0509 / 2.205; % Mass of upper and lower bulkheads [kg]

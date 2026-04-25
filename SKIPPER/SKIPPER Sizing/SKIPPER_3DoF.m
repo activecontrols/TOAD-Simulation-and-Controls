@@ -1,4 +1,4 @@
-function [PropMass, FlightTime] = SKIPPER_3DoF(Thrust, WetMass)
+function [PropMass, FlightTime] = SKIPPER_3DoF(max_thrust_guess, WetMass)
 
 %Variable set-up
 syms r_1 r_2 v_1 v_2 theta theta_dot m m_dot thrust alpha_ang
@@ -50,11 +50,10 @@ r_dot = v;
 v_dot = IF/m;
 
 %Derivative of mass
-Isp_MAX = 177.1;
-Isp_MIN = 152.7;
+Isp_MAX = 177.07; % (s)
+Isp_MIN = 152.65; % (s)
 Isp = Isp_MIN + 2 * (thrust / max_thrust - 0.5) * (Isp_MAX - Isp_MIN);
-MaxMdot = thrust / (Isp * g);
-m_dot = -thrust / max_thrust * MaxMdot;
+m_dot = -thrust / (Isp * g);
 
 %Torque
 tau = lengthTOAD*thrust*sin(alpha_ang);
@@ -76,7 +75,7 @@ matlabFunction(x_dot, 'File', './odefcn2.m', 'Vars', {t, x, u, consts});
 g = 9.8066;                         % m/s^2
 rad = 0.0254;                       % m
 len = 4;                            % m
-constants = [g; WetMass; rad; len; Thrust];
+constants = [g; WetMass; rad; len; max_thrust_guess];
 x_0 = [0; 0; 0; 0; 0; 0; WetMass];
 
 %Calculate jacobians for X and U
@@ -144,8 +143,9 @@ else
     AccelLat = (xsim(2:end,1) - xsim(1:end-1,1)) ./ (tsim(2:end) - tsim(1:end-1));
     AccelTot = (AccelVert.^2 + AccelLat.^2).^(1/2);
 
-    ThrustDev = u(1:EndIndex,1) - 0.7 * Thrust;
+    ThrustDev = u(1:EndIndex,1) - 0.7 * max_thrust_guess;
     ThrustDev = sum(ThrustDev.^2);
+    disp(FlightTime)
 end
 
 
