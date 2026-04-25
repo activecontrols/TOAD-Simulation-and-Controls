@@ -22,7 +22,7 @@ function valve_coeff_ox_cmd = oxygenCircuit(thrust_cmd, chamber_pressure_m, tank
     of_ratio = constantsSTADPOLE.OF_target; % [unitless]
     rho_ox = constantsSTADPOLE.dens_o; % [kg/m^3]
     discharge_coeff_ox = 0.65; % [unitless],  -------------Random value just to get the code to run
-    orifice_area_ox = 3E-05; % [m^2],  -------------Random value just to get the code to run
+    orifice_area_ox = 5E-05; % [m^2],  -------------Random value just to get the code to run
     friction_pressure_drop_ox = 2E05; % [Pa],  -------------Random value just to get the code to run
     rho_water = constantsSTADPOLE.dens_w; % [kg/m^3]
     

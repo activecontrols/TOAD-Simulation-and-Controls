@@ -21,8 +21,8 @@ function valve_coeff_fu_cmd = fuelCircuit(chamber_pressure_m, injector_pressure_
     rho_fu = constantsSTADPOLE.dens_f; % [kg/m^3]
     discharge_coeff_ox = 0.65; % [unitless],  -------------Random value just to get the code to run
     discharge_coeff_fu = 0.65; % [unitless],  -------------Random value just to get the code to run
-    orifice_area_ox = 3E-05; % [m^2],  -------------Random value just to get the code to run
-    orifice_area_fu = 3E-05; % [m^2],  -------------Random value just to get the code to run
+    orifice_area_ox = 5E-05; % [m^2],  -------------Random value just to get the code to run
+    orifice_area_fu = 5E-05; % [m^2],  -------------Random value just to get the code to run
     friction_pressure_drop_fu = 2E05 ; % [Pa],  -------------Random value just to get the code to run
     rho_water = constantsSTADPOLE.dens_w; % [kg/m^3]
     
