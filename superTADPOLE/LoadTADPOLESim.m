@@ -26,3 +26,5 @@ constantsFU.area = 3E-05; % [m^2], Random value just to get the code to run
 % constantsSTADPOLE.OF_engine = 1.2; calculate it in the engine with mass
 % of ox over mass of fuel
 STADPOLE = Simulink.Bus.createObject(constantsSTADPOLE);
+OX = Simulink.Bus.createObject(constantsOX);
+FU = Simulink.Bus.createObject(constantsFU);
