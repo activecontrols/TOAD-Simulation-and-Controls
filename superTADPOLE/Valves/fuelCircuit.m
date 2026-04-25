@@ -1,4 +1,4 @@
-function valve_coeff_fu_cmd = fuelCircuit(chamber_pressure_m, injector_pressure_ox_m, tank_pressure_fu_m, constantsSTADPOLE)
+function valve_coeff_fu_cmd = fuelCircuit(chamber_pressure_m, injector_pressure_ox_m, injector_pressure_fu_m, tank_pressure_fu_m, constantsSTADPOLE)
     
     % Notes:
     % - Fuel valve is the follow valve
