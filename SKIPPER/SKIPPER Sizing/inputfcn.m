@@ -1,8 +1,7 @@
-function u = inputfcn(K, x, t)
+function u = inputfcn(K, x, t, thrust_max)
     
-    thrust_max = 2446.52;   %N
     maxU = [thrust_max;0.122];
-    minU = [thrust_max * 0.4;-0.122];
+    minU = [thrust_max * 0.5;-0.122];
     MaxDeltaThrottle = 0.6 / 1.2;  %throttle change per sec
 
     % Input Saturation

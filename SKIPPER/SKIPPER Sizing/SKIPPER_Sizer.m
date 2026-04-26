@@ -43,12 +43,13 @@ for i = 1:MaxIter
     GrossMass(i + 1) = PropMass(i) + sum(TankMasses(i, :), 2) + StructMass;
 
     % Calculate thrust residual
-    Residual = TWR_Target * GrossMass(i + 1) * g0 - ThrustReq(i);
+    TWR_Iteration = ThrustReq(i) / (GrossMass(i) * g0);
+    Residual = TWR_Target * GrossMass(i+1) * g0 - ThrustReq(i);
     ThrustReq(i + 1) = ThrustReq(i) + Alpha * Residual;
     fprintf(['Iteration #%i Complete!\nResidual: %.2f lbf   ||   Thrust Requirement: ' ...
         '%.2f lbf \n'], i, Residual / 4.448, ThrustReq(i + 1) / 4.448);
 
-    if abs(Residual) < 1
+    if abs(Residual) < 3
         LastIter = i;
         break;
     end
@@ -89,12 +90,12 @@ legend('Location', 'best');
 
 % 3. Tank Geometry
 subplot(3, 2, 3);
-plot(1:LastIter, TankHeights(:, 1) * 12 * 3.281, '-o', 'LineWidth', 1.5, 'DisplayName', 'OX Cyl Height');
+plot(1:LastIter, TankHeights(:, 1) * 12 * 3.281, '-o', 'LineWidth', 1.5, 'DisplayName', 'OX Height');
 hold on;
-plot(1:LastIter, TankHeights(:, 2) * 12 * 3.281, '-s', 'LineWidth', 1.5, 'DisplayName', 'FU Cyl Height');
+plot(1:LastIter, TankHeights(:, 2) * 12 * 3.281, '-s', 'LineWidth', 1.5, 'DisplayName', 'FU Height');
 grid on;
 xlabel('Iteration');
-ylabel('Cylindrical Height (in)');
+ylabel('Tank Height (in)');
 title('Tank Dimension Sizing');
 legend('Location', 'best');
 
@@ -150,8 +151,8 @@ function [TankMass, TankHeight] = TankSizer(PropMass, Rho_FU, Rho_OX, OF, chilli
     Volume_Endcaps = 4 / 3 * pi * Radius^2 * Height_Endcap;
     TankHeight_FU = (Volume_FU - Volume_Endcaps) / (pi * Radius^2);
     TankHeight_OX = (Volume_OX - Volume_Endcaps) / (pi * Radius^2);
-    TankHeight(1) = TankHeight_OX;
-    TankHeight(2) = TankHeight_FU;  
+    TankHeight(1) = TankHeight_OX + 2 * Height_Endcap;
+    TankHeight(2) = TankHeight_FU + 2 * Height_Endcap;
 
     % Tank Mass
     Al_Rho = 2700; % [kg/m^3]

@@ -1,4 +1,4 @@
-function [PropMass, FlightTime] = SKIPPER_3DoF(max_thrust_guess, WetMass)
+function [PropMass, FlightTime] = SKIPPER_3DoF(MaxThrustINPUT, WetMass)
 
 %Variable set-up
 syms r_1 r_2 v_1 v_2 theta theta_dot m m_dot thrust alpha_ang
@@ -75,7 +75,7 @@ matlabFunction(x_dot, 'File', './odefcn2.m', 'Vars', {t, x, u, consts});
 g = 9.8066;                         % m/s^2
 rad = 0.0254;                       % m
 len = 4;                            % m
-constants = [g; WetMass; rad; len; max_thrust_guess];
+constants = [g; WetMass; rad; len; MaxThrustINPUT];
 x_0 = [0; 0; 0; 0; 0; 0; WetMass];
 
 %Calculate jacobians for X and U
@@ -97,7 +97,7 @@ D = 0;
 %Set up LQR controller
 a_weights = [5; 8; 1; 5; 2; 2; 0];
 b_weights = [1; 1];
-maxA = 0.5*g;
+maxA = 0.8*g;
 
 a_weights = a_weights / norm(a_weights);
 b_weights = b_weights / norm(b_weights);
@@ -118,7 +118,7 @@ clear inputfcn;
 tspan = [0 60];
 
 % Solve using ODE113 and nonlinear dynamics
-[tsim, xsim] = ode23(@(tsim, xsim) odefcn2(tsim, xsim, inputfcn(K, xsim, tsim), constants), tspan, x_0);
+[tsim, xsim] = ode45(@(tsim, xsim) odefcn2(tsim, xsim, inputfcn(K, xsim, tsim, MaxThrustINPUT), constants), tspan, x_0);
 
 % Solve for inputs
 u = zeros(size(xsim,1 ), 2);
@@ -127,7 +127,7 @@ clear inputfcn;
 for i = 1:1:size(xsim, 1)
     x_i = xsim(i,1:7).';
     t_i = tsim(i);
-    u(i,1:2) = inputfcn(K, x_i, t_i);
+    u(i,1:2) = inputfcn(K, x_i, t_i, MaxThrustINPUT);
 end
 %% OUTPUTS
 EndIndex = find(xsim(100:end,2) < 0.1 & abs(xsim(100:end,4)) < 10);
@@ -143,9 +143,8 @@ else
     AccelLat = (xsim(2:end,1) - xsim(1:end-1,1)) ./ (tsim(2:end) - tsim(1:end-1));
     AccelTot = (AccelVert.^2 + AccelLat.^2).^(1/2);
 
-    ThrustDev = u(1:EndIndex,1) - 0.7 * max_thrust_guess;
+    ThrustDev = u(1:EndIndex,1) - 0.7 * MaxThrustINPUT;
     ThrustDev = sum(ThrustDev.^2);
-    disp(FlightTime)
 end
 
 
