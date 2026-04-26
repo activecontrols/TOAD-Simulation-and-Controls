@@ -50,8 +50,8 @@ r_dot = v;
 v_dot = IF/m;
 
 %Derivative of mass
-Isp_MAX = 177.07; % (s)
-Isp_MIN = 152.65; % (s)
+Isp_MAX = 184.77; % (s)
+Isp_MIN = 159.29; % (s)
 Isp = Isp_MIN + 2 * (thrust / max_thrust - 0.5) * (Isp_MAX - Isp_MIN);
 m_dot = -thrust / (Isp * g);
 
