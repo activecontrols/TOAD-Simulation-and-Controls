@@ -9,7 +9,7 @@ function J = NumericalJacobian(Func, X)
     
     for i = 1:N
         X_perturb = X;
-        % Handle magnitude differences (perturb large pressures and small massflows appropriately)
+        % Handle magnitude differences
         perturbation = epsilon * max(abs(X(i)), 1); 
         X_perturb(i) = X(i) + perturbation;
         

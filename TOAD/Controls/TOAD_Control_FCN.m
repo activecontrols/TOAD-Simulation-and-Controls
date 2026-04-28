@@ -54,11 +54,11 @@ U = zeros(4,1);
 
     % Dynamic Integrator Gating (Lorentzian)
     Leak = 0.1;
-    GateWidth = 0.5;
+    GateWidth = 1;
     ErrorMag = norm(VelError) + 5.0 * norm(lastAttError(2:3));
     Gate = Leak + (1 - Leak) * (1 / (1 + (ErrorMag / GateWidth)^2));
 
-    % Dynamic Integrator
+    % DIntegrator
     K_I = [0.05; 0.05; 0.3];
     Clamp = [5; 5; 5];
     

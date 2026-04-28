@@ -1,0 +1,16 @@
+IPA CFX table export summary
+============================
+
+Source property function: IPA_properties.m
+Temperature range: 270 to 320 K
+Pressure range   : 1.72369e+06 to 3.44738e+06 Pa
+Pressure range   : 250 to 500 psia
+Temperature step : 2 K
+Pressure points  : 26
+
+rho range [kg/m^3]      : 765.636 to 803.213
+mu range [Pa*s]         : 0.00115262 to 0.00509225
+k range [W/m-K]         : 0.130251 to 0.143029
+cp range [J/kg-K]       : 2285.53 to 2890
+boiling T range [K]     : 453.025 to 489.413
+boiling points sampled? : false

@@ -1,0 +1,27 @@
+Suggested CFX CEL expressions for the exported IPA tables
+========================================================
+
+1) Create/import user functions from the CSV files in CFX.
+   Use argument units [K], [Pa] and result units matching each file.
+   Example function names below assume you create these functions:
+     rho_tab(T,P), mu_tab(T,P), k_tab(T,P), cp_tab(T,P)
+
+2) Define clipping expressions first:
+
+Tclip = max(270 [K], min(320 [K], T))
+Pclip = max(1723689.323292 [Pa], min(3447378.646584 [Pa], p))
+
+3) Then define material properties:
+
+rho_IPA = rho_tab(Tclip, Pclip)
+mu_IPA  = mu_tab(Tclip, Pclip)
+k_IPA   = k_tab(Tclip, Pclip)
+cp_IPA  = cp_tab(Tclip, Pclip)
+
+4) Assign in the material definition:
+   Density               = rho_IPA
+   Dynamic Viscosity     = mu_IPA
+   Thermal Conductivity  = k_IPA
+   Specific Heat Capacity= cp_IPA
+
+Start by assigning rho only, solve, then add mu, then k, then cp.
