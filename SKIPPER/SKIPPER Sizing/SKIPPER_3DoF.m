@@ -50,8 +50,8 @@ r_dot = v;
 v_dot = IF/m;
 
 %Derivative of mass
-Isp_MAX = 184.77; % (s)
-Isp_MIN = 159.29; % (s)
+Isp_MAX = 193.16; % (s)
+Isp_MIN = 166.53; % (s)
 Isp = Isp_MIN + 2 * (thrust / max_thrust - 0.5) * (Isp_MAX - Isp_MIN);
 m_dot = -thrust / (Isp * g);
 
@@ -145,6 +145,7 @@ else
 
     ThrustDev = u(1:EndIndex,1) - 0.7 * MaxThrustINPUT;
     ThrustDev = sum(ThrustDev.^2);
+    disp(FlightTime)
 end
 
 

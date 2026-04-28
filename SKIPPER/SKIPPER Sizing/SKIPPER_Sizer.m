@@ -12,14 +12,14 @@ ThrustReq = zeros(MaxIter, 1);
 TankHeights = zeros(MaxIter, 2);
 TankMasses = zeros(MaxIter, 2);
 GrossMass(1) = 205; % Wet Mass Guess [kg]
-PropMass(1) = 41; % Total Propellant Mass Guess [kg]
+PropMass(1) = 40; % Total Propellant Mass Guess [kg]
 ThrustReq(1) = 2446; % Engine Thrust Guess [N]
 
-StructMass = 157.45; % Structures Mass (w/o Prop or Tanks) (incl. all Avionics, Structures mass, COPVs, Fittings, and all things constant with thrust) [kg]
+StructMass = 157.46; % Structures Mass (w/o Prop or Tanks) (incl. all Avionics, Structures mass, COPVs, Fittings, and all things constant with thrust) [kg]
 Rho_FU = 786; % IPA [kg/m^3]
 Rho_OX = 1141.2; % Ox [kg/m^3]
 chillin = 2; % Mass required for TCA chill-in [kg]
-OF = 1; % Total OF (including 20% film)
+OF = 1.2; % Total OF (including 10% film)
 TWR_Target = 1.25; 
 Alpha = 0.3;
 g0 = 9.8066;
@@ -164,6 +164,4 @@ function [TankMass, TankHeight] = TankSizer(PropMass, Rho_FU, Rho_OX, OF, chilli
     % Masses
     TankMass(1) = Bulkhead_mass + Vortex_mass + Ox_slosh_mass + Ox_cyl_mass; % Oxygen Tank Mass [kg]
     TankMass(2) = Bulkhead_mass + Vortex_mass + Fu_slosh_mass + Fu_cyl_mass; % IPA Tank Mass [kg]
-    % disp(floor(TankHeight_OX / Slosh_spacing))
-    % disp(floor(TankHeight_FU / Slosh_spacing))
 end
