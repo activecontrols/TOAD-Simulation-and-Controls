@@ -60,8 +60,8 @@ PressDropSCALED = (PressDrop - PressMEAN) / PressDEV;
 % NaN handling
 WorstLifespan = min(LifespanSCALED);
 WorstPressDrop = max(PressDropSCALED);
-PenaltyLife = WorstLifespan - 3.0;
-PenaltyPress = WorstPressDrop + 3.0;
+PenaltyLife = WorstLifespan - 0.5;
+PenaltyPress = WorstPressDrop + 0.5;
 LifespanSCALED(isnan(LifespanSCALED)) = PenaltyLife;
 PressDropSCALED(isnan(PressDropSCALED)) = PenaltyPress;
 
@@ -95,14 +95,14 @@ for iter = 1:NumIterations
     end
 
     % Global rough search using grid search
-    NumGrid = 2000;
+    NumGrid = 10000;
     GridGeometries = LowerBounds + rand(NumGrid, NumDims) .* (UpperBounds - LowerBounds);
     GridScores = zeros(NumGrid, 1);
     for g = 1:NumGrid
         GridScores(g) = Acquisition(GridGeometries(g,:), Geometries, y_train, LowerBounds, UpperBounds, ThetaOpt_LIFE, ThetaOpt_PRESS, MaxDP_Scaled, BestValidScaled);
     end
     CurrentMaxEI = -min(GridScores);
-    if iter > 10 && CurrentMaxEI < 1e-2
+    if iter > 10 && CurrentMaxEI < 1e-4
         fprintf('\nConvergence detected.\n');
         break;
     end
@@ -141,8 +141,8 @@ for iter = 1:NumIterations
     % NaN handling
     WorstLifespan = min(LifespanSCALED);
     WorstPressDrop = max(PressDropSCALED);
-    PenaltyLife = WorstLifespan - 3.0;
-    PenaltyPress = WorstPressDrop + 3.0;
+    PenaltyLife = WorstLifespan - 0.5;
+    PenaltyPress = WorstPressDrop + 0.5;
     LifespanSCALED(isnan(LifespanSCALED)) = PenaltyLife;
     PressDropSCALED(isnan(PressDropSCALED)) = PenaltyPress;
 
@@ -227,7 +227,7 @@ else
     ylim([0, max(MaxDP + 50, prctile(PressDrop, 85))]); 
 
     % Call SKIPPERRegen for Final Native Plots
-    SKIPPERRegen(ChampionGeom(1:3), ChampionGeom(4:6), ChampionGeom(7:8), 1);
+    % SKIPPERRegen(ChampionGeom(1:3), ChampionGeom(4:6), ChampionGeom(7:8), 1);
 end
 
 

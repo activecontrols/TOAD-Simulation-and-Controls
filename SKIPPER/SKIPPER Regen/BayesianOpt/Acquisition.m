@@ -9,11 +9,12 @@ function Score = Acquisition(xstar, X_train, y_train, LowerBounds, UpperBounds, 
     [muPRESS, stdPRESS] = PredictGP(xstar, X_train, y_train(:, 2), ThetaOpt_PRESS);
     
     % Calculate expected improvement
+    xi = -0.01;
     if stdLIFE > 1e-9 
-        Z = (muLIFE - BestValidScaled) / stdLIFE;
+        Z = (muLIFE - BestValidScaled - xi) / stdLIFE;
         EI = stdLIFE * Z * NormCDF(Z) + stdLIFE * NormPDF(Z);
     else
-        EI = max(0, muLIFE - BestValidScaled);
+        EI = max(0, muLIFE - BestValidScaled - xi);
     end
 
     % Prob of feasability
