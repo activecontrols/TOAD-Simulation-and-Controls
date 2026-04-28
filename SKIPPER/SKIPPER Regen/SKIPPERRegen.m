@@ -844,7 +844,7 @@ if DisplayMode == 1
     hold on
     set(gca, 'FontName', 'Times New Roman')
     set(gca, 'YAxisLocation', 'right');
-    plot(x_interpolated, w_c_x ./ h_c_x);
+    plot(x_interpolated, h_c_x ./ w_c_x);
     title("Channel Aspect Ratio");
     xlabel("Location [in]");
     grid on
