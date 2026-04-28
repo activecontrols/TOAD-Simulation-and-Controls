@@ -43,10 +43,9 @@ oxidizer_temp = 90.17; % [K]
 P_c = throttle * 250; % chamber pressure [psi] 
 P_e = throttle * 16.5; % exit pressure [psi]
 P_inlet = 375 * throttle + 200; % Regen inlet pressure [psi]  
-total_OF = 1.0; % oxidizer/fuel ratio (TOTAL, including film)  
-total_mdot = throttle * 1.320; % TOTAL chamber mass flow [kg/s]  
+total_OF = 1.2; % oxidizer/fuel ratio (TOTAL, including film)  
+total_mdot = throttle * 3.4178026327 / 2.205; % TOTAL chamber mass flow [kg/s]  
 mdot_coolant = total_mdot / (1 + total_OF); % Coolant/fuel mass flow [kg/s]
-%mdot_coolant = 2.331222118; % for tadpole converted lbm/s to kg/s (Tadpole only)
 
 qdot_tolerance = 0.0001; % Heat loop convergence criteria
 debug = 0; % Debug tool (1 = on, 0 = off)
@@ -66,11 +65,8 @@ else
     h_c = [.0012 .0011 .001]; % channel height [1 min 2] [m]   
     w_c = [.00225 .001 .0012]; % channel width [1 min 2] [m]    
 end
-% t_w = [0.0394, 0.0295, 0.0394] .* 0.0254;
-% h_c = [0.1181, 0.0787, 0.0984] .* 0.0254;
-% w_c = [0.1772, 0.0591, 0.0984] .* 0.0254; 
 
-heatflux_factor = -0.1125 * throttle + 0.6425; % Optional scaling factor [0 to 1], Linear Fit to Tadpole Data 
+heatflux_factor = -0.10833 * throttle + 0.6433; % Scaling factor [0 to 1], Linear Fit to Tadpole Data 
 
 %% CALCULATIONS
 %----------------------------------%
@@ -125,7 +121,7 @@ N = 35*8; % engine lifespan (for margin math)
 SF = 4; % lifespan saftey factor (4 per NASA 5012C)
 
 % Contour Interpolation
-contour = readmatrix('contour_superTADPOLE.xlsx'); % import engine contour
+contour = readmatrix('contour_SKIPPER_250_40.xlsx'); % import engine contour
 r_contour = contour(:,2)'; % contour radius [in]
 x_contour = contour(:,1)'; % contour x-axis [in]
 r_t = min(r_contour); % throat radius, throat location (in) 
@@ -145,7 +141,6 @@ h_c_x = NaN(1, steps);
 
 if traditional 
     % Channel Interior Surface Roughness
-    roughness_table = readmatrix(pwd + "/Material Data/surface_roughness.xlsx",'Range','A4:B8'); % Low-End Roughness
     roughness_abs = (125 * 0.0254) * 10^-6; % Surface roughness [m]
     
     PressureLoss_factor = 1.5; % Scaling factor for coolant pressure loss (to be verified)
@@ -457,19 +452,23 @@ for i = points % 1 = injector, steps = exit
         Nu_l(i) = ((f / 8) * (Re_coolant(i) - 1000) * Pr_coolant(i)) / (1 + 12.7 * ((f / 8) ^ 0.5) * (Pr_coolant(i) ^ (2/3) - 1)); % Gnielinksy correlation nusselt number [N/A] - 0.5 < Pr < 2000, 3000 < Re < 5e6
         h_l(i) = (Nu_l(i) * k_coolant(i)) / hydraulic_D; % liquid film coefficient [W/m^2-K] (Heister EQ 6.19)
 
-        % land/fin thickness at base
-        T_fin_base = T_wl(i);
+       % land/fin thickness at base
         fin_w(i) = (2*pi*(r_interpolated(i) + t_w_x(i)) - w_c_x(i) * num_channels) / num_channels;
         
-        % Fin cross-section
-        A_c_fin = fin_w(i) * ds_vec(i); % conduction area at base
-        P_fin = 2 * ds_vec(i); 
-        A_fin_surf = 2 * h_c_x(i) * ds_vec(i) + fin_w(i) * ds_vec(i); % fin sides and fin tip
+        if fin_w(i) <= 0
+            error("Invalid channel geometry: fin_w <= 0 at station %d", i);
+        end
+        
+        % Fins: rectangular land/rib, adiabatic tip
+        A_c_fin = fin_w(i) * ds_vec(i);      % conduction area
+        P_fin = 2 * ds_vec(i);               % two coolant wetted side faces
         
         m_fin = sqrt(h_l(i) * P_fin / (k_w_current(i) * A_c_fin));
         eta_fin(i) = tanh(m_fin * h_c_x(i)) / (m_fin * h_c_x(i));
+
+        A_fin_surf = 2 * h_c_x(i) * ds_vec(i);  % side area only
+        A_base = w_c_x(i) * ds_vec(i);       % channel floor area
         
-        A_base = w_c_x(i) * ds_vec(i); 
         Qdot_fin(i) = eta_fin(i) * h_l(i) * A_fin_surf * (T_wl(i) - T_coolant(i));
         Qdot_l(i) = h_l(i) * A_base * (T_wl(i) - T_coolant(i)) + Qdot_fin(i);
 
@@ -495,6 +494,9 @@ for i = points % 1 = injector, steps = exit
             heatflux_fin(i) = Qdot_fin(i) / A_fin_surf;
             
             if debug % Debug Tool 
+                Bi_fin(i) = h_l(i) * (A_c_fin / P_fin) / k_w_current(i); % Fin Biot number (should be << 1)
+                fin_heat_fraction(i) = Qdot_fin(i) / Qdot_l(i); 
+                
                 error(i) = Qdot_g(i) - Qdot_l(i);
               
                 if coolant_direction
@@ -511,11 +513,6 @@ for i = points % 1 = injector, steps = exit
                     end
                 end
             end
-
-            %% REMOVE THIS TSUFFF CAUSE ITS BADDEDDD
-            % T_wg(i) = T_amb;
-            % T_wl(i) = T_amb;
-            % Qdot_avg = 0;
 
             if coolant_direction
                 j = i + 1;
@@ -703,7 +700,6 @@ if DisplayMode == 1
         
         delete('FEA_regen_large.xls');
         writematrix(Excel_inputs, 'FEA_regen_large.xls');
-    
         % EXCEL COLS: h_c, w_c, x-val, gas-temp, recovery-temp, gas-film-coeff, gas-pressure, coolant-temp, coolant-film-coeff, coolant-pressure 
     end
     
