@@ -4,7 +4,7 @@
 % Description: This code is based off of PSP:AC's "size_regen" script written by Grant Williams, Zach Hodgdon, Andrew Radulovich, Alex Suppiah, Jan Ayala, Kamon Blong. 
 
 function [Lifespan, PressDrop] = SKIPPERRegen(NumChannels, WallThickness, ChannelHeight, ChannelWidth, DisplayMode)
-New_CEA = false;
+New_CEA = true;
 fclose all;
 close all;
 u = convertUnits;
