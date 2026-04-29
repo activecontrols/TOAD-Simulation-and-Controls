@@ -4,13 +4,6 @@
 % Description: This code is based off of PSP:AC's "size_regen" script written by Grant Williams, Zach Hodgdon, Andrew Radulovich, Alex Suppiah, Jan Ayala, Kamon Blong. 
 
 function [Lifespan, PressDrop] = SKIPPERRegen(WallThickness, ChannelHeight, ChannelWidth, DisplayMode)
-% clc; 
-% New_CEA = false;
-% fprintf("If CEA values are still stored in workspace from prev run & no changes were made to engine parameters or steps, dont need to rerun CEA. \n");
-% input1 = input("Run CEA? Type y / n. \n",'s');
-% if input1 == "y" || input1 == "Y"
-%     New_CEA = true;
-% end
 New_CEA = false;
 fclose all;
 close all;
@@ -19,6 +12,7 @@ CEA_input_name = 'regrendysCEA';
 addpath("cea\");
 addpath("IPA Data\");
 addpath("Material Data\");
+addpath("Contours\");
 tic
 
 %% SIMULATION PARAMETERS
@@ -51,20 +45,9 @@ qdot_tolerance = 0.0001; % Heat loop convergence criteria
 debug = 0; % Debug tool (1 = on, 0 = off)
 
 % Channel Defintion
-if traditional
-    % t_w = [.10 .050 .075] .* 0.0254; % channel wall thickness [1 min 2] [m] 
-    % h_c = [.050 .0395 .0625] .* 0.0254; % channel height [1 min 2] [m]   
-    % w_c = [.078125 .03125] .* 0.0254; % channel width [1 min] [m]  
-
-    % Sizer
-    t_w = WallThickness .* 0.0254; % channel wall thickness [1 min 2] [m] 
-    h_c = ChannelHeight .* 0.0254; % channel height [1 min 2] [m]   
-    w_c = ChannelWidth .* 0.0254; % channel width [1 min] [m]  
-else
-    t_w = [.001 .001 .001]; % channel wall thickness [1 min 2] [m] 
-    h_c = [.0012 .0011 .001]; % channel height [1 min 2] [m]   
-    w_c = [.00225 .001 .0012]; % channel width [1 min 2] [m]    
-end
+t_w = WallThickness .* 0.0254; % channel wall thickness [1 min 2] [m] 
+h_c = ChannelHeight .* 0.0254; % channel height [1 min 2] [m]   
+w_c = ChannelWidth .* 0.0254; % channel width [1 min] [m]  
 
 heatflux_factor = -0.10833 * throttle + 0.6433; % Scaling factor [0 to 1], Linear Fit to Tadpole Data 
 

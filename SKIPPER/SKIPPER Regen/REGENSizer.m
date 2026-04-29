@@ -12,12 +12,16 @@
 % Design vector for solver:
 % X = [WallThickness, ChannelHeight, ChannelWidth];
 
+clear;
+clc;
+close all;
+
 %% Parameter sampling (inches)
 addpath('BayesianOpt\');
 Thickness = [0.05; 0.1];    Height = [0.01; 0.125];  Width = [0.01; 0.125];
 LowerBounds = [ones(1, 3) * Thickness(1), ones(1, 3) * Height(1), ones(1, 2) * Width(1)];
 UpperBounds = [ones(1, 3) * Thickness(2), ones(1, 3) * Height(2), ones(1, 2) * Width(2)];
-MaxDP = 150;
+MaxDP = 150; % psi
 
 % Latin Hypercube Sampling for parameter space for GP training
 NumDims = 8;
@@ -227,7 +231,7 @@ else
     ylim([0, max(MaxDP + 50, prctile(PressDrop, 85))]); 
 
     % Call SKIPPERRegen for Final Native Plots
-    % SKIPPERRegen(ChampionGeom(1:3), ChampionGeom(4:6), ChampionGeom(7:8), 1);
+    SKIPPERRegen(ChampionGeom(1:3), ChampionGeom(4:6), ChampionGeom(7:8), 1);
 end
 
 
