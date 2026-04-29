@@ -19,13 +19,13 @@ close all;
 %% Parameter sampling (inches)
 addpath('BayesianOpt\');
 Thickness = [0.05; 0.1];    Height = [0.01; 0.125];  Width = [0.01; 0.125];
-LowerBounds = [ones(1, 3) * Thickness(1), ones(1, 3) * Height(1), ones(1, 2) * Width(1)];
-UpperBounds = [ones(1, 3) * Thickness(2), ones(1, 3) * Height(2), ones(1, 2) * Width(2)];
+LowerBounds = [ones(1, 3) * Thickness(1), ones(1, 3) * Height(1), ones(1, 2) * Width(1), 40];
+UpperBounds = [ones(1, 3) * Thickness(2), ones(1, 3) * Height(2), ones(1, 2) * Width(2), 85];
 MaxDP = 150; % psi
 
 % Latin Hypercube Sampling for parameter space for GP training
-NumDims = 8;
-NumSamples = 40;
+NumDims = length(LowerBounds);
+NumSamples = 150;
 LHS = HyperSampl(NumSamples, NumDims);
 Geometries = LowerBounds + LHS .* (UpperBounds - LowerBounds);
 
@@ -34,13 +34,14 @@ Lifespan = zeros(NumSamples, 1);
 PressDrop = zeros(NumSamples, 1);
 Invalid = 0;
 for i = 1:NumSamples
+    NC = Geometries(i, 9);
     WT = Geometries(i, 1:3);
     CH = Geometries(i, 4:6);
     CW = Geometries(i, 7:8);
 
     % Evaluate regen
     try
-        [Lifespan(i), PressDrop(i)] = SKIPPERRegen(WT, CH, CW, 0);
+        [Lifespan(i), PressDrop(i)] = SKIPPERRegen(NC, WT, CH, CW, 0);
     catch
         % Invalid geometry
         Lifespan(i) = NaN;
@@ -71,7 +72,7 @@ PressDropSCALED(isnan(PressDropSCALED)) = PenaltyPress;
 
 % Parameter initialization for Kernel
 % Define the kernel parameters for Gaussian Process
-lengthScales = zeros(8, 1); 
+lengthScales = zeros(NumDims, 1);
 signalVar = 0;
 noiseVar = log(0.01);
 logThetaInit = [lengthScales; signalVar; noiseVar];
@@ -84,7 +85,7 @@ ThetaOpt_LIFE = exp(logThetaOpt_LIFE);
 ThetaOpt_PRESS = exp(logThetaOpt_PRESS);
 
 %% Optimizer
-NumIterations = 60;
+NumIterations = 80;
 for iter = 1:NumIterations
     % Loop parameters
     MaxDP_Scaled = (MaxDP - PressMEAN) / PressDEV;
@@ -99,29 +100,45 @@ for iter = 1:NumIterations
     end
 
     % Global rough search using grid search
+    % Precompute L matrices 
+    NumTrain = size(Geometries, 1);
+    
+    % Life GP
+    len_LIFE = ThetaOpt_LIFE(1:end-2)'; sig_LIFE = ThetaOpt_LIFE(end-1); noise_LIFE = ThetaOpt_LIFE(end);
+    K_LIFE = MaternKernel(Geometries, Geometries, len_LIFE, sig_LIFE) + noise_LIFE * eye(NumTrain);
+    L_LIFE = chol(K_LIFE, 'lower');
+    alpha_LIFE = L_LIFE' \ (L_LIFE \ LifespanSCALED);
+    
+    % Pressure GP
+    len_PRESS = ThetaOpt_PRESS(1:end-2)'; sig_PRESS = ThetaOpt_PRESS(end-1); noise_PRESS = ThetaOpt_PRESS(end);
+    K_PRESS = MaternKernel(Geometries, Geometries, len_PRESS, sig_PRESS) + noise_PRESS * eye(NumTrain);
+    L_PRESS = chol(K_PRESS, 'lower');
+    alpha_PRESS = L_PRESS' \ (L_PRESS \ PressDropSCALED);
+
+    % Run rough search
     NumGrid = 10000;
     GridGeometries = LowerBounds + rand(NumGrid, NumDims) .* (UpperBounds - LowerBounds);
     GridScores = zeros(NumGrid, 1);
     for g = 1:NumGrid
-        GridScores(g) = Acquisition(GridGeometries(g,:), Geometries, y_train, LowerBounds, UpperBounds, ThetaOpt_LIFE, ThetaOpt_PRESS, MaxDP_Scaled, BestValidScaled);
+        GridScores(g) = Acquisition(GridGeometries(g,:), Geometries, LowerBounds, UpperBounds, L_LIFE, alpha_LIFE, ThetaOpt_LIFE, L_PRESS, alpha_PRESS, ThetaOpt_PRESS, MaxDP_Scaled, BestValidScaled);
     end
-    CurrentMaxEI = -min(GridScores);
-    if iter > 10 && CurrentMaxEI < 1e-4
-        fprintf('\nConvergence detected.\n');
-        break;
-    end
+    % CurrentMaxEI = -min(GridScores);
+    % if iter > 10 && CurrentMaxEI < 1e-5
+    %     fprintf('\nConvergence detected.\n');
+    %     break;
+    % end
 
     % Refine the search using fminsearch
     [~, bestIdx] = min(GridScores);
     x0 = GridGeometries(bestIdx, :);
-    AcqObj = @(x) Acquisition(x, Geometries, y_train, LowerBounds, UpperBounds, ThetaOpt_LIFE, ThetaOpt_PRESS, MaxDP_Scaled, BestValidScaled);
+    AcqObj = @(x) Acquisition(x, Geometries, LowerBounds, UpperBounds, L_LIFE, alpha_LIFE, ThetaOpt_LIFE, L_PRESS, alpha_PRESS, ThetaOpt_PRESS, MaxDP_Scaled, BestValidScaled);
     x_next = fminsearch(AcqObj, x0, options);
 
     % Evaluate the physics
-    fprintf('Testing new geometry (#%i out of %i): \n WT=[%.3f, %.3f, %.3f], CH=[%.3f, %.3f, %.3f], CW=[%.3f, %.3f]\n', iter, NumIterations, x_next);
-    WT = x_next(1:3); CH = x_next(4:6); CW = x_next(7:8);
+    WT = x_next(1:3); CH = x_next(4:6); CW = x_next(7:8); NC = x_next(9);
+    fprintf('Testing new geometry (#%i out of %i): \n NC = %i, WT=[%.3f, %.3f, %.3f], CH=[%.3f, %.3f, %.3f], CW=[%.3f, %.3f]\n', iter, NumIterations, round(NC), x_next(1:8));
     try
-        [Life_new, Drop_new] = SKIPPERRegen(WT, CH, CW, 0);
+        [Life_new, Drop_new] = SKIPPERRegen(NC, WT, CH, CW, 0);
     catch
         Life_new = NaN; Drop_new = NaN;
         warning('Geometry failed in physics solver.');
@@ -184,6 +201,7 @@ else
     fprintf('  Wall Thickness (Chamber, Throat, Nozzle): [%.4f, %.4f, %.4f]\n', ChampionGeom(1:3));
     fprintf('  Channel Height (Chamber, Throat, Nozzle): [%.4f, %.4f, %.4f]\n', ChampionGeom(4:6));
     fprintf('  Channel Width  (Chamber, Nozzle):         [%.4f, %.4f]\n', ChampionGeom(7:8));
+    fprintf('  Channel Count:                             %i \n', ChampionGeom(9));
     fprintf('======================================================\n');
 
     % Calculate Convergence Tracking
@@ -231,7 +249,8 @@ else
     ylim([0, max(MaxDP + 50, prctile(PressDrop, 85))]); 
 
     % Call SKIPPERRegen for Final Native Plots
-    SKIPPERRegen(ChampionGeom(1:3), ChampionGeom(4:6), ChampionGeom(7:8), 1);
+    
+    % SKIPPERRegen(ChampionGeom(9), ChampionGeom(1:3), ChampionGeom(4:6), ChampionGeom(7:8), 1);
 end
 
 

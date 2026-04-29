@@ -1,19 +1,10 @@
-function [mu, sigma] = PredictGP(xstar, X_train, y_train, Theta)
-    % Predicts a normal distribution given the training data. Used to
-    % select next evaluation spot
+function [mu, sigma] = PredictGP(xstar, X_train, L, alpha, Theta)
     % Unpack parameters
-    lengthScales = Theta(1:8)';
-    signalVar = Theta(9);
-    noiseVar = Theta(10);
-    NumSamples = size(X_train, 1);
-
-    K_train = MaternKernel(X_train, X_train, lengthScales, signalVar);
-    K_train = K_train + noiseVar * eye(NumSamples);
-    L = chol(K_train, 'lower');
+    lengthScales = Theta(1:end-2)';
+    signalVar = Theta(end-1);
 
     % Distance between training data and new point
     K_star = MaternKernel(X_train, xstar, lengthScales, signalVar);
-    alpha = L' \ (L \ y_train);
 
     % Predicted mean
     mu = K_star' * alpha;

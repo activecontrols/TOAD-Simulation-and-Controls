@@ -2,9 +2,9 @@ function NegLog = NLML(logTheta, Geometries, Objective)
 
     % Unpack theta and exponentiate
     Theta = exp(logTheta);
-    lengthScales = Theta(1:8)';
-    signalVar = Theta(9);
-    noiseVar = Theta(10);
+    lengthScales = Theta(1:end-2)';
+    signalVar = Theta(end-1);
+    noiseVar = Theta(end);
     NumSamples = size(Geometries, 1);
 
     % Kernel

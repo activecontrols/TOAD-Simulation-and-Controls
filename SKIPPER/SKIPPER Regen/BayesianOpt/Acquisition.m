@@ -1,15 +1,16 @@
-function Score = Acquisition(xstar, X_train, y_train, LowerBounds, UpperBounds, ThetaOpt_LIFE, ThetaOpt_PRESS, MaxDP_Scaled, BestValidScaled)
-    % Reality check lol
+function Score = Acquisition(xstar, X_train, LowerBounds, UpperBounds, L_LIFE, alpha_LIFE, ThetaOpt_LIFE, L_PRESS, alpha_PRESS, ThetaOpt_PRESS, MaxDP_Scaled, BestValidScaled)
+    % Reality check 
     if any(xstar < LowerBounds) || any(xstar > UpperBounds)
         Score = realmax; 
         return;
     end
-    % Call predictors
-    [muLIFE, stdLIFE] = PredictGP(xstar, X_train, y_train(:, 1), ThetaOpt_LIFE);
-    [muPRESS, stdPRESS] = PredictGP(xstar, X_train, y_train(:, 2), ThetaOpt_PRESS);
+    
+    % Call predictors with precomputed L and alpha
+    [muLIFE, stdLIFE] = PredictGP(xstar, X_train, L_LIFE, alpha_LIFE, ThetaOpt_LIFE);
+    [muPRESS, stdPRESS] = PredictGP(xstar, X_train, L_PRESS, alpha_PRESS, ThetaOpt_PRESS);
     
     % Calculate expected improvement
-    xi = -0.01;
+    xi = -0.0;
     if stdLIFE > 1e-9 
         Z = (muLIFE - BestValidScaled - xi) / stdLIFE;
         EI = stdLIFE * Z * NormCDF(Z) + stdLIFE * NormPDF(Z);
@@ -21,7 +22,6 @@ function Score = Acquisition(xstar, X_train, y_train, LowerBounds, UpperBounds, 
     if stdPRESS > 1e-9
         PoF = NormCDF((MaxDP_Scaled - muPRESS) / stdPRESS);
     else
-        % Binary check if no uncertainty
         PoF = double(muPRESS <= MaxDP_Scaled);
     end
     Score = -EI * PoF;

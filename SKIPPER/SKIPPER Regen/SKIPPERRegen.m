@@ -3,7 +3,7 @@
 % Start Date: 2/27/26
 % Description: This code is based off of PSP:AC's "size_regen" script written by Grant Williams, Zach Hodgdon, Andrew Radulovich, Alex Suppiah, Jan Ayala, Kamon Blong. 
 
-function [Lifespan, PressDrop] = SKIPPERRegen(WallThickness, ChannelHeight, ChannelWidth, DisplayMode)
+function [Lifespan, PressDrop] = SKIPPERRegen(NumChannels, WallThickness, ChannelHeight, ChannelWidth, DisplayMode)
 New_CEA = false;
 fclose all;
 close all;
@@ -25,7 +25,7 @@ dogleg = 0; % 1 = yes, 0 = no, supertadpole regen channel dogleg at injector
 traditional = 1;  % 1 = yes, 0 = no, changes how channel dimensions are interpolated for a traditonal vs. printed chamber
 
 throttle = 1; % throttle percent - e.g. 1 = 100%, 0.5 = 50%
-num_channels = 60; % number of regenerative cooling channels      
+num_channels = round(NumChannels); % number of regenerative cooling channels      
 coolant = "isopropyl alcohol"; % coolant definition ("isopropyl alcohol", "water", "methanol", "ethanol")
 fuel = {'C3H8O,2propanol'}; % fuel definition
 oxidizer = 'O2(L)'; % oxidizer definition
