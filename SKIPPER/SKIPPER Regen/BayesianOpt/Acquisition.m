@@ -24,5 +24,5 @@ function Score = Acquisition(xstar, X_train, LowerBounds, UpperBounds, L_LIFE, a
     else
         PoF = double(muPRESS <= MaxDP_Scaled);
     end
-    Score = -EI * PoF.^4;
+    Score = -EI * PoF.^2;
 end

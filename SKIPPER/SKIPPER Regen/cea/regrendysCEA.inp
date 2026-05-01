@@ -1,9 +1,9 @@
 problem rocket fr
-    p(bar) = 12.9277
+    p(bar) = 8.6184
     o/f = 1.2
     sup = 1
 reac
-    fuel = C3H8O,2propanol t(K) = 408.438 wt% = 100.000
+    fuel = C3H8O,2propanol t(K) = 414.827 wt% = 100.000
     ox = O2(L) t(K) = 90.170
 outp trans
 end

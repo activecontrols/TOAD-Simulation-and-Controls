@@ -26,11 +26,11 @@ addpath('BayesianOpt\');
 Thickness = [0.05; 0.1];    Height = [0.01; 0.125];  Width = [0.01; 0.125];
 LowerBounds = [ones(1, 3) * Thickness(1), ones(1, 3) * Height(1), ones(1, 2) * Width(1), 40];
 UpperBounds = [ones(1, 3) * Thickness(2), ones(1, 3) * Height(2), ones(1, 2) * Width(2), 90];
-MaxDP = 150 * 0.75^2; % psi
+MaxDP = 150 * 0.5^2; % psi
 
 % Latin Hypercube Sampling for parameter space for GP training
 NumDims = length(LowerBounds);
-NumSamples = 200;
+NumSamples = 100;
 LHS = HyperSampl(NumSamples, NumDims);
 Geometries = LowerBounds + LHS .* (UpperBounds - LowerBounds);
 
@@ -70,8 +70,8 @@ PressDropSCALED = (PressDrop - PressMEAN) / PressDEV;
 % NaN handling
 WorstLifespan = min(LifespanSCALED);
 WorstPressDrop = max(PressDropSCALED);
-PenaltyLife = WorstLifespan - 0.5;
-PenaltyPress = WorstPressDrop + 0.5;
+PenaltyLife = WorstLifespan - 0.2;
+PenaltyPress = WorstPressDrop + 0.2;
 LifespanSCALED(isnan(LifespanSCALED)) = PenaltyLife;
 PressDropSCALED(isnan(PressDropSCALED)) = PenaltyPress;
 
@@ -90,7 +90,7 @@ ThetaOpt_LIFE = exp(logThetaOpt_LIFE);
 ThetaOpt_PRESS = exp(logThetaOpt_PRESS);
 
 %% Optimizer
-NumIterations = 170;
+NumIterations = 100;
 NumGrid = 20000;
 
 for iter = 1:NumIterations
@@ -142,7 +142,7 @@ for iter = 1:NumIterations
     useStdP = stdPRESS_g > 1e-9;
     PoF = double(muPRESS_g <= MaxDP_Scaled);    
     PoF(useStdP) = NormCDF((MaxDP_Scaled - muPRESS_g(useStdP)) ./ stdPRESS_g(useStdP));
-    GridScores = -EI .* PoF.^4;
+    GridScores = -EI .* PoF.^2;
 
     % Refine the search using fminsearch
     [~, bestIdx] = min(GridScores);
@@ -181,8 +181,8 @@ for iter = 1:NumIterations
     % NaN handling
     WorstLifespan = min(LifespanSCALED);
     WorstPressDrop = max(PressDropSCALED);
-    PenaltyLife = WorstLifespan - 0.5;
-    PenaltyPress = WorstPressDrop + 0.5;
+    PenaltyLife = WorstLifespan - 0.2;
+    PenaltyPress = WorstPressDrop + 0.2;
     LifespanSCALED(isnan(LifespanSCALED)) = PenaltyLife;
     PressDropSCALED(isnan(PressDropSCALED)) = PenaltyPress;
 
