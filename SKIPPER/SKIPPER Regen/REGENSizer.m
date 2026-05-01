@@ -25,8 +25,8 @@ Data = LoadData();
 addpath('BayesianOpt\');
 Thickness = [0.05; 0.1];    Height = [0.01; 0.125];  Width = [0.01; 0.125];
 LowerBounds = [ones(1, 3) * Thickness(1), ones(1, 3) * Height(1), ones(1, 2) * Width(1), 40];
-UpperBounds = [ones(1, 3) * Thickness(2), ones(1, 3) * Height(2), ones(1, 2) * Width(2), 200];
-MaxDP = 150 / 4; % psi
+UpperBounds = [ones(1, 3) * Thickness(2), ones(1, 3) * Height(2), ones(1, 2) * Width(2), 90];
+MaxDP = 150 * 0.75^2; % psi
 
 % Latin Hypercube Sampling for parameter space for GP training
 NumDims = length(LowerBounds);
@@ -90,7 +90,7 @@ ThetaOpt_LIFE = exp(logThetaOpt_LIFE);
 ThetaOpt_PRESS = exp(logThetaOpt_PRESS);
 
 %% Optimizer
-NumIterations = 150;
+NumIterations = 170;
 NumGrid = 20000;
 
 for iter = 1:NumIterations
@@ -142,7 +142,7 @@ for iter = 1:NumIterations
     useStdP = stdPRESS_g > 1e-9;
     PoF = double(muPRESS_g <= MaxDP_Scaled);    
     PoF(useStdP) = NormCDF((MaxDP_Scaled - muPRESS_g(useStdP)) ./ stdPRESS_g(useStdP));
-    GridScores = -EI .* PoF.^3;
+    GridScores = -EI .* PoF.^4;
 
     % Refine the search using fminsearch
     [~, bestIdx] = min(GridScores);
