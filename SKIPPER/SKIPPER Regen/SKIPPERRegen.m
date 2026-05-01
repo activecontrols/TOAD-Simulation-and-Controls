@@ -3,16 +3,14 @@
 % Start Date: 2/27/26
 % Description: This code is based off of PSP:AC's "size_regen" script written by Grant Williams, Zach Hodgdon, Andrew Radulovich, Alex Suppiah, Jan Ayala, Kamon Blong. 
 
-function [Lifespan, PressDrop] = SKIPPERRegen(NumChannels, WallThickness, ChannelHeight, ChannelWidth, DisplayMode)
-New_CEA = true;
+function [Lifespan, PressDrop] = SKIPPERRegen(Data, NumChannels, WallThickness, ChannelHeight, ChannelWidth, DisplayMode)
+New_CEA = false;
 fclose all;
 close all;
 u = convertUnits;
 CEA_input_name = 'regrendysCEA';
-addpath("cea\");
-addpath("IPA Data\");
-addpath("Material Data\");
-addpath("Contours\");
+dfTol = 5e-6;
+optionsMoody = optimset('TolX', dfTol, 'Display', 'off');
 tic
 
 %% SIMULATION PARAMETERS
@@ -24,7 +22,7 @@ FEA_outputs = 0; % 1 = yes, 0 = no
 dogleg = 0; % 1 = yes, 0 = no, supertadpole regen channel dogleg at injector
 traditional = 1;  % 1 = yes, 0 = no, changes how channel dimensions are interpolated for a traditonal vs. printed chamber
 
-throttle = 1; % throttle percent - e.g. 1 = 100%, 0.5 = 50%
+throttle = 0.5; % throttle percent - e.g. 1 = 100%, 0.5 = 50%
 num_channels = round(NumChannels); % number of regenerative cooling channels      
 coolant = "isopropyl alcohol"; % coolant definition ("isopropyl alcohol", "water", "methanol", "ethanol")
 fuel = {'C3H8O,2propanol'}; % fuel definition
@@ -55,56 +53,64 @@ heatflux_factor = -0.10833 * throttle + 0.6433; % Scaling factor [0 to 1], Linea
 %----------------------------------%
 
 %% Material Properties
-if materialchoice == 0
-    properties = readmatrix(pwd + "/Material Data/al6061_RAM2.xlsx");
-    k_w = properties(16:24,1:2); % thermal conductivity [W/m-K]
-    E = [properties(16:21, 8) properties(16:21,9)];
-    CTE = [properties(16:20,4) properties(16:20,5)]; % [m/m*K]
-    yield_strength = properties(1:11,1:2);
-    elongation_break = [properties(1:11,1) properties(1:11,4)];
-elseif materialchoice == 1 
-    properties = readmatrix(pwd + "/Material Data/Inconel718.xlsx");
-    k_w = properties(13:end,1:2); % thermal conductivity [W/m-K]
-    yield_strength = properties(1:7,1:2);
-    elongation_break = [properties(1:7,1) properties(1:7,5)];
-    E = [properties(1:6, 9) properties(1:6,10)]; %youngs modulus
-    CTE = [properties(1:7,1) properties(1:7,3)]; % [ppm]
-elseif materialchoice == 2
-    properties = readmatrix(pwd + "/Material Data/GrCop42.xlsx");
-    k_w = properties(13:end,1:2); % thermal conductivity [W/m-K] 
-    E = [properties(1:13, 9) properties(1:13,10)];
-    CTE = [properties(1:5,1) properties(1:5,3)]; % [ppm] 
-    yield_strength = properties(1:8,1:2);
-    elongation_break = [properties(1:8,1) properties(1:8,5)];
-elseif materialchoice == 3
-    properties = readmatrix(pwd + "/Material Data/Inconel625.xlsx");
-    k_w = properties(8:19,1:2); % thermal conductivity [W/m-K] 
-    E = [properties(1:5, 1) properties(1:5,5)];
-    CTE = [properties(22:end,1:2)]; % [ppm] 
-    yield_strength = properties(1:5,1:2);
-    elongation_break = [properties(1:5,1) properties(1:5,3)];
-elseif materialchoice == 4
-    properties = readmatrix(pwd + "/Material Data/C101.xlsx");
-    k_w = properties(13:21,1:2); % thermal conductivity [W/m-K] 
-    E = [properties(1:5, 9:10)];
-    CTE = [properties(1:7,1) properties(1:7,3)]; % [ppm] 
-    yield_strength = properties(1:7, 1:2);
-    elongation_break = [properties(1:7,1) properties(1:7,5)];
-elseif materialchoice == 5
-    properties = readmatrix(pwd + "/Material Data/AlSi10Mg.xlsx");
-    k_w = properties(13:15,1:2); % thermal conductivity [W/m-K] 
-    E = [properties(1:6, 9:10)];
-    CTE = [properties(1:4,1) properties(1:4,3)]; % [ppm] 
-    yield_strength = properties(1:4,1:2);
-    elongation_break = [properties(1:4,1) properties(1:4,5)];
-end
+% if materialchoice == 0
+%     properties = readmatrix(pwd + "/Material Data/al6061_RAM2.xlsx");
+%     k_w = properties(16:24,1:2); % thermal conductivity [W/m-K]
+%     E = [properties(16:21, 8) properties(16:21,9)];
+%     CTE = [properties(16:20,4) properties(16:20,5)]; % [m/m*K]
+%     yield_strength = properties(1:11,1:2);
+%     elongation_break = [properties(1:11,1) properties(1:11,4)];
+% elseif materialchoice == 1 
+%     properties = readmatrix(pwd + "/Material Data/Inconel718.xlsx");
+%     k_w = properties(13:end,1:2); % thermal conductivity [W/m-K]
+%     yield_strength = properties(1:7,1:2);
+%     elongation_break = [properties(1:7,1) properties(1:7,5)];
+%     E = [properties(1:6, 9) properties(1:6,10)]; %youngs modulus
+%     CTE = [properties(1:7,1) properties(1:7,3)]; % [ppm]
+% elseif materialchoice == 2
+%     properties = readmatrix(pwd + "/Material Data/GrCop42.xlsx");
+%     k_w = properties(13:end,1:2); % thermal conductivity [W/m-K] 
+%     E = [properties(1:13, 9) properties(1:13,10)];
+%     CTE = [properties(1:5,1) properties(1:5,3)]; % [ppm] 
+%     yield_strength = properties(1:8,1:2);
+%     elongation_break = [properties(1:8,1) properties(1:8,5)];
+% elseif materialchoice == 3
+%     properties = readmatrix(pwd + "/Material Data/Inconel625.xlsx");
+%     k_w = properties(8:19,1:2); % thermal conductivity [W/m-K] 
+%     E = [properties(1:5, 1) properties(1:5,5)];
+%     CTE = [properties(22:end,1:2)]; % [ppm] 
+%     yield_strength = properties(1:5,1:2);
+%     elongation_break = [properties(1:5,1) properties(1:5,3)];
+% elseif materialchoice == 4
+%     properties = readmatrix(pwd + "/Material Data/C101.xlsx");
+%     k_w = properties(13:21,1:2); % thermal conductivity [W/m-K] 
+%     E = [properties(1:5, 9:10)];
+%     CTE = [properties(1:7,1) properties(1:7,3)]; % [ppm] 
+%     yield_strength = properties(1:7, 1:2);
+%     elongation_break = [properties(1:7,1) properties(1:7,5)];
+% elseif materialchoice == 5
+%     properties = readmatrix(pwd + "/Material Data/AlSi10Mg.xlsx");
+%     k_w = properties(13:15,1:2); % thermal conductivity [W/m-K] 
+%     E = [properties(1:6, 9:10)];
+%     CTE = [properties(1:4,1) properties(1:4,3)]; % [ppm] 
+%     yield_strength = properties(1:4,1:2);
+%     elongation_break = [properties(1:4,1) properties(1:4,5)];
+% end
+%% Only props for copper
+properties = Data.Properties;
+k_w = properties(13:21,1:2); % thermal conductivity [W/m-K] 
+E = [properties(1:5, 9:10)];
+CTE = [properties(1:7,1) properties(1:7,3)]; % [ppm] 
+yield_strength = properties(1:7, 1:2);
+elongation_break = [properties(1:7,1) properties(1:7,5)];
 
 v = 0.33; % GUESS poissons ratio
 N = 35*8; % engine lifespan (for margin math)
 SF = 4; % lifespan saftey factor (4 per NASA 5012C)
 
 % Contour Interpolation
-contour = readmatrix('contour_SKIPPER_250_40.xlsx'); % import engine contour
+% contour = readmatrix('contour_SKIPPER_250_40.xlsx'); % import engine contour
+contour = Data.Contour;
 r_contour = contour(:,2)'; % contour radius [in]
 x_contour = contour(:,1)'; % contour x-axis [in]
 r_t = min(r_contour); % throat radius, throat location (in) 
@@ -417,8 +423,24 @@ for i = points % 1 = injector, steps = exit
         
         % RESISTOR 3: Coldwall - Coolant Convection
         if coolant == "isopropyl alcohol"
-            [mu_coolant(i), k_coolant(i), rho_coolant(i), cp_coolant(i), boilingPt(i), ~] = IPA_properties(T_coolant(i), P_coolant(i));
-            cp_coolant(i) = cp_coolant(i) * 1000;
+            P_kPa = P_coolant(i) / 1000;
+            T_K = T_coolant(i);
+        
+            boilingPt(i)   = Data.F_boil(P_kPa);
+            rho_coolant(i) = Data.F_rho(T_K, P_kPa);
+            cp_coolant(i)  = Data.F_cp(T_K, P_kPa) * 1000; 
+            mu_data = Data.F_mu_data(T_K);
+            k_data  = Data.F_k_data(T_K);
+        
+            if (T_K - 273.15) < 36.5
+                mu_fit = 4.5054 * exp(-0.031 * (T_K - 273.15)) / 1000;
+            else
+                mu_fit = 3.3724 * exp(-0.023 * (T_K - 273.15)) / 1000;
+            end
+            
+            mu_avg = (mu_fit + mu_data) / 2;
+            mu_coolant(i) = mu_avg * exp(5.4574e-9 * (P_coolant(i) - 101325));
+            k_coolant(i)  = k_data * (1 + 2.9531e-9 * (P_coolant(i) - 101325));
         else
             mu_coolant(i) = double(py.CoolProp.CoolProp.PropsSI('V','T', T_coolant(i), 'P', P_coolant(i), coolant)); % viscosity of bulk coolant [Pa-s]
             cp_coolant(i) = double(py.CoolProp.CoolProp.PropsSI('C' , 'T', T_coolant(i), 'P', P_coolant(i), coolant)); % specific heat of coolant [J/kg-k] 
@@ -431,7 +453,10 @@ for i = points % 1 = injector, steps = exit
         Re_coolant(i) = rho_coolant(i) * vel_coolant(i) * hydraulic_D / mu_coolant(i); % reynolds number for channel flow [N/A] (Huzel and Huang , pg 90)
         Pr_coolant(i) = cp_coolant(i) * mu_coolant(i) / k_coolant(i); % prandtl number [N/A] (Huzel and Huang, pg 90) 
 
-        f = moody(roughness_abs(1) / hydraulic_D, Re_coolant(i)); % friction factor
+        f = moody(roughness_abs(1) / hydraulic_D, Re_coolant(i), optionsMoody); % friction factor
+        % Accurate to a percent relative to fun moody.m call. Produces
+        % ~10psi drop error. 
+        % f = haaland(roughness_abs(1) / hydraulic_D, Re_coolant(i));
         Nu_l(i) = ((f / 8) * (Re_coolant(i) - 1000) * Pr_coolant(i)) / (1 + 12.7 * ((f / 8) ^ 0.5) * (Pr_coolant(i) ^ (2/3) - 1)); % Gnielinksy correlation nusselt number [N/A] - 0.5 < Pr < 2000, 3000 < Re < 5e6
         h_l(i) = (Nu_l(i) * k_coolant(i)) / hydraulic_D; % liquid film coefficient [W/m^2-K] (Heister EQ 6.19)
 
@@ -523,7 +548,7 @@ for i = points % 1 = injector, steps = exit
             
                 % Estimate next density using updated temperature and current pressure
                 if coolant == "isopropyl alcohol"
-                    [~, ~, rho_j_est, ~, ~, ~] = IPA_properties(T_coolant(j), P_coolant(i));
+                    rho_j_est = Data.F_rho(T_K, P_kPa);
                 else
                     rho_j_est = double(py.CoolProp.CoolProp.PropsSI('D', 'T', T_coolant(j), 'P', P_coolant(i), coolant));
                 end

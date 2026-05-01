@@ -15,6 +15,11 @@
 clear;
 clc;
 close all;
+addpath("cea\");
+addpath("IPA Data\");
+addpath("Material Data\");
+addpath("Contours\");
+Data = LoadData();
 
 %% Parameter sampling (inches)
 addpath('BayesianOpt\');
@@ -25,7 +30,7 @@ MaxDP = 150 / 4; % psi
 
 % Latin Hypercube Sampling for parameter space for GP training
 NumDims = length(LowerBounds);
-NumSamples = 150;
+NumSamples = 200;
 LHS = HyperSampl(NumSamples, NumDims);
 Geometries = LowerBounds + LHS .* (UpperBounds - LowerBounds);
 
@@ -38,12 +43,12 @@ for i = 1:NumSamples
     WT = Geometries(i, 1:3);
     CH = Geometries(i, 4:6);
     CW = Geometries(i, 7:8);
-
-    % Evaluate regen
     try
-        [Lifespan(i), PressDrop(i)] = SKIPPERRegen(NC, WT, CH, CW, 0);
+        [Lifespan(i), PressDrop(i)] = SKIPPERRegen(Data, NC, WT, CH, CW, 0);
+        if ~isreal(Lifespan(i)) || ~isreal(PressDrop(i))
+            error('Complex physics output detected.'); 
+        end
     catch
-        % Invalid geometry
         Lifespan(i) = NaN;
         PressDrop(i) = NaN;
         Invalid = Invalid + 1;
@@ -85,7 +90,9 @@ ThetaOpt_LIFE = exp(logThetaOpt_LIFE);
 ThetaOpt_PRESS = exp(logThetaOpt_PRESS);
 
 %% Optimizer
-NumIterations = 80;
+NumIterations = 150;
+NumGrid = 20000;
+
 for iter = 1:NumIterations
     % Loop parameters
     MaxDP_Scaled = (MaxDP - PressMEAN) / PressDEV;
@@ -115,18 +122,27 @@ for iter = 1:NumIterations
     L_PRESS = chol(K_PRESS, 'lower');
     alpha_PRESS = L_PRESS' \ (L_PRESS \ PressDropSCALED);
 
-    % Run rough search
-    NumGrid = 10000;
+    % Eval
     GridGeometries = LowerBounds + rand(NumGrid, NumDims) .* (UpperBounds - LowerBounds);
-    GridScores = zeros(NumGrid, 1);
-    for g = 1:NumGrid
-        GridScores(g) = Acquisition(GridGeometries(g,:), Geometries, LowerBounds, UpperBounds, L_LIFE, alpha_LIFE, ThetaOpt_LIFE, L_PRESS, alpha_PRESS, ThetaOpt_PRESS, MaxDP_Scaled, BestValidScaled);
-    end
-    % CurrentMaxEI = -min(GridScores);
-    % if iter > 10 && CurrentMaxEI < 1e-5
-    %     fprintf('\nConvergence detected.\n');
-    %     break;
-    % end
+    [muLIFE_g,  stdLIFE_g]  = PredictGP(GridGeometries, Geometries, L_LIFE,  alpha_LIFE,  ThetaOpt_LIFE);
+    [muPRESS_g, stdPRESS_g] = PredictGP(GridGeometries, Geometries, L_PRESS, alpha_PRESS, ThetaOpt_PRESS);
+    stdLIFE_g = real(stdLIFE_g);
+    stdPRESS_g = real(stdPRESS_g);
+
+    % Vectorised Expected Improvement
+    xi = 0.0;
+    useStdL = stdLIFE_g > 1e-9;
+    Z  = zeros(NumGrid, 1);
+    Z(useStdL) = (muLIFE_g(useStdL) - BestValidScaled - xi) ./ stdLIFE_g(useStdL);
+    EI = zeros(NumGrid, 1);
+    EI(useStdL)  = stdLIFE_g(useStdL) .* (Z(useStdL) .* NormCDF(Z(useStdL)) + NormPDF(Z(useStdL)));
+    EI(~useStdL) = max(0, muLIFE_g(~useStdL) - BestValidScaled - xi);
+
+    % Vectorised Probability of Feasibility
+    useStdP = stdPRESS_g > 1e-9;
+    PoF = double(muPRESS_g <= MaxDP_Scaled);    
+    PoF(useStdP) = NormCDF((MaxDP_Scaled - muPRESS_g(useStdP)) ./ stdPRESS_g(useStdP));
+    GridScores = -EI .* PoF.^3;
 
     % Refine the search using fminsearch
     [~, bestIdx] = min(GridScores);
@@ -138,7 +154,10 @@ for iter = 1:NumIterations
     WT = x_next(1:3); CH = x_next(4:6); CW = x_next(7:8); NC = x_next(9);
     fprintf('Testing new geometry (#%i out of %i): \n NC = %i, WT=[%.3f, %.3f, %.3f], CH=[%.3f, %.3f, %.3f], CW=[%.3f, %.3f]\n', iter, NumIterations, round(NC), x_next(1:8));
     try
-        [Life_new, Drop_new] = SKIPPERRegen(NC, WT, CH, CW, 0);
+        [Life_new, Drop_new] = SKIPPERRegen(Data, NC, WT, CH, CW, 0);
+        if ~isreal(Lifespan(i)) || ~isreal(PressDrop(i))
+            error('Complex physics output detected.'); 
+        end
     catch
         Life_new = NaN; Drop_new = NaN;
         warning('Geometry failed in physics solver.');
@@ -250,7 +269,7 @@ else
 
     % Call SKIPPERRegen for Final Native Plots
     
-    % SKIPPERRegen(ChampionGeom(9), ChampionGeom(1:3), ChampionGeom(4:6), ChampionGeom(7:8), 1);
+    % SKIPPERRegen(Data, ChampionGeom(9), ChampionGeom(1:3), ChampionGeom(4:6), ChampionGeom(7:8), 1);
 end
 
 

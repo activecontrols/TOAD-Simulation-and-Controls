@@ -1,16 +1,17 @@
 function [mu, sigma] = PredictGP(xstar, X_train, L, alpha, Theta)
-    % Unpack parameters
+
+    % Extract params
     lengthScales = Theta(1:end-2)';
-    signalVar = Theta(end-1);
-
-    % Distance between training data and new point
+    signalVar    = Theta(end-1);
+ 
+    % K_star - N_train x N_test
     K_star = MaternKernel(X_train, xstar, lengthScales, signalVar);
-
-    % Predicted mean
+ 
+    % Posterior mean
     mu = K_star' * alpha;
-
-    % Predicted variance    
-    v = L \ K_star;
-    sigma = signalVar^2 - v' * v;
-    sigma = sqrt(max(sigma, 0));
+ 
+    % Posterior stdev
+    v     = L \ K_star;
+    var_v = signalVar^2 - sum(v .^ 2, 1)';
+    sigma = sqrt(max(var_v, 0));
 end

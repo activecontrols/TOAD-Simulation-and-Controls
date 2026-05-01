@@ -1,17 +1,25 @@
 function K = MaternKernel(X1, X2, lengthScales, signalVar)
-    % Scale the inputs by the length scales
-    G1 = X1 ./ lengthScales;
-    G2 = X2 ./ lengthScales;
-    
-    % Implicit expansion for pairwise distance
-    % G1 becomes (N1 x 1 x D), G2 becomes (1 x N2 x D)
-    G1_res = reshape(G1, size(G1, 1), 1, size(G1, 2));
-    G2_res = reshape(G2, 1, size(G2, 1), size(G2, 2));
-    
-    % Broadcasting creates the (N1 x N2 x D) difference matrix
-    DiffMatrix = G1_res - G2_res;
-    r = sqrt(sum(DiffMatrix.^2, 3));
-    
-    % Matern 5/2 equation
-    K = signalVar^2 * (1 + sqrt(5) * r + (5/3) * r.^2) .* exp(-sqrt(5) * r);
+     
+    G1 = X1 ./ lengthScales;   % N1 x D
+ 
+    if isequal(X1, X2)
+        % Symmetric Case
+        % One matrix multiply, reuse diagonal as squared norms
+        G1G1 = G1 * G1';                       % N1 x N1
+        sq   = diag(G1G1);                     % N1 x 1
+        D2   = sq + sq' - 2 * G1G1;            % N1 x N1
+    else
+        % General case
+        G2  = X2 ./ lengthScales;              % N2 x D
+        sq1 = sum(G1 .^ 2, 2);                 % N1 x 1
+        sq2 = sum(G2 .^ 2, 2);                 % N2 x 1
+        D2  = sq1 + sq2' - 2 * (G1 * G2');     % N1 x N2
+    end
+ 
+    % Clamp tiny negatives that arise from floating-point cancellation
+    r   = sqrt(max(D2, 0));
+ 
+    % Matern Kernel
+    sr5 = sqrt(5) * r;
+    K   = signalVar^2 * (1 + sr5 + (5/3) * r .^ 2) .* exp(-sr5);
 end
