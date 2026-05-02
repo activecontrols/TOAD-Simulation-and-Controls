@@ -3,7 +3,7 @@
 % Start Date: 2/27/26
 % Description: This code is based off of PSP:AC's "size_regen" script written by Grant Williams, Zach Hodgdon, Andrew Radulovich, Alex Suppiah, Jan Ayala, Kamon Blong. 
 
-function [Lifespan, PressDrop] = SKIPPERRegen(Data, NumChannels, WallThickness, ChannelHeight, ChannelWidth, DisplayMode)
+function [Lifespan, PressDrop] = SKIPPERRegen(Data, NumChannels, WallThickness, AspectRatio, ChannelWidth, DisplayMode)
 New_CEA = false;
 fclose all;
 close all;
@@ -47,9 +47,9 @@ qdot_tolerance = 0.0001; % Heat loop convergence criteria
 debug = 0; % Debug tool (1 = on, 0 = off)
 
 % Channel Defintion
-t_w = WallThickness .* 0.0254; % channel wall thickness [1 min 2] [m] 
-h_c = ChannelHeight .* 0.0254; % channel height [1 min 2] [m]   
-w_c = ChannelWidth .* 0.0254; % channel width [1 min] [m]  
+t_w = WallThickness .* 0.0254; % channel wall thickness [1 min 2] [m]    
+w_c = ChannelWidth .* 0.0254; % channel width [1 min] [m] 
+h_c = [w_c(1) .* AspectRatio(1), w_c(2) .* AspectRatio(2:3)]; % channel height [1 min 2] [m]
 
 heatflux_factor = -0.10833 * throttle + 0.6433; % Scaling factor [0 to 1], Linear Fit to Tadpole Data 
 
