@@ -32,11 +32,15 @@ T_amb = 297; % Atmospheric temp [K]
 fuel_temp = throttle * -25.556 + 427.605; % [K], linear fit for predicted regen outlet temps
 oxidizer_temp = 90.17; % [K]
 
+Ft = 660; % Engine Thrust [lbf]
+Isp_max = 192.94; % Isp at Maximum Throttle [s]
+Isp_min = 168.44; % Isp at Minimum Throttle (50%) [s]
+Isp_eff = Isp_min + 2 * (throttle - 0.5) * (Isp_max - Isp_min); % linear interpolated Isp (min throttle assumed 50%)
 P_c = throttle * 250; % chamber pressure [psi] 
 P_e = throttle * 16.5; % exit pressure [psi]
 P_inlet = 375 * throttle + 200; % Regen inlet pressure [psi]  
-total_OF = 1.2; % oxidizer/fuel ratio (TOTAL, including film)  
-total_mdot = throttle * 3.4178026327 / 2.205; % TOTAL chamber mass flow [kg/s]  
+total_OF = 1.2; % Total oxidizer/fuel ratio
+total_mdot = (throttle * Ft / Isp_eff) / 2.205; % Total chamber mass flow [kg/s]  
 mdot_coolant = total_mdot / (1 + total_OF); % Coolant/fuel mass flow [kg/s]
 
 qdot_tolerance = 0.0001; % Heat loop convergence criteria
