@@ -15,13 +15,12 @@ error(sprintf('Reynolds number = %f cannot be negative', 'Re'));
 elseif Re < 2000
 cf = 64 / Re; return % laminar flow
 end
-%if ed > 0.05
-%warning(sprintf('epsilon/diameter ratio = %f is not on Moody chart', ed));
-%end
-%{
-if Re < 4000
-    warning('Re = %f in transition range, Re'); 
+if ed > 0.05
+warning(sprintf('epsilon/diameter ratio = %f is not on Moody chart', ed));
 end
+% if Re < 4000
+%     warning('Re = %f in transition range, Re'); 
+% end
 %}
 % --- Use fzero to find f from Colebrook equation.
 % coleFun is an inline function object to evaluate F(f,e/d,Re)

@@ -458,9 +458,6 @@ for i = points % 1 = injector, steps = exit
         Pr_coolant(i) = cp_coolant(i) * mu_coolant(i) / k_coolant(i); % prandtl number [N/A] (Huzel and Huang, pg 90) 
 
         f = moody(roughness_abs(1) / hydraulic_D, Re_coolant(i), optionsMoody); % friction factor
-        % Accurate to a percent relative to fun moody.m call. Produces
-        % ~10psi drop error. 
-        % f = haaland(roughness_abs(1) / hydraulic_D, Re_coolant(i));
         Nu_l(i) = ((f / 8) * (Re_coolant(i) - 1000) * Pr_coolant(i)) / (1 + 12.7 * ((f / 8) ^ 0.5) * (Pr_coolant(i) ^ (2/3) - 1)); % Gnielinksy correlation nusselt number [N/A] - 0.5 < Pr < 2000, 3000 < Re < 5e6
         h_l(i) = (Nu_l(i) * k_coolant(i)) / hydraulic_D; % liquid film coefficient [W/m^2-K] (Heister EQ 6.19)
 
