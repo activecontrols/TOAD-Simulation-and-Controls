@@ -222,7 +222,7 @@ else
     fprintf('  Wall Thickness (C, T, N): [%.4f, %.4f, %.4f]\n', ChampionGeom(1:3));
     fprintf('  Aspect Ratio (C, T, N):   [%.4f, %.4f, %.4f]\n', ChampionGeom(4:6));
     fprintf('  Channel Width (C, N):     [%.4f, %.4f]\n',       ChampionGeom(7:8));
-    fprintf('  Channel Count:            %i \n',                ChampionGeom(9));
+    fprintf('  Channel Count:            %i \n',                round(ChampionGeom(9)));
     fprintf('======================================================\n');
 end
 
