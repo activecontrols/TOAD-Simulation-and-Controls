@@ -674,6 +674,7 @@ Engine_life = min(num_fires);
 Engine_life_lowcycle = min(num_fires_lowcycle);
 yield_SF = min(yield)/(max(sigma_vl)*.000001)-1;
 chamber_CDA = mdot_coolant / sqrt(2 * mean(rho_coolant) * (max(P_coolant) - min(P_coolant)));
+plastic_deformation_cyclic = sum(dx * epsilon_pa); %Permanent axial deformation per hot fire [in]
 
 %% Output
 Lifespan = Engine_life;
@@ -687,6 +688,7 @@ if DisplayMode == 1
     fprintf("\nEngine life (hot fires) Lowcycle: %.02f", Engine_life_lowcycle)
     fprintf("\nManson Universal Slopes Margin of safety for engine life of %0.0f hot fires: %.02f", N/8, overall_MS_spacex)
     fprintf("\nSafety factor to yield: %.02f", yield_SF)
+    fprintf("\nAxial Plastic Deformation per Cycle: %.05f in", plastic_deformation_cyclic)
     fprintf("\nTotal Heat Input: %.2f kW", Qtot / 10^3)
     fprintf("\nCoolant Pressure Drop: %.2f psi", (max(P_coolant) - min(P_coolant)) / 6894.76)
     fprintf("\nMax Hotwall Temp: %.2f K", max(T_wg))
