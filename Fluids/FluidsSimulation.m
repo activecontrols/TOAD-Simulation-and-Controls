@@ -23,13 +23,10 @@ for i = 1:MDLength
     X0(PLength + i) = 0;
 end
 
-%% Simulation Loop 2 (Implicit Euler w/ Variable timestep & Robust Jacobian)
-% Initialize Solver 2 parameters
+%% Simulation Loop 2 (MATLAB Native ode15s Solver - Instantaneous Combustion)
 simTime = 20;
-dT = 1e-4;
-MaxdT = 3e-3;
-MindT = 1e-6;
-MaxSteps = 1e5;
+dT = 0.05;
+MaxSteps = round(simTime / dT);
 
 % Logs
 X_LOG = zeros(size(X0, 1), MaxSteps);
@@ -41,15 +38,10 @@ T_LOG(1) = t;
 X_LOG(:, 1) = X_cur;
 stepCount = 1;
 
-% Combustion Delay Logic
-Tau_Delay = System.Combustion.Tau;
-Inj_History.Time = [-Tau_Delay, 0]; 
-Inj_History.OX   = [0, 0]; 
-Inj_History.FU   = [0, 0];
-
-% Enable warnings to catch them programmatically
-warning('on', 'MATLAB:nearlySingularMatrix');
-warning('on', 'MATLAB:singularMatrix');
+% Setup ode15s Options
+AbsTol_Vec = ones(size(X0)) * 5e-4; % Base 1e-4 tolerance for mass flows and fractions
+AbsTol_Vec(1:PLength) = 1000;       % Allow 1000 Pa (~0.15 psi) absolute tolerance for pressures
+options = odeset('RelTol', 1e-2, 'AbsTol', AbsTol_Vec, 'MaxOrder', 2); 
 
 % Warm-start
 fprintf('Warming up system states...\n');
@@ -58,162 +50,29 @@ for k = 1:10
     X_cur = X_cur + XDOT * 5e-5;
 end
 
-fprintf('Warm up complete. Starting Implicit Loop.\n');
+fprintf('Warm up complete. Starting ode15s Loop.\n');
 tic;
 
 while t < simTime
-    X_old = X_cur;
-    isAccepted = false;
+    % Proposed next time
+    t_next = t + dT;
 
-    % Save the clean Scheduler state before we attempt any timestep
-    Saved_U = Scheduler.CurrentU;
-    Saved_Target = Scheduler.TargetU;
-    Saved_Idx = Scheduler.NextEventIdx;
+    %% Valve Control Logic
+    U = Scheduler.Step(t_next, dT);
 
-    % Combustion Delay Logic (lookup delayed rates)
-    t_query = t - Tau_Delay;
-    if t_query <= Inj_History.Time(1)
-        B_OX = Inj_History.OX(1);
-        B_FU = Inj_History.FU(1);
-    else
-        B_OX = interp1(Inj_History.Time, Inj_History.OX, t_query, 'linear', 'extrap');
-        B_FU = interp1(Inj_History.Time, Inj_History.FU, t_query, 'linear', 'extrap');
+    %% Integration Step via ode15s
+    try
+        [~, X_step] = ode23t(@(t_dummy, X_dummy) PhysicsEngine(X_dummy, System, U), [t, t_next], X_cur, options);
+        X_new = X_step(end, :)'; % Extract the final state of the step
+    catch ME
+        fprintf('Solver failed at t = %.3f. Reason: %s\n', t, ME.message);
+        break;
     end
-    System.Combustion.BurnRates = [B_OX, B_FU];
-    
-    while ~isAccepted
-        % Rewind scheduler
-        Scheduler.CurrentU = Saved_U;
-        Scheduler.TargetU = Saved_Target;
-        Scheduler.NextEventIdx = Saved_Idx;
 
-        % Proposed next time
-        t_next = t + dT;
-
-        %% Valve Control Logic
-        U = Scheduler.Step(t_next, dT);
-    
-        %% Implicit Solver Step via Modified Newton-Raphson
-        X_new = X_old;
-        isConverged = false;
-        
-        % Compute Jacobian & Pre-conditioner (Initial)
-        % We wrap this in a try-catch to SILENTLY handle singularities
-        try
-            % Temporarily treat warnings as errors so we can catch them
-            warnState1 = warning('error', 'MATLAB:nearlySingularMatrix');
-            warnState2 = warning('error', 'MATLAB:singularMatrix');
-            
-            J = NumericalJacobian(@(x) PhysicsEngine(x, System, U), X_new);
-            M = eye(length(X0)) - dT * J;
-            [LD, UD] = lu(M);
-            
-            % Restore warning state
-            warning(warnState1);
-            warning(warnState2);
-            
-            % Proceed with Newton Iterations
-            for iter = 1:30
-                % Evaluate Dynamics
-                F = PhysicsEngine(X_new, System, U);
-                R = X_new - X_old - dT * F;
-        
-                if max(abs(R)) < 5e-5
-                    isConverged = true;
-                    break;
-                end
-        
-                % Linear Solve (Wrapped to catch singularities during solve)
-                try
-                    warning('error', 'MATLAB:nearlySingularMatrix');
-                    Delta = - (UD \ (LD \ R));
-                    warning(warnState1); % Restore
-                catch
-                    isConverged = false;
-                    warning(warnState1); % Restore
-                    break; % Break to trigger step reduction
-                end
-                
-                X_new = X_new + Delta;
-    
-                % Recompute Jacobian every 5 iterations
-                if mod(iter, 2) == 0
-                    J = NumericalJacobian(@(x) PhysicsEngine(x, System, U), X_new);
-                    M = eye(length(X0)) - dT * J;
-                    [LD, UD] = lu(M);
-                end
-            end
-
-        catch
-            % If ANY singularity occurred above, we land here silently.
-            isConverged = false;
-            % Restore warnings just in case
-            warning('on', 'MATLAB:nearlySingularMatrix');
-            warning('on', 'MATLAB:singularMatrix');
-        end
-
-        %% Step Acceptance Logic
-        if isConverged
-            % Physics Constraints
-            Y_Start_Idx = PLength + MDLength + 1;
-            X_new(Y_Start_Idx:end) = max(min(X_new(Y_Start_Idx:end), 1.0), 0.0);
-            
-            % Metric: Max Relative Change
-            RelChange = abs(X_new - X_old) ./ (abs(X_new) + 1e-2);
-            MaxChange = max(RelChange);
-            Tolerance = 0.15;  
-            Target    = 0.20;  
-            
-            if MaxChange > Tolerance && dT > MindT
-                isAccepted = false;
-                dT = max(dT * 0.3, MindT); 
-            else
-                isAccepted = true;
-
-                % Lowpass for timestep
-                Error = (Target / (MaxChange + 1e-9));
-                Factor = (Error)^0.4;
-                Beta = 0.01;
-                dT = (1 - Beta) * dT + Beta * Factor * dT;
-            end
-        else
-            % Diverged or Singular Matrix -> REJECT STEP
-            if dT <= MindT
-                % If we are already at minimum timestep, accept and pray
-                % (or log a warning)
-                isAccepted = true; 
-            else
-                dT = max(dT * 0.3, MindT);
-                isAccepted = false;
-            end
-        end
-        
-        dT = min(max(dT, MindT), MaxdT);
-    end
-    
     % Advance State
     t = t_next;      
     X_cur = X_new;   
     stepCount = stepCount + 1;
-
-    % Extract flows to save to history
-    [~, Current_Flows] = PhysicsEngine(X_cur, System, U);
-
-    % Verify these IDs match PID_Structure.m (CRUCIAL)
-    Mdot_Inj_OX = Current_Flows(9);
-    Mdot_Inj_FU = Current_Flows(10);
-
-    % Append to History
-    Inj_History.Time(end+1) = t;
-    Inj_History.OX(end+1)   = Mdot_Inj_OX;
-    Inj_History.FU(end+1)   = Mdot_Inj_FU;
-
-    % Trim buffer
-    if Inj_History.Time(end) - Inj_History.Time(1) > 10*Tau_Delay
-         Inj_History.Time(1) = [];
-         Inj_History.OX(1)   = [];
-         Inj_History.FU(1)   = [];
-    end
 
     if stepCount > MaxSteps, break; end 
     
@@ -223,8 +82,7 @@ while t < simTime
     T_LOG(stepCount) = t; 
     
     if mod(stepCount, 100) == 0
-        fprintf('Time: %.2f s | Chamber P: %.2f psi | dT: %.1e | Iterations: %i\n', ...
-            t, X_cur(10)/6895, dT, iter);
+        fprintf('Time: %.2f s | Chamber P: %.2f psi\n', t, X_cur(10)/6895);
     end
 end
 toc;
@@ -249,23 +107,35 @@ Pipe_Flows = X_LOG(PLength+1 : PLength+MDLength, :);
 Inj_Flows = zeros(2, length(Time)); % 1: OX Inj, 2: FU Inj
 
 % Dynamically fetch parameters from the System Struct
-% Algebraic Links: [1:PressOX, 2:PressFU, 3:MainOX, 4:MainFU, 5:InjOX, 6:InjFU, 7:Noz]
-L_OX = System.Links.Algebraic(5); % Link 9 (Inj OX)
-L_FU = System.Links.Algebraic(6); % Link 10 (Inj FU)
+% Algebraic Links: [1:PressIso, 2:MainOX, 3:MainFU, 4:ThrotOX, 5:ThrotFU, 6:InjOX, 7:InjFU...]
+L_OX = System.Links.Algebraic(6); % Alg Link 6 (Inj OX)
+L_FU = System.Links.Algebraic(7); % Alg Link 7 (Inj FU)
 
 for k = 1:length(Time)
-    % Extract State (UPDATED NODE MAP: 8=OX Man, 9=FU Man, 10=Chamber)
-    P_Man_OX = X_LOG(8, k); 
-    P_Cham   = X_LOG(10, k); 
-    P_Man_FU = X_LOG(9, k);
+    % Extract State (UPDATED NODE MAP: 11=OX Man, 12=FU Man, 13=SKIPPER Chamber)
+    P_Man_OX = X_LOG(11, k); 
+    P_Man_FU = X_LOG(12, k);
+    P_Cham   = X_LOG(13, k); 
+    
+    % Fetch N2 Mass Fractions to determine if Manifold is Liquid or Gas
+    StartIdx = PLength + MDLength;
+    Y_N2_OX = X_LOG(StartIdx + (11-1)*NumSpecies + 3, k); 
+    Y_N2_FU = X_LOG(StartIdx + (12-1)*NumSpecies + 3, k); 
+    
+    % Dynamically calculate density (Transitions from Liquid to Gas)
+    Rho_Gas_OX = P_Man_OX / (296.8 * 293); % Ideal Gas Law for N2
+    Rho_Gas_FU = P_Man_FU / (296.8 * 293);
+    
+    Rho_Eff_OX = (1 - Y_N2_OX) * 1141 + (Y_N2_OX) * Rho_Gas_OX;
+    Rho_Eff_FU = (1 - Y_N2_FU) * 786  + (Y_N2_FU) * Rho_Gas_FU;
     
     % OX Injector
     DP_OX = P_Man_OX - P_Cham;
-    Inj_Flows(1, k) = L_OX.Cv * L_OX.A * sqrt(2 * 1141 * abs(DP_OX)) * sign(DP_OX);
+    Inj_Flows(1, k) = L_OX.Cv * L_OX.A * sqrt(2 * Rho_Eff_OX * abs(DP_OX)) * sign(DP_OX);
     
     % FU Injector
     DP_FU = P_Man_FU - P_Cham;
-    Inj_Flows(2, k) = L_FU.Cv * L_FU.A * sqrt(2 * 786 * abs(DP_FU)) * sign(DP_FU);
+    Inj_Flows(2, k) = L_FU.Cv * L_FU.A * sqrt(2 * Rho_Eff_FU * abs(DP_FU)) * sign(DP_FU);
 end
 
 % Dark Mode Settings
@@ -275,34 +145,34 @@ GridAlpha = 0.2;
 
 % FIG 1: Tank Blowdown (Supply Side)
 fig1 = figure('Name', 'Supply Pressures', 'NumberTitle', 'off', 'Color', DarkBg);
-    plot(Time, Pressures_PSI(1,:), 'w--', 'LineWidth', 1.5); hold on; % Regulator (Node 1)
-    plot(Time, Pressures_PSI(2,:), 'c', 'LineWidth', 1.5);   % OX Tank (Node 2)
-    plot(Time, Pressures_PSI(3,:), 'm', 'LineWidth', 1.5);   % FU Tank (Node 3)
+    plot(Time, Pressures_PSI(1,:), 'w--', 'LineWidth', 1.5); hold on; % N2 Source (Node 1)
+    plot(Time, Pressures_PSI(3,:), 'c', 'LineWidth', 1.5);   % OX Tank (Node 3)
+    plot(Time, Pressures_PSI(4,:), 'm', 'LineWidth', 1.5);   % FU Tank (Node 4)
     grid on;
-    legend('Regulator', 'LOX Tank', 'IPA Tank', 'TextColor', 'w', 'Color', 'none', 'EdgeColor', 'none');
+    legend('N2 Source', 'LOX Tank', 'IPA Tank', 'TextColor', 'w', 'Color', 'none', 'EdgeColor', 'none');
     xlabel('Time [s]'); ylabel('Pressure [psi]');
     title('Tank Blowdown Curves');
     set(gca, 'Color', DarkBg, 'XColor', AxColor, 'YColor', AxColor, 'GridColor', 'w', 'GridAlpha', GridAlpha);
 
 % FIG 2: Feed System Drops (Manifold Dynamics)
-% Trace: Tank -> Post-Valve Node -> Manifold
+% Trace: Tank -> Post-Throttle Node -> Manifold
 fig2 = figure('Name', 'Feed System Gradients', 'NumberTitle', 'off', 'Color', DarkBg);
 subplot(2,1,1);
-    plot(Time, Pressures_PSI(2,:), 'c--'); hold on;          % Tank OX (Node 2)
-    plot(Time, Pressures_PSI(6,:), 'c');                     % Post-Valve OX (Node 6)
-    plot(Time, Pressures_PSI(8,:), 'g', 'LineWidth', 1.5);   % Manifold OX (Node 8)
+    plot(Time, Pressures_PSI(3,:), 'c--'); hold on;          % Tank OX (Node 3)
+    plot(Time, Pressures_PSI(9,:), 'c');                     % Post-Throttle OX (Node 9)
+    plot(Time, Pressures_PSI(11,:), 'g', 'LineWidth', 1.5);  % Manifold OX (Node 11)
     grid on;
-    legend('Tank', 'Line (Post-Valve)', 'Manifold', 'TextColor', 'w', 'Color', 'none', 'EdgeColor', 'none');
+    legend('Tank', 'Post-Throttle', 'Manifold', 'TextColor', 'w', 'Color', 'none', 'EdgeColor', 'none');
     title('Oxidizer Feed Line Pressures');
     ylabel('Pressure [psi]');
     set(gca, 'Color', DarkBg, 'XColor', AxColor, 'YColor', AxColor, 'GridColor', 'w', 'GridAlpha', GridAlpha);
     
 subplot(2,1,2);
-    plot(Time, Pressures_PSI(3,:), 'm--'); hold on;          % Tank FU (Node 3)
-    plot(Time, Pressures_PSI(7,:), 'm');                     % Post-Valve FU (Node 7)
-    plot(Time, Pressures_PSI(9,:), 'y', 'LineWidth', 1.5);   % Manifold FU (Node 9)
+    plot(Time, Pressures_PSI(4,:), 'm--'); hold on;          % Tank FU (Node 4)
+    plot(Time, Pressures_PSI(10,:), 'm');                    % Post-Throttle FU (Node 10)
+    plot(Time, Pressures_PSI(12,:), 'y', 'LineWidth', 1.5);  % Manifold FU (Node 12)
     grid on;
-    legend('Tank', 'Line (Post-Valve)', 'Manifold', 'TextColor', 'w', 'Color', 'none', 'EdgeColor', 'none');
+    legend('Tank', 'Post-Throttle', 'Manifold', 'TextColor', 'w', 'Color', 'none', 'EdgeColor', 'none');
     title('Fuel Feed Line Pressures');
     ylabel('Pressure [psi]');
     xlabel('Time [s]');
@@ -311,9 +181,9 @@ subplot(2,1,2);
 % FIG 3: Engine Performance (Chamber & Injection)
 fig3 = figure('Name', 'Engine Operation', 'NumberTitle', 'off', 'Color', DarkBg);
 subplot(2,1,1);
-    plot(Time, Pressures_PSI(8,:), 'g'); hold on;            % OX Man (Node 8)
-    plot(Time, Pressures_PSI(9,:), 'y');                     % FU Man (Node 9)
-    plot(Time, Pressures_PSI(10,:), 'w', 'LineWidth', 2);    % Chamber (Node 10)
+    plot(Time, Pressures_PSI(11,:), 'g'); hold on;           % OX Man (Node 11)
+    plot(Time, Pressures_PSI(12,:), 'y');                    % FU Man (Node 12)
+    plot(Time, Pressures_PSI(13,:), 'w', 'LineWidth', 2);    % SKIPPER (Node 13)
     yline(14.7, 'w--');
     grid on;
     legend('OX Manifold', 'FU Manifold', 'Chamber', 'Atm', 'TextColor', 'w', 'Color', 'none', 'EdgeColor', 'none');
@@ -322,11 +192,11 @@ subplot(2,1,1);
     set(gca, 'Color', DarkBg, 'XColor', AxColor, 'YColor', AxColor, 'GridColor', 'w', 'GridAlpha', GridAlpha);
 
 subplot(2,1,2);
-    % Compare Pipe Massflow (Link 7/8 - Manifold In) vs Injector Massflow (Demand)
-    % Pipe Flow Indices: 1=Link3, 2=Link4, 3=Link7, 4=Link8
-    plot(Time, Pipe_Flows(3,:), 'c'); hold on;               % OX Pipe 2 (Link 7)
+    % Compare Pipe Massflow (Link 5/6 - Manifold In) vs Injector Massflow (Demand)
+    % Pipe Flow Indices: 1/2=Press Lines, 3/4=Pre-Mains, 5=OX Inj Line, 6=FU Inj Line
+    plot(Time, Pipe_Flows(5,:), 'c'); hold on;               % OX Manifold In
     plot(Time, Inj_Flows(1,:), 'g--');                       % OX Inj
-    plot(Time, Pipe_Flows(4,:), 'm');                        % FU Pipe 2 (Link 8)
+    plot(Time, Pipe_Flows(6,:), 'm');                        % FU Manifold In
     plot(Time, Inj_Flows(2,:), 'y--');                       % FU Inj
     grid on;
     legend('OX Feed (Manifold In)', 'OX Inj', 'FU Feed (Manifold In)', 'FU Inj', 'TextColor', 'w', 'Color', 'none', 'EdgeColor', 'none');
@@ -341,36 +211,37 @@ StartIdx = PLength + MDLength;
 NumSpecies = 3; 
 
 subplot(2,2,1);
-    % Node 6 (OX Manifold)
-    Idx_LOX_Liq = StartIdx + (8-1)*NumSpecies + 1; 
-    Idx_LOX_N2  = StartIdx + (8-1)*NumSpecies + 3;
+    % Node 11 (OX Manifold)
+    Idx_LOX_Liq = StartIdx + (11-1)*NumSpecies + 1; 
+    Idx_LOX_N2  = StartIdx + (11-1)*NumSpecies + 3;
     plot(Time, X_LOG(Idx_LOX_Liq, :), 'c', 'LineWidth', 1.5); hold on;
     plot(Time, X_LOG(Idx_LOX_N2, :), 'w--');
     grid on;
     ylabel('Mass Fraction');
     legend('LOX Liquid', 'Gases', 'TextColor', 'w', 'Color', 'none', 'EdgeColor', 'none');
-    title('Oxidizer Post Valve Composition');
+    title('Oxidizer Manifold Composition');
     ylim([-0.05 1.05]); 
     set(gca, 'Color', DarkBg, 'XColor', AxColor, 'YColor', AxColor, 'GridColor', 'w', 'GridAlpha', GridAlpha);
 
 subplot(2,2,3);
-    % Node 7 (FU Manifold)
-    Idx_FU_Liq = StartIdx + (9-1)*NumSpecies + 2; 
-    Idx_FU_N2  = StartIdx + (9-1)*NumSpecies + 3;
+    % Node 12 (FU Manifold)
+    Idx_FU_Liq = StartIdx + (12-1)*NumSpecies + 2; 
+    Idx_FU_N2  = StartIdx + (12-1)*NumSpecies + 3;
     plot(Time, X_LOG(Idx_FU_Liq, :), 'm', 'LineWidth', 1.5); hold on;
     plot(Time, X_LOG(Idx_FU_N2, :), 'w--');
     grid on;
     ylabel('Mass Fraction');
     xlabel('Time [s]');
     legend('IPA Liquid', 'Gases', 'TextColor', 'w', 'Color', 'none', 'EdgeColor', 'none');
-    title('Fuel Post Valve Composition');
+    title('Fuel Manifold Composition');
     ylim([-0.05 1.05]);
     set(gca, 'Color', DarkBg, 'XColor', AxColor, 'YColor', AxColor, 'GridColor', 'w', 'GridAlpha', GridAlpha);
+
 subplot(2,2,2);
-    % Node 10 (Chamber)
-    Idx_C_OX = StartIdx + (10-1)*NumSpecies + 1; 
-    Idx_C_FU = StartIdx + (10-1)*NumSpecies + 2; 
-    Idx_C_N2  = StartIdx + (10-1)*NumSpecies + 3;
+    % Node 13 (Chamber)
+    Idx_C_OX = StartIdx + (13-1)*NumSpecies + 1; 
+    Idx_C_FU = StartIdx + (13-1)*NumSpecies + 2; 
+    Idx_C_N2 = StartIdx + (13-1)*NumSpecies + 3;
     plot(Time, X_LOG(Idx_C_OX, :), 'c', 'LineWidth', 1.5); hold on;
     plot(Time, X_LOG(Idx_C_FU, :), 'm', 'LineWidth', 1.5);
     plot(Time, X_LOG(Idx_C_N2, :), 'w--');
@@ -378,18 +249,19 @@ subplot(2,2,2);
     ylabel('Mass Fraction');
     xlabel('Time [s]');
     legend('Oxidizer', 'Fuel', 'Gases', 'TextColor', 'w', 'Color', 'none', 'EdgeColor', 'none');
-    title('TADPOLE Chamber Composition');
+    title('SKIPPER Chamber Composition');
     ylim([-0.05 1.05]);
     set(gca, 'Color', DarkBg, 'XColor', AxColor, 'YColor', AxColor, 'GridColor', 'w', 'GridAlpha', GridAlpha);
+
 subplot(2,2,4);
     % OF Ratio Trace
-    OF_C = X_LOG(PLength+3, :) ./ X_LOG(PLength+4, :);
+    OF_C = X_LOG(Idx_C_OX, :) ./ (X_LOG(Idx_C_FU, :) + 1e-9);
     plot(Time, OF_C, 'Color', [0.7 0 1], 'LineWidth', 1.5);
     grid on;
-    ylabel('Mass Fraction');
+    ylabel('O/F Ratio');
     xlabel('Time [s]');
     legend('Chamber OF Ratio', 'TextColor', 'w', 'Color', 'none', 'EdgeColor', 'none');
-    title('TADPOLE Chamber OF Ratio');
+    title('SKIPPER Chamber O/F Ratio');
     ylim([0.5 1.9]);
     set(gca, 'Color', DarkBg, 'XColor', AxColor, 'YColor', AxColor, 'GridColor', 'w', 'GridAlpha', GridAlpha);
 

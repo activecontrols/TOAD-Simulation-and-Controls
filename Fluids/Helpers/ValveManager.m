@@ -51,6 +51,8 @@ classdef ValveManager < handle
                 if isKey(obj.ID_Map, Name)
                     IDs(i) = obj.ID_Map(Name);
                     Cvs(i) = Value;
+                else
+                    error('ValveManager: Valve "%s" in AutoSequence does not match any System Links!', Name);
                 end
             end
 
@@ -92,7 +94,7 @@ classdef ValveManager < handle
             U = obj.CurrentU;
         end
         function PlotSequence(obj, t_end)
-            % PLOTSEQUENCE Visualizes the valve schedule in Dark Mode
+            % PLOTSEQUENCE Visualizes the valve schedule as a digital timing diagram
             % Input: t_end (Duration in seconds)
             
             if nargin < 2, t_end = 20; end 
@@ -103,13 +105,13 @@ classdef ValveManager < handle
             GridAlpha = 0.2;
             
             % Create figure
-            figure('Name', 'Valve Sequence Preview', 'Color', DarkBg, 'NumberTitle', 'off');
+            figure('Name', 'Valve Sequence Timing Diagram', 'Color', DarkBg, 'NumberTitle', 'off');
             hold on; grid on;
-            xlabel('Time [s]'); ylabel('Target Cv');
-            title('Valve Auto-Sequence Preview');
+            xlabel('Time [s]'); 
+            title('Valve Auto-Sequence Timing Diagram', 'Color', 'w');
             
             % Generate high-res time vector
-            t_plot = linspace(0, t_end, 2000);
+            t_plot = linspace(0, t_end, 5000);
             Y_plot = zeros(obj.NumValves, length(t_plot));
             
             % Reconstruct state
@@ -130,50 +132,76 @@ classdef ValveManager < handle
                 Y_plot(:, k) = TempTargets;
             end
             
-            % --- DYNAMIC COLOR GENERATION ---
             % 1. Identify which valves are actually used
             ActiveIndices = find(max(Y_plot, [], 2) > 0);
             NumActive = length(ActiveIndices);
             
+            if NumActive == 0
+                disp('No active valves in sequence to plot.');
+                return;
+            end
+            
             % 2. Generate exactly 'NumActive' distinct colors
-            % 'hsv' gives the widest separation of hues.
             raw_colors = hsv(NumActive);
             
-            % 3. Boost brightness/saturation for Dark Mode visibility
-            % (HSV is usually bright, but let's ensure they pop)
-            % No extra math needed for HSV, it defaults to max brightness.
+            % Setup arrays for Y-axis labels
+            YTickVals = zeros(NumActive, 1);
+            YTickNames = cell(NumActive, 1);
             
-            LegendEntries = {};
+            Keys = keys(obj.ID_Map);
+            Vals = values(obj.ID_Map);
             
+            % 3. Plot each valve in its own horizontal channel
             for k = 1:NumActive
                 idx = ActiveIndices(k);
+                
+                % Convert Cv target to binary state (1 if > 0, 0 otherwise)
+                BinaryState = double(Y_plot(idx, :) > 1e-5);
+                
+                % Calculate vertical offset to stack channels
+                % We stack top-to-bottom so the first valve is at the top
+                BaseY = (NumActive - k) * 1.5; 
+                Height = 1.0;
+                
+                ChannelY = BaseY + (BinaryState * Height);
                 
                 % Grab unique color for this valve
                 C = raw_colors(k, :);
                 
-                % Plot
-                plot(t_plot, Y_plot(idx, :), 'LineWidth', 2, 'Color', C);
+                % Plot the square wave
+                plot(t_plot, ChannelY, 'LineWidth', 2, 'Color', C);
+                
+                % Add a subtle dashed baseline for this channel
+                yline(BaseY, 'Color', [0.6 0.6 0.6], 'LineWidth', 1, 'LineStyle', '-.');
                 
                 % Reverse Lookup Name
-                Keys = keys(obj.ID_Map);
-                Vals = values(obj.ID_Map);
                 Name = Keys{[Vals{:}] == idx};
-                LegendEntries{end+1} = Name;
+                
+                % Store tick info (Center the text slightly above the baseline)
+                YTickVals(k) = BaseY + (Height / 2);
+                YTickNames{k} = Name;
             end
             
-            % Apply Dark Mode Styling
+            % Apply Dark Mode Styling and custom Y-Axis
             set(gca, 'Color', DarkBg, ...
                      'XColor', AxColor, ...
                      'YColor', AxColor, ...
                      'GridColor', 'w', ...
                      'GridAlpha', GridAlpha);
+                 
+            % Apply the names to the Y-axis
+            [YTickVals, sortIdx] = sort(YTickVals);
+            YTickNames = YTickNames(sortIdx);
+            yticks(YTickVals);
+            yticklabels(YTickNames);
             
-            if ~isempty(LegendEntries)
-                Lgnd = legend(LegendEntries, 'Location', 'best');
-                set(Lgnd, 'TextColor', 'w', 'Color', 'none', 'EdgeColor', 'none');
-            end
+            % Remove y-axis grid lines so they don't clutter the channels
+            ax = gca;
+            ax.YGrid = 'off';
             
-            ylim([0, max(max(Y_plot)) * 1.2]); 
+            % Set limits to tightly bound the channels
+            ylim([-0.5, NumActive * 1.5]); 
+            xlim([0, t_end]);
         end
     end
 end
