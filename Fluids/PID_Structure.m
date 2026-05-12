@@ -30,9 +30,9 @@ StartP = 500; %P_atm;
 % 10: Post Throt FU 
 % 11: OX Manifold
 % 12: FU Manifold
-% 13: TADPOLE (Chamber)
+% 13: SKIPPER (Chamber)
 % 14: Atmosphere
-% 15: Virtual (Igniter)
+% 15: DART (Igniter)
 
 % Constructor: Nodes(name, ID, Fixed, P0_psi, V_m3, Y0, LinksIN, LinksOUT, isCombustor)
 % Source & Pressurization
