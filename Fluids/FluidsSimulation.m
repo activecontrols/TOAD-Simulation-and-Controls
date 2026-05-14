@@ -8,16 +8,37 @@ PID_Structure;
 PLength = size(System.Nodes, 2);
 MDLength = size(System.Links.Dynamic, 2);
 MALength = size(System.Links.Algebraic, 2);
+
 YIdx_Start = PLength + MDLength + 1;
 NumSpecies = 3;
 
-X0 = zeros(PLength + MDLength + PLength * NumSpecies, 1);
-% Package Pressures and Transports
+% NEW: Enthalpy Index Tracking
+HIdx_Start = YIdx_Start + (PLength * NumSpecies);
+
+% Expand X0 to include Enthalpies (PLength nodes)
+X0 = zeros(HIdx_Start + PLength - 1, 1);
+
+% Package Pressures, Mass Fractions, and Initial Enthalpies
 for i = 1:PLength
-    X0(i) = System.Nodes(i).P0 * 6895;
+    T0 = System.Nodes(i).Temp;
+    P0 = System.Nodes(i).P0 * 6895;
+    Y0 = System.Nodes(i).Y0';
+    
+    X0(i) = P0;
+    
     CurrentIDX = YIdx_Start + (i-1)*NumSpecies : YIdx_Start + (i-1)*NumSpecies + (NumSpecies-1);
-    X0(CurrentIDX) = System.Nodes(i).Y0';
+    X0(CurrentIDX) = Y0;
+    
+    % --- SMART ENTHALPY INITIALIZATION ---
+    [h_ox, ~, ~, ~, ~] = LOX_Data(T0, P0);
+    [h_fu, ~, ~, ~, ~] = IPA_Data(T0, P0);
+    [h_n2, ~, ~, ~, ~] = N2_Data(T0, P0);
+    
+    % Mass-weighted initial node enthalpy
+    H0 = Y0(1)*h_ox + Y0(2)*h_fu + Y0(3)*h_n2;
+    X0(HIdx_Start + i - 1) = H0;
 end
+
 % Package Dynamic Massflows 
 for i = 1:MDLength
     X0(PLength + i) = 0;
@@ -46,7 +67,7 @@ options = odeset('RelTol', 1e-2, 'AbsTol', AbsTol_Vec, 'MaxOrder', 2);
 % Warm-start
 fprintf('Warming up system states...\n');
 for k = 1:10
-    XDOT = PhysicsEngine(X_cur, System, zeros(MALength,1));
+    XDOT = PhysicsEngine2(X_cur, System, zeros(MALength,1));
     X_cur = X_cur + XDOT * 5e-5;
 end
 
@@ -62,7 +83,7 @@ while t < simTime
 
     %% Integration Step via ode15s
     try
-        [~, X_step] = ode23t(@(t_dummy, X_dummy) PhysicsEngine(X_dummy, System, U), [t, t_next], X_cur, options);
+        [~, X_step] = ode23t(@(t_dummy, X_dummy) PhysicsEngine2(X_dummy, System, U), [t, t_next], X_cur, options);
         X_new = X_step(end, :)'; % Extract the final state of the step
     catch ME
         fprintf('Solver failed at t = %.3f. Reason: %s\n', t, ME.message);
@@ -99,6 +120,38 @@ close all;
 Time = T_LOG;
 PSI = 6895;
 Pressures_PSI = X_LOG(1:PLength, :) / PSI;
+
+% Post-Process Temperatures from Enthalpy
+T_Nodes_LOG = zeros(PLength, length(Time));
+
+% Fetch base coefficients (Pressure doesn't affect A and B in our data functions)
+[~, ~, ~, A_ox, B_ox] = LOX_Data(293, 101325);
+[~, ~, ~, A_fu, B_fu] = IPA_Data(293, 101325);
+[~, ~, ~, A_n2, B_n2] = N2_Data(293, 101325);
+
+% StartIdx is already PLength + MDLength (Index right before Y starts)
+StartIdx = PLength + MDLength;
+
+for i = 1:PLength
+    % Extract Enthalpy history for Node i
+    H_history = X_LOG(HIdx_Start + i - 1, :);
+
+    % Extract Mass Fractions for Node i
+    Idx_OX = StartIdx + (i-1)*NumSpecies + 1;
+    Idx_FU = StartIdx + (i-1)*NumSpecies + 2;
+    Idx_N2 = StartIdx + (i-1)*NumSpecies + 3;
+
+    Y_OX_hist = X_LOG(Idx_OX, :);
+    Y_FU_hist = X_LOG(Idx_FU, :);
+    Y_N2_hist = X_LOG(Idx_N2, :);
+
+    % Calculate Mixture Coefficients over time
+    A_mix = Y_OX_hist.*A_ox + Y_FU_hist.*A_fu + Y_N2_hist.*A_n2;
+    B_mix = Y_OX_hist.*B_ox + Y_FU_hist.*B_fu + Y_N2_hist.*B_n2;
+
+    % Solve Quadratic for Temperature
+    T_Nodes_LOG(i, :) = (-A_mix + sqrt(A_mix.^2 + 2 .* B_mix .* H_history)) ./ (B_mix + 1e-9);
+end
 
 % Dynamic Massflows (Pipe Links)
 Pipe_Flows = X_LOG(PLength+1 : PLength+MDLength, :);
@@ -263,6 +316,30 @@ subplot(2,2,4);
     legend('Chamber OF Ratio', 'TextColor', 'w', 'Color', 'none', 'EdgeColor', 'none');
     title('SKIPPER Chamber O/F Ratio');
     ylim([0.5 1.9]);
+    set(gca, 'Color', DarkBg, 'XColor', AxColor, 'YColor', AxColor, 'GridColor', 'w', 'GridAlpha', GridAlpha);
+
+   % FIG 6: System Temperatures (Grouped by Hardware)
+fig6 = figure('Name', 'System Temperatures', 'NumberTitle', 'off', 'Color', DarkBg);
+
+subplot(2,1,1);
+    % Node 3 = LOX Tank, Node 4 = IPA Tank
+    plot(Time, T_Nodes_LOG(3,:), 'c', 'LineWidth', 1.5); hold on; 
+    plot(Time, T_Nodes_LOG(4,:), 'm', 'LineWidth', 1.5);         
+    grid on;
+    legend('LOX Tank', 'IPA Tank', 'TextColor', 'w', 'Color', 'none', 'EdgeColor', 'none', 'Location', 'best');
+    title('Propellant Tank Temperatures');
+    ylabel('Temperature [K]');
+    set(gca, 'Color', DarkBg, 'XColor', AxColor, 'YColor', AxColor, 'GridColor', 'w', 'GridAlpha', GridAlpha);
+
+subplot(2,1,2);
+    % Node 11 = OX Manifold, Node 12 = FU Manifold
+    plot(Time, T_Nodes_LOG(11,:), 'g', 'LineWidth', 1.5); hold on; 
+    plot(Time, T_Nodes_LOG(12,:), 'y', 'LineWidth', 1.5);         
+    grid on;
+    legend('OX Manifold', 'FU Manifold', 'TextColor', 'w', 'Color', 'none', 'EdgeColor', 'none', 'Location', 'best');
+    title('Injector Manifold Temperatures');
+    ylabel('Temperature [K]');
+    xlabel('Time [s]');
     set(gca, 'Color', DarkBg, 'XColor', AxColor, 'YColor', AxColor, 'GridColor', 'w', 'GridAlpha', GridAlpha);
 
 % FIG 5: AutoSequence
