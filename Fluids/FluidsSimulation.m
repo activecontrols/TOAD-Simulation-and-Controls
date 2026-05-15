@@ -45,7 +45,7 @@ for i = 1:MDLength
 end
 
 %% Simulation Loop 2 (MATLAB Native ode15s Solver - Instantaneous Combustion)
-simTime = 20;
+simTime = 50;
 dT = 0.05;
 MaxSteps = round(simTime / dT);
 
@@ -198,7 +198,7 @@ GridAlpha = 0.2;
 
 % FIG 1: Tank Blowdown (Supply Side)
 fig1 = figure('Name', 'Supply Pressures', 'NumberTitle', 'off', 'Color', DarkBg);
-    plot(Time, Pressures_PSI(1,:), 'w--', 'LineWidth', 1.5); hold on; % N2 Source (Node 1)
+    plot(Time, Pressures_PSI(2,:), 'w--', 'LineWidth', 1.5); hold on; % N2 Source (Node 1)
     plot(Time, Pressures_PSI(3,:), 'c', 'LineWidth', 1.5);   % OX Tank (Node 3)
     plot(Time, Pressures_PSI(4,:), 'm', 'LineWidth', 1.5);   % FU Tank (Node 4)
     grid on;
@@ -318,26 +318,22 @@ subplot(2,2,4);
     ylim([0.5 1.9]);
     set(gca, 'Color', DarkBg, 'XColor', AxColor, 'YColor', AxColor, 'GridColor', 'w', 'GridAlpha', GridAlpha);
 
-   % FIG 6: System Temperatures (Grouped by Hardware)
-fig6 = figure('Name', 'System Temperatures', 'NumberTitle', 'off', 'Color', DarkBg);
+   % FIG 6: COPV Dynamics (Pressure & Temperature)
+fig6 = figure('Name', 'COPV Dynamics', 'NumberTitle', 'off', 'Color', DarkBg);
 
 subplot(2,1,1);
-    % Node 3 = LOX Tank, Node 4 = IPA Tank
-    plot(Time, T_Nodes_LOG(3,:), 'c', 'LineWidth', 1.5); hold on; 
-    plot(Time, T_Nodes_LOG(4,:), 'm', 'LineWidth', 1.5);         
+    plot(Time, Pressures_PSI(1,:), 'w', 'LineWidth', 1.5); 
     grid on;
-    legend('LOX Tank', 'IPA Tank', 'TextColor', 'w', 'Color', 'none', 'EdgeColor', 'none', 'Location', 'best');
-    title('Propellant Tank Temperatures');
-    ylabel('Temperature [K]');
+    legend('COPV Pressure', 'TextColor', 'w', 'Color', 'none', 'EdgeColor', 'none');
+    title('COPV Blowdown Pressure');
+    ylabel('Pressure [psi]');
     set(gca, 'Color', DarkBg, 'XColor', AxColor, 'YColor', AxColor, 'GridColor', 'w', 'GridAlpha', GridAlpha);
 
 subplot(2,1,2);
-    % Node 11 = OX Manifold, Node 12 = FU Manifold
-    plot(Time, T_Nodes_LOG(11,:), 'g', 'LineWidth', 1.5); hold on; 
-    plot(Time, T_Nodes_LOG(12,:), 'y', 'LineWidth', 1.5);         
+    plot(Time, T_Nodes_LOG(1,:), 'r', 'LineWidth', 1.5); 
     grid on;
-    legend('OX Manifold', 'FU Manifold', 'TextColor', 'w', 'Color', 'none', 'EdgeColor', 'none', 'Location', 'best');
-    title('Injector Manifold Temperatures');
+    legend('COPV Temperature', 'TextColor', 'w', 'Color', 'none', 'EdgeColor', 'none');
+    title('COPV Internal Gas Temperature');
     ylabel('Temperature [K]');
     xlabel('Time [s]');
     set(gca, 'Color', DarkBg, 'XColor', AxColor, 'YColor', AxColor, 'GridColor', 'w', 'GridAlpha', GridAlpha);

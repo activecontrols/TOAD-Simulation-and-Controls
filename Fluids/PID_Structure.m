@@ -18,26 +18,28 @@ StartP = 500; %P_atm;
 
 %% Nodes
 % ID Map:
-% 1: TK-N2
-% 2: Press Manifold
-% 3: TK-02-01 (Tank LOX)
+% 1: TK-N2 (COPV)
+% 2: Press Manifold (Post-Iso)
+% 3: TK-O2-01 (Tank LOX)
 % 4: TK-FU-01 (Tank IPA)
 % 5: Pre Main OX 
 % 6: Pre Main FU 
 % 7: Inter OX (Between Main 03 and Throttle 04)
 % 8: Inter FU (Between Main 03 and Throttle 04)
-% 9: Post Throt OX 
-% 10: Post Throt FU 
+% 9: Post Throttle OX 
+% 10: Post Throttle FU 
 % 11: OX Manifold
 % 12: FU Manifold
 % 13: SKIPPER (Chamber)
 % 14: Atmosphere
-% 15: DART (Igniter)
+% 15: Virtual (Igniter Node)
+% 16: Purge Manifold (Pre-Iso, Post-Regulator)
 
 % Constructor: Nodes(name, ID, Fixed, P0_psi, V_m3, Y0, LinksIN, LinksOUT, isCombustor)
 % Source & Pressurization
-    Node(1)  = Nodes('TK-N2', 1, 1, 550, 5, [0 0 1], [], [], false);
-    Node(2)  = Nodes('Press Manifold', 2, 0, P_atm, 1e-4, [0 0 1], 1, [3 4], false);
+    Node(1)  = Nodes('TK-N2', 1, 0, 4500, 0.036, [0 0 1], [], 1, false, 'Tank');
+    Node(16) = Nodes('Purge Manifold', 16, 0, 550, 1e-4, [0 0 1], 1, [20 15 16 17 18], false);
+    Node(2)  = Nodes('Press Manifold', 2, 0, P_atm, 1e-4, [0 0 1], 20, [2 3], false);
 % Tanks
     Node(3)  = Nodes('TK-O2-01', 3, 0, StartP, TankVolOX, Y0_OX, 2, 5, false, 'Tank');
     Node(4)  = Nodes('TK-FU-01', 4, 0, StartP, TankVolFU, Y0_FU, 2, 6, false, 'Tank');
@@ -65,7 +67,8 @@ StartP = 500; %P_atm;
 
 %% Links
 % Pressurization
-    Link(1) = ValveLink('BV-N2-02', 'Throttle', 1, 1, 2, 2.0); 
+    Link(1) = ValveLink('REG-873D', 'Regulator', 1, 1, 16, 0.8, 560, 50, 0.003);
+    Link(20) = ValveLink('BV-N2-02', 'Throttle', 20, 16, 2, 2.0);
     Link(2) = PipeLink('Press Line OX', 2, 2, 3, 0.5, 5e-4, 50); % Manifold to Tank
     Link(3) = PipeLink('Press Line FU', 3, 2, 4, 0.5, 5e-4, 50); % Manifold to Tank
     
@@ -90,11 +93,11 @@ StartP = 500; %P_atm;
     Link(13) = ValveLink('Inj FU', 'Orifice', 13, 12, 13, 0.77, 2.6e-5);
     Link(14) = ValveLink('Nozzle', 'Orifice', 14, 13, 14, 0.79, 0.0011);
     
-% N2 Purges (Straight from Source)
-    Link(15) = ValveLink('SV-N2-05', 'Check', 15, 1, 9, 0);  % To Post Throt
-    Link(16) = ValveLink('SV-N2-06', 'Check', 16, 1, 10, 0); % To Post Throt
-    Link(17) = ValveLink('SV-N2-07', 'Check', 17, 1, 11, 0);  % To Manifold
-    Link(18) = ValveLink('SV-N2-08', 'Check', 18, 1, 12, 0);  % To Manifold
+% N2 Purges
+    Link(15) = ValveLink('SV-N2-05', 'Check', 15, 16, 9, 0);  
+    Link(16) = ValveLink('SV-N2-06', 'Check', 16, 16, 10, 0);
+    Link(17) = ValveLink('SV-N2-07', 'Check', 17, 16, 11, 0); 
+    Link(18) = ValveLink('SV-N2-08', 'Check', 18, 16, 12, 0);
     
 % Igniter Link
     Link(19) = ValveLink('DART Ign', 'Signal', 19, 15, 15, 0);
@@ -185,21 +188,21 @@ Scheduler.SetTau('DART Ign', 0.05);
 [Valves2(1), Valves2(2)] = ValveController(85, 1.2, 550);
 
 AutoSequence = {
-    % Pressurize System
+    % Pressurize System (Open Isolation Valve)
     0.0,    'BV-N2-02',       2.0; 
 
     % Open Throttles to set angle
     3.0,    'BV-02-04',       Valves1(1);
     3.0,    'BV-FU-04',       Valves1(2);
     
-    % Startup (Mains Open 100%, Throttles to Target)
+    % Startup
     6.0,    'BV-02-03',       2.9;
     6.0,    'BV-FU-03',       2.9;
 
     % Igniter
     6.03,   'DART Ign',       1.0;
 
-    % Throttle Down (Mains stay open, Throttles adjust)
+    % Throttle Down
     8.0,    'BV-02-04',       Valves2(1);
     8.0,    'BV-FU-04',       Valves2(2);
 
@@ -207,7 +210,7 @@ AutoSequence = {
     13.0,   'BV-02-04',       Valves1(1);
     13.0,   'BV-FU-04',       Valves1(2);
     
-    % Shutdown (Close both Mains and Throttles)
+    % Shutdown
     16.0,   'BV-02-03',       0.0;
     16.0,   'BV-FU-03',       0.0;
     16.0,   'BV-02-04',       0.0;
@@ -215,10 +218,10 @@ AutoSequence = {
     16.3,   'DART Ign',       0.0;
 
     % All 4 Purges On
-    16.07,  'SV-N2-05',       0.5;
-    16.07,  'SV-N2-06',       0.5;
-    16.07,  'SV-N2-07',       0.5;
-    16.07,  'SV-N2-08',       0.5;
+    16.07,  'SV-N2-05',       0.2;
+    16.07,  'SV-N2-06',       0.2;
+    16.07,  'SV-N2-07',       0.2;
+    16.07,  'SV-N2-08',       0.2;
     
     % Purges and Press shutdown
     17.0,   'SV-N2-05',       0.0;
