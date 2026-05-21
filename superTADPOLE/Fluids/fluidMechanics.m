@@ -17,7 +17,7 @@ function linear_system = fluidMechanics(t,y,u, constantsSTADPOLE)
     % y(5)' = time rate of fuel pressure [Pa/s]
 
 
-    a_t= constantsSTADPOLE.a_t ; % [m^2], throat area
+    a_t = constantsSTADPOLE.a_t ; % [m^2], throat area
     
     dens_o = constantsSTADPOLE.dens_o; % [kg/m^3], liquid oxygen density, at 90 K and 1 atm
     dens_f = constantsSTADPOLE.dens_f ; % [kg/m^3], fuel density, at 293 K and 1 atm

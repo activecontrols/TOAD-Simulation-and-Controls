@@ -12,6 +12,15 @@ constantsSTADPOLE.a_i_f = 2.60064441031368e-5; % [m^2] area injector fuel
 constantsSTADPOLE.r = 442.234043; % [J/kg-K], specific gas constant of exhaust (molecular weight 18.8 g/mol)
 constantsSTADPOLE.c_star = 1750; % [m/s] characteristic velocity
 constantsSTADPOLE.OF_target = 1;
+
+% oxygen and fuel circuit constants (temporary until i get injector
+% pressures)
+
+constantsSTADPOLE.d_coeff_ox = 0.65; % [unitless], Random value just to get the code to run
+constantsSTADPOLE.d_coeff_fu = 0.65; % [unitless], Random value just to get the code to run
+constantsSTADPOLE.o_area_ox = 5E-05; % [m^2], Random value just to get the code to run
+constantsSTADPOLE.o_area_fu = 5E-05; % [m^2], Random value just to get the code to run
+
 % constantsSTADPOLE.OF_engine = 1.2; calculate it in the engine with mass
 % of ox over mass of fuel
 STADPOLE = Simulink.Bus.createObject(constantsSTADPOLE);
