@@ -18,8 +18,8 @@ constantsSTADPOLE.OF_target = 1.2;
 % oxygen and fuel circuit constants (temporary until i get injector
 % pressures)
 
-constantsSTADPOLE.d_coeff_ox = 0.65; % [unitless], Random value just to get the code to run
-constantsSTADPOLE.d_coeff_fu = 0.65; % [unitless], Random value just to get the code to run
+constantsSTADPOLE.d_coeff_ox = 0.445; % [unitless], Random value just to get the code to run
+constantsSTADPOLE.d_coeff_fu = 0.7; % [unitless], Random value just to get the code to run
 constantsSTADPOLE.o_area_ox = 5E-05; % [m^2], Random value just to get the code to run
 constantsSTADPOLE.o_area_fu = 5E-05; % [m^2], Random value just to get the code to run
 

@@ -19,17 +19,16 @@ function valve_coeff_fu_cmd = fuelCircuit(chamber_pressure_m, injector_pressure_
     of_ratio = constantsSTADPOLE.OF_target; % [unitless]
     rho_ox = constantsSTADPOLE.dens_o; % [kg/m^3]
     rho_fu = constantsSTADPOLE.dens_f; % [kg/m^3]
-    discharge_coeff_ox = 0.65; % [unitless],  -------------Random value just to get the code to run
-    discharge_coeff_fu = 0.65; % [unitless],  -------------Random value just to get the code to run
-    orifice_area_ox = 5E-05; % [m^2],  -------------Random value just to get the code to run
-    orifice_area_fu = 5E-05; % [m^2],  -------------Random value just to get the code to run
+    discharge_coeff_ox = constantsSTADPOLE.d_coeff_ox; % [unitless],  -------------Random value just to get the code to run
+    discharge_coeff_fu = constantsSTADPOLE.d_coeff_fu; % [unitless],  -------------Random value just to get the code to run
+    orifice_area_ox = constantsSTADPOLE.a_i_o; % [m^2],  -------------Random value just to get the code to run
+    orifice_area_fu = constantsSTADPOLE.a_i_f; % [m^2],  -------------Random value just to get the code to run
     
     % 150 psi at max thrust, quarter at 50%
-    friction_pressure_drop_fu = 1E06 ; % [Pa],  -------------Random value just to get the code to run
     rho_water = constantsSTADPOLE.dens_w; % [kg/m^3]
     
     % Feedback trim variables
-    k_fu = 4E-11; % [unitless], integral gain for fuel trim,  -------------Random value just to get the code to run
+    k_fu = 0 * 4E-11; % [unitless], integral gain for fuel trim,  -------------Random value just to get the code to run
     time_step = 0.001; % [s], based on loop time,  -------------Random value just to get the code to run
 
     persistent integral_error_fu
@@ -45,6 +44,7 @@ function valve_coeff_fu_cmd = fuelCircuit(chamber_pressure_m, injector_pressure_
     massflow_fu_cmd = massflow_ox_m / of_ratio; % [kg/s]
     injector_pressure_fu_cmd = chamber_pressure_m + (massflow_fu_cmd ^ 2) / (2 * rho_fu * (discharge_coeff_fu * orifice_area_fu) ^ 2); % [Pa]
     % Can cause imaginary values
+    friction_pressure_drop_fu = massflow_fu_cmd^2 * 200;
     valve_coeff_fu_cmd = massflow_fu_cmd *  sqrt(max(1 / (rho_fu * rho_water * (tank_pressure_fu_m - friction_pressure_drop_fu - injector_pressure_fu_cmd)), 0)); % [m^3.5/kg^0.5]
     
     % Feedback trim equations
