@@ -29,8 +29,8 @@ function valve_coeff_fu_cmd = fuelCircuit(chamber_pressure_m, injector_pressure_
     rho_water = constantsSTADPOLE.dens_w; % [kg/m^3]
     
     % Feedback trim variables
-    k_fu = 0;%1E-10; % [unitless], integral gain for fuel trim,  -------------Random value just to get the code to run
-    time_step = 0.01; % [s], based on loop time,  -------------Random value just to get the code to run
+    k_fu = 4E-11; % [unitless], integral gain for fuel trim,  -------------Random value just to get the code to run
+    time_step = 0.001; % [s], based on loop time,  -------------Random value just to get the code to run
 
     persistent integral_error_fu
    
@@ -39,18 +39,17 @@ function valve_coeff_fu_cmd = fuelCircuit(chamber_pressure_m, injector_pressure_
     end
 
     % Valve coefficient equations
-    chamber_pressure_m
-    delta_p_injector_ox_m = injector_pressure_ox_m - chamber_pressure_m % [Pa]
+    delta_p_injector_ox_m = injector_pressure_ox_m - chamber_pressure_m; % [Pa]
     term_1 = sqrt(2 * delta_p_injector_ox_m * rho_ox); % [kg/m^2-s]
     massflow_ox_m = discharge_coeff_ox * orifice_area_ox * term_1; % [kg/s]
-    massflow_fu_cmd = massflow_ox_m / of_ratio % [kg/s]
-    injector_pressure_fu_cmd = chamber_pressure_m + (massflow_fu_cmd ^ 2) / (2 * rho_fu * (discharge_coeff_fu * orifice_area_fu) ^ 2) % [Pa]
+    massflow_fu_cmd = massflow_ox_m / of_ratio; % [kg/s]
+    injector_pressure_fu_cmd = chamber_pressure_m + (massflow_fu_cmd ^ 2) / (2 * rho_fu * (discharge_coeff_fu * orifice_area_fu) ^ 2); % [Pa]
     % Can cause imaginary values
-    valve_coeff_fu_cmd = massflow_fu_cmd *  sqrt(1 / (rho_fu * rho_water * (tank_pressure_fu_m - friction_pressure_drop_fu - injector_pressure_fu_cmd))); % [m^3.5/kg^0.5]
+    valve_coeff_fu_cmd = massflow_fu_cmd *  sqrt(max(1 / (rho_fu * rho_water * (tank_pressure_fu_m - friction_pressure_drop_fu - injector_pressure_fu_cmd)), 0)); % [m^3.5/kg^0.5]
     
     % Feedback trim equations
-    error_fu = injector_pressure_fu_cmd - injector_pressure_fu_m % [Pa]
+    error_fu = injector_pressure_fu_cmd - injector_pressure_fu_m; % [Pa]
     integral_error_fu = integral_error_fu + error_fu * time_step;
     trim_fu = k_fu * integral_error_fu;
-    valve_coeff_fu_cmd = 0.3;%valve_coeff_fu_cmd + trim_fu % [m^3.5/kg^0.5]
+    valve_coeff_fu_cmd = valve_coeff_fu_cmd + trim_fu; % [m^3.5/kg^0.5]
 
