@@ -1,7 +1,10 @@
 clear slBus1
+addpath('Fluids\');
+addpath('Thrust\');
+addpath('Valves\');
 
 % fluid mechanics conditions
-constantsSTADPOLE.init_cond = [0; 0; 1e5; 1e5; 1e5]; % initial conditions for fluid mechanics
+constantsSTADPOLE.init_cond = [1e-6; 1e-6; 1e5; 1e5; 1e5]; % initial conditions for fluid mechanics
 constantsSTADPOLE.c_f = 1.1; % thrust coefficient
 constantsSTADPOLE.a_t = 1.07 * 1e-3; % [m^2], throat area
 

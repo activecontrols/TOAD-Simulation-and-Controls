@@ -38,13 +38,13 @@ function valve_coeff_fu_cmd = fuelCircuit(chamber_pressure_m, injector_pressure_
     end
 
     % Valve coefficient equations
-    delta_p_injector_ox_m = injector_pressure_ox_m - chamber_pressure_m; % [Pa]
+    delta_p_injector_ox_m = max(injector_pressure_ox_m - chamber_pressure_m, 0); % [Pa]
     term_1 = sqrt(2 * delta_p_injector_ox_m * rho_ox); % [kg/m^2-s]
     massflow_ox_m = discharge_coeff_ox * orifice_area_ox * term_1; % [kg/s]
     massflow_fu_cmd = massflow_ox_m / of_ratio; % [kg/s]
     injector_pressure_fu_cmd = chamber_pressure_m + (massflow_fu_cmd ^ 2) / (2 * rho_fu * (discharge_coeff_fu * orifice_area_fu) ^ 2); % [Pa]
     % Can cause imaginary values
-    friction_pressure_drop_fu = massflow_fu_cmd^2 * 200;
+    friction_pressure_drop_fu = massflow_fu_cmd^2 * 2082581.1;
     valve_coeff_fu_cmd = massflow_fu_cmd *  sqrt(max(1 / (rho_fu * rho_water * (tank_pressure_fu_m - friction_pressure_drop_fu - injector_pressure_fu_cmd)), 0)); % [m^3.5/kg^0.5]
     
     % Feedback trim equations
