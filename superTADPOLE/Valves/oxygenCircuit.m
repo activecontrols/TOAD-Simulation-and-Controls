@@ -47,5 +47,5 @@ function valve_coeff_ox_cmd = oxygenCircuit(thrust_cmd, chamber_pressure_m, tank
     error_ox = chamber_pressure_cmd - chamber_pressure_m; % [Pa]
     integral_error_ox = integral_error_ox + error_ox * time_step;
     trim_ox = k_ox * integral_error_ox;
-    valve_coeff_ox_cmd = valve_coeff_ox_cmd + trim_ox; % [m^3.5/kg^0.5]
+    % valve_coeff_ox_cmd = valve_coeff_ox_cmd + trim_ox; % [m^3.5/kg^0.5]
 
