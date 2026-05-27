@@ -18,28 +18,18 @@ StartP = 500; %P_atm;
 
 %% Nodes
 % ID Map:
-% 1: TK-N2 (COPV)
-% 2: Press Manifold (Post-Iso)
-% 3: TK-O2-01 (Tank LOX)
-% 4: TK-FU-01 (Tank IPA)
-% 5: Pre Main OX 
-% 6: Pre Main FU 
-% 7: Inter OX (Between Main 03 and Throttle 04)
-% 8: Inter FU (Between Main 03 and Throttle 04)
-% 9: Post Throttle OX 
-% 10: Post Throttle FU 
-% 11: OX Manifold
-% 12: FU Manifold
-% 13: SKIPPER (Chamber)
-% 14: Atmosphere
-% 15: Virtual (Igniter Node)
-% 16: Purge Manifold (Pre-Iso, Post-Regulator)
+% 1: TK-N2 (COPV)         2: Press Manifold       3: TK-O2-01 (Tank LOX)
+% 4: TK-FU-01 (Tank IPA)  5: Pre Main OX          6: Pre Main FU
+% 7: Inter OX             8: Inter FU             9: Post Throttle OX
+% 10: Post Throttle FU    11: OX Manifold         12: FU Manifold
+% 13: SKIPPER (Chamber)   14: Atmosphere          15: Virtual (Igniter Link Node)
+% 16: Purge Manifold      17: DART Chamber (New Physical Node)
 
 % Constructor: Nodes(name, ID, Fixed, P0_psi, V_m3, Y0, LinksIN, LinksOUT, isCombustor)
 % Source & Pressurization
     Node(1)  = Nodes('TK-N2', 1, 0, 4500, 0.036, [0 0 1], [], 1, false, 'Tank');
-    Node(16) = Nodes('Purge Manifold', 16, 0, 550, 1e-4, [0 0 1], 1, [20 15 16 17 18], false);
-    Node(2)  = Nodes('Press Manifold', 2, 0, P_atm, 1e-4, [0 0 1], 20, [2 3], false);
+    Node(16) = Nodes('Purge Manifold', 16, 0, 550, 1e-3, [0 0 1], 1, [20 15 16], false);
+    Node(2)  = Nodes('Press Manifold', 2, 0, P_atm, 1e-3, [0 0 1], 20, [2 3], false);
 % Tanks
     Node(3)  = Nodes('TK-O2-01', 3, 0, StartP, TankVolOX, Y0_OX, 2, 5, false, 'Tank');
     Node(4)  = Nodes('TK-FU-01', 4, 0, StartP, TankVolFU, Y0_FU, 2, 6, false, 'Tank');
@@ -49,44 +39,45 @@ StartP = 500; %P_atm;
 % Chill-in
     Node(3).Temp = 90;
     Node(5).Temp = 90;
-% Inter Lines (Between 03 and 04)
-    Node(7)  = Nodes('Inter OX', 7, 0, P_atm, 1e-5, [0 0 1], 5, 9, false);
-    Node(8)  = Nodes('Inter FU', 8, 0, P_atm, 1e-5, [0 0 1], 6, 10, false);
+% Inter Lines (Split flow paths directly into Throttles and DART Solenoids)
+    Node(7)  = Nodes('Inter OX', 7, 0, P_atm, 3e-5, [0 0 1], 5, [9 17], false);
+    Node(8)  = Nodes('Inter FU', 8, 0, P_atm, 3e-5, [0 0 1], 6, [10 18], false);
 % Post-Throttle Lines
     Node(9)  = Nodes('Post Throttle OX', 9, 0, P_atm, 1e-5, [0 0 1], 7, 11, false);
     Node(10) = Nodes('Post Throttle FU', 10, 0, P_atm, 1e-5, [0 0 1], 8, 12, false);
 % Manifolds
-    Node(11) = Nodes('OX Manifold', 11, 0, P_atm, 2e-5, [0 0 1], 9, 13, false);
+    Node(11) = Nodes('OX Manifold', 11, 0, P_atm, 1e-5, [0 0 1], 9, 13, false);
     Node(12) = Nodes('FU Manifold', 12, 0, P_atm, 2e-5, [0 0 1], 10, 13, false);
-% TADPOLE
-    Node(13) = Nodes('SKIPPER', 13, 0, P_atm, 0.00121, [0 0 1], [11 12], 14, true);
+% TADPOLE Main Chamber & DART Torch Chamber
+    Node(13) = Nodes('SKIPPER', 13, 0, P_atm, 0.00121, [0 0 1], [11 12 21], 14, true);
+    Node(17) = Nodes('DART Chamber', 17, 0, P_atm, 2.7e-5, [0 0 1], [17 18], 21, true);
     System.Combustion.Tau = 0.006;  
-% Atmosphere & Virtual
+% Atmosphere & Spark Mapping Node
     Node(14) = Nodes('Atmosphere', 14, 1, P_atm, 1, [0 0 1], 13, [], false);
-    Node(15) = Nodes('Virtual', 15, 1, 0, 1, [0 0 1], [], [], false);
+    Node(15) = Nodes('Virtual', 15, 1, 0, 1, [0 0 1], 19, [], false);
 
 %% Links
 % Pressurization
-    Link(1) = ValveLink('REG-873D', 'Regulator', 1, 1, 16, 0.8, 560, 50, 0.003);
+    Link(1)  = ValveLink('REG-873D', 'Regulator', 1, 1, 16, 0.7, 560, 50, 0.003);
     Link(20) = ValveLink('BV-N2-02', 'Throttle', 20, 16, 2, 2.0);
-    Link(2) = PipeLink('Press Line OX', 2, 2, 3, 0.5, 5e-4, 50); % Manifold to Tank
-    Link(3) = PipeLink('Press Line FU', 3, 2, 4, 0.5, 5e-4, 50); % Manifold to Tank
+    Link(2)  = ValveLink('Press OX', 'Check', 2, 2, 3, 25);
+    Link(3)  = ValveLink('Press FU', 'Check', 3, 2, 4, 25);
     
 % Feed Lines to Mains
-    Link(4) = PipeLink('OX Line 1', 4, 3, 5, 0.4, 5e-4, 300);
-    Link(5) = PipeLink('FU Line 1', 5, 4, 6, 0.4, 5e-4, 300);
+    Link(4)  = PipeLink('OX Line 1', 4, 3, 5, 0.4, 5e-4, 20);
+    Link(5)  = PipeLink('FU Line 1', 5, 4, 6, 0.4, 5e-4, 20);
     
-% Main Valves (03) - Modeled as dynamic Checks
-    Link(6) = ValveLink('BV-02-03', 'Check', 6, 5, 7, 2.9);
-    Link(7) = ValveLink('BV-FU-03', 'Check', 7, 6, 8, 2.9);
+% Main Valves (03)
+    Link(6)  = ValveLink('BV-02-03', 'Solenoid', 6, 5, 7, 2.9);
+    Link(7)  = ValveLink('BV-FU-03', 'Solenoid', 7, 6, 8, 2.9);
     
-% Throttle Valves (04) - Flow control stage
-    Link(8) = ValveLink('BV-02-04', 'Throttle', 8, 7, 9, 2.9);
-    Link(9) = ValveLink('BV-FU-04', 'Throttle', 9, 8, 10, 2.9);
+% Throttle Valves (04)
+    Link(8)  = ValveLink('BV-02-04', 'Throttle', 8, 7, 9, 2.9);
+    Link(9)  = ValveLink('BV-FU-04', 'Throttle', 9, 8, 10, 2.9);
     
 % Injector Inertances
-    Link(10) = PipeLink('OX Inj Line', 10, 9, 11, 0.3, 5e-4, 300);
-    Link(11) = PipeLink('FU Inj Line', 11, 10, 12, 0.3, 5e-4, 300);
+    Link(10) = PipeLink('OX Inj Line', 10, 9, 11, 0.01, 5e-4, 20);
+    Link(11) = PipeLink('FU Inj Line', 11, 10, 12, 0.01, 5e-4, 20);
     
 % Injectors & Nozzle
     Link(12) = ValveLink('Inj OX', 'Orifice', 12, 11, 13, 0.45, 3.146e-5);
@@ -94,13 +85,19 @@ StartP = 500; %P_atm;
     Link(14) = ValveLink('Nozzle', 'Orifice', 14, 13, 14, 0.79, 0.0011);
     
 % N2 Purges
-    Link(15) = ValveLink('SV-N2-05', 'Check', 15, 16, 9, 0);  
-    Link(16) = ValveLink('SV-N2-06', 'Check', 16, 16, 10, 0);
-    Link(17) = ValveLink('SV-N2-07', 'Check', 17, 16, 11, 0); 
-    Link(18) = ValveLink('SV-N2-08', 'Check', 18, 16, 12, 0);
+    Link(15) = ValveLink('SV-N2-05', 'Solenoid', 15, 16, 9,  0);  
+    Link(16) = ValveLink('SV-N2-06', 'Solenoid', 16, 16, 10, 0);
     
-% Igniter Link
-    Link(19) = ValveLink('DART Ign', 'Signal', 19, 15, 15, 0);
+% DART Runs
+    Link(17) = ValveLink('SV-DART-OX', 'Solenoid', 17, 7, 17, 0); % Matched to 0.063" Orifice Area
+    Link(18) = ValveLink('SV-DART-FU', 'Solenoid', 18, 8, 17, 0); % Matched to 0.029" Orifice Area
+    Link(22) = ValveLink('SV-N2-07', 'Solenoid', 22, 16, 17, 0);  % Igniter Purge
+    
+% Spark Plug Command
+    Link(19) = ValveLink('Spark', 'Signal', 19, 15, 15, 0);
+
+% DART Flame Tube Nozzle Link
+    Link(21) = ValveLink('DART Nozzle', 'Orifice', 21, 17, 13, 1.0, 2.62e-5);
 
 %% Pre-processing (subdividing into Dynamic and Algebraic Links)
 isDynamic = strcmp({Link.Type}, 'Pipe');
@@ -131,7 +128,7 @@ end
 System.LinkMap = LinkMap;
 
 % Pre-cache Igniter ID and combustor proprieties
-System.Combustion.IgniterID = find(strcmp({System.Links.Algebraic.Name}, 'DART Ign'), 1);
+System.Combustion.IgniterID = find(strcmp({System.Links.Algebraic.Name}, 'Spark'), 1);
 System.Combustion.CEA_OF = [0.8, 0.9, 1.0, 1.1, 1.2, 1.3, 1.4, 1.5, 1.6, 1.7, ...
               1.8, 1.9, 2.0, 2.1, 2.2, 2.3, 2.4, 2.5, 2.6, 2.7, ...
               2.8, 2.9, 3.0, 3.1, 3.2, 3.3];
@@ -170,65 +167,62 @@ h_mol_FU  = 161.2 * (T - 180.0) + (0.2 / 2.0) * ((T - 298.15).^2 - (180.0 - 298.
 System.Constants.Cp_FU_Table = Cp_mol_FU / MW_FU;
 System.Constants.h_FU_Table  = h_mol_FU / MW_FU;
 
-%% Valve Manager Tests
+%% Valve Manager Configuration
 Scheduler = ValveManager(System);
 Scheduler.SetTau('BV-N2-02', 0.05);
-Scheduler.SetTau('BV-02-03', 0.05); % Mains open fast
+Scheduler.SetTau('BV-02-03', 0.05); 
 Scheduler.SetTau('BV-FU-03', 0.05);
-Scheduler.SetTau('BV-02-04', 0.07); % Throttles articulate slightly slower
+Scheduler.SetTau('BV-02-04', 0.07); 
 Scheduler.SetTau('BV-FU-04', 0.07);
-Scheduler.SetTau('SV-N2-05', 0.05); % Post OX Purge
-Scheduler.SetTau('SV-N2-06', 0.05); % Post FU Purge
-Scheduler.SetTau('SV-N2-07', 0.05); % Ign/Man OX Purge
-Scheduler.SetTau('SV-N2-08', 0.05); % Ign/Man FU Purge
-Scheduler.SetTau('DART Ign', 0.05);
+Scheduler.SetTau('SV-N2-05', 0.05); 
+Scheduler.SetTau('SV-N2-06', 0.05); 
+Scheduler.SetTau('SV-N2-07', 0.1); 
 
-% Test Autosequence for System
+% Initialize Time Constraints for Torch Run Valves
+Scheduler.SetTau('SV-DART-OX', 0.04); 
+Scheduler.SetTau('SV-DART-FU', 0.04);
+Scheduler.SetTau('Spark', 0.001);
+
+% Test Autosequence Matrix Mapping
 [Valves1(1), Valves1(2)] = ValveController(250, 1.2, 550);
-[Valves2(1), Valves2(2)] = ValveController(85, 1.2, 550);
 
 AutoSequence = {
-    % Pressurize System (Open Isolation Valve)
+    % Pressurize Main Run Lines
     0.0,    'BV-N2-02',       2.0; 
 
-    % Open Throttles to set angle
-    3.0,    'BV-02-04',       Valves1(1);
-    3.0,    'BV-FU-04',       Valves1(2);
+    % Open Mains
+    3.0,    'BV-02-03',       2.9;
+    3.0,    'BV-FU-03',       2.9;
     
-    % Startup
-    6.0,    'BV-02-03',       2.9;
-    6.0,    'BV-FU-03',       2.9;
+   % Spark
+    3.8,    'Spark',       1.0;
+    4.1,   'SV-DART-OX',     0.014;
+    4.1,   'SV-DART-FU',     0.0195;
 
-    % Igniter
-    6.03,   'DART Ign',       1.0;
-
-    % Throttle Down
-    8.0,    'BV-02-04',       Valves2(1);
-    8.0,    'BV-FU-04',       Valves2(2);
-
-    % Throttle Up
-    13.0,   'BV-02-04',       Valves1(1);
-    13.0,   'BV-FU-04',       Valves1(2);
+    % DART shutdown
+    4.50,   'Spark',          0.0;
+    5.00,   'SV-DART-OX',     0.0;
+    5.00,   'SV-DART-FU',     0.0;
     
-    % Shutdown
-    16.0,   'BV-02-03',       0.0;
-    16.0,   'BV-FU-03',       0.0;
-    16.0,   'BV-02-04',       0.0;
-    16.0,   'BV-FU-04',       0.0;
-    16.3,   'DART Ign',       0.0;
-
-    % All 4 Purges On
-    16.07,  'SV-N2-05',       0.2;
-    16.07,  'SV-N2-06',       0.2;
-    16.07,  'SV-N2-07',       0.2;
-    16.07,  'SV-N2-08',       0.2;
+    % Main Chamber Startup
+    4.2,    'BV-02-04',       Valves1(1);
+    4.2,    'BV-FU-04',       Valves1(2);
     
-    % Purges and Press shutdown
-    17.0,   'SV-N2-05',       0.0;
-    17.0,   'SV-N2-06',       0.0;
-    17.0,   'SV-N2-07',       0.0;
-    17.0,   'SV-N2-08',       0.0;
-    17.0,   'BV-N2-02',       0.0;
+    % Nominal Engine Cutoff Sequence
+    6.0,    'BV-02-03',       0.0;
+    6.0,    'BV-FU-03',       0.0;
+    6.0,    'BV-02-04',       0.0;
+    6.0,    'BV-FU-04',       0.0;
+
+    % System Safing Nitrogen Purges
+    6.07,   'SV-N2-05',       0.2;
+    6.07,   'SV-N2-06',       0.2;
+    6.07,   'SV-N2-07',       0.1;
+    10.0,   'SV-N2-05',       0.0;
+    10.0,   'SV-N2-06',       0.0;
+    10.0,   'BV-N2-02',       0.0;
+    10.0,   'SV-N2-07',       0.0;
 };
 
 Scheduler.LoadSequence(AutoSequence);
+

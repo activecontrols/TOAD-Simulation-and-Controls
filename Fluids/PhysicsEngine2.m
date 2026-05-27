@@ -6,11 +6,10 @@ function [XDOT, Massflow] = PhysicsEngine2(X, System, U)
     YIdx_Start = PLength + MDLength + 1;
 
     % Constants 
-    Beta_Liq = 2e7;
+    Beta_Liq = 1e8;
     RhoArray = System.Constants.RhoArray;
     NumSpecies = length(RhoArray);
     LinkMap = System.LinkMap;
-    Rho_Default_Liq = (RhoArray(1) + RhoArray(2)) / 2;
     HIdx_Start = YIdx_Start + (PLength * NumSpecies);
 
     % Pre-allocation
@@ -21,9 +20,8 @@ function [XDOT, Massflow] = PhysicsEngine2(X, System, U)
     Nodes      = System.Nodes;
     V_Vec      = [Nodes.V]';      
     IsComb_Vec = [Nodes.IsCombustor]';
-    Type_Cell  = {Nodes.Type}';
-    IsTank_Vec = strcmp(Type_Cell, 'Tank');
-    Combustor  = any(IsComb_Vec);
+    IsTank_Vec = [Nodes.IsTank]';
+    IgniterIdx = System.Combustion.IgniterID;
 
     % Process Pressures
     P_Raw    = X(1:PLength);
@@ -34,31 +32,6 @@ function [XDOT, Massflow] = PhysicsEngine2(X, System, U)
     Y_Matrix = reshape(Y_All, [NumSpecies, PLength])';
     Y_Sum    = sum(Y_Matrix, 2);
     Y_Matrix = Y_Matrix ./ (Y_Sum + 1e-9);
-
-    %% Combustor Pilot Logic (Prevent Algebraic Loops)
-    Current_OF = Y_Matrix(:, 1) ./ (Y_Matrix(:, 2) + 1e-9);
-    
-    if Combustor
-        % Break the algebraic loop by estimating instantaneous OF ratio from current pressures
-        dP_OX = max(Pressure(11) - Pressure(13), 0);
-        dP_FU = max(Pressure(12) - Pressure(13), 0);
-        
-        AlgLinks = System.Links.Algebraic;
-        L_OX = AlgLinks(find([AlgLinks.ID] == 12, 1)); % Inj OX ID = 12
-        L_FU = AlgLinks(find([AlgLinks.ID] == 13, 1)); % Inj FU ID = 13
-        
-        Est_OX = L_OX.Cv * L_OX.A * sqrt(2 * 1141 * dP_OX);
-        Est_FU = L_FU.Cv * L_FU.A * sqrt(2 * 786 * dP_FU);
-        
-        PilotMass = 1e-3; % 1 gram/s stability baseline
-        Current_OF(IsComb_Vec) = (Est_OX + PilotMass) ./ (Est_FU + PilotMass);
-    end
-    
-    IgniterMask = 1;
-    IgniterIdx = System.Combustion.IgniterID;
-    if ~isempty(IgniterIdx)
-        IgniterMask = U(IgniterIdx);
-    end
 
     %% Enthalpy Extraction & Analytical Temperature (New Architecture)
     % Extract current Enthalpies
@@ -82,7 +55,7 @@ function [XDOT, Massflow] = PhysicsEngine2(X, System, U)
     T_Vec = (-A_mix + sqrt(A_mix.^2 + 2 .* B_mix .* H_Vec)) ./ (B_mix + 1e-9);
 
     % Cap extreme temperatures to prevent solver divergence
-    T_Vec = max(min(T_Vec, 3800), 70); 
+    % T_Vec = max(min(T_Vec, 3800), 70); 
 
     % Fetch actual properties at true node temperatures (Fixed warnings)
     [~, ~, rho_ox, ~, ~] = LOX_Data(T_Vec, Pressure);
@@ -92,10 +65,7 @@ function [XDOT, Massflow] = PhysicsEngine2(X, System, U)
     % Rigorous Inverse Density Weighting (Natively handles multiphase blending)
     InvRhoMix = (Y_OX ./ rho_ox) + (Y_FU ./ rho_fu) + (Y_N2 ./ rho_n2);
     RhoNode   = 1 ./ (InvRhoMix + 1e-12);
-
     R_Vec       = 296.8 * ones(PLength, 1); 
-    Rho_Gas_Vec = rho_n2;
-    Rho_Liq_Vec = 1 ./ ((Y_OX ./ rho_ox) + (Y_FU ./ rho_fu) + 1e-12);
     Alpha_Vec   = (Y_N2 .* RhoNode) ./ (rho_n2 + 1e-12);
 
     %% Dynamic Links (Vectorized)
@@ -132,7 +102,7 @@ function [XDOT, Massflow] = PhysicsEngine2(X, System, U)
         Rho_Mix_Vec = 1 ./ sum(Y_Strat ./ (Rho_Mat_Links + 1e-9), 2);
 
         DeltaP_Vec = X(Up_Vec) - X(Down_Vec);
-        Laminar_Damping = 0.1; 
+        Laminar_Damping = 0.02; 
         FricTerm_Vec = FlowState_Vec .* sqrt(FlowState_Vec.^2 + 1e-6) + Laminar_Damping * FlowState_Vec;
 
         Rho_Fric = max(Rho_Mix_Vec, 1.0);
@@ -152,18 +122,18 @@ function [XDOT, Massflow] = PhysicsEngine2(X, System, U)
         Cv_Vec   = [AlgLinks.Cv]';
         A_Vec    = [AlgLinks.A]';
 
-        Type_Cell  = {AlgLinks.Type};
-        isThrottle = strcmp(Type_Cell, 'Throttle')';
-        isCheck = strcmp(Type_Cell, 'Check')';
-        isSignal = strcmp(Type_Cell, 'Signal')';
-        isRegulator = strcmp(Type_Cell, 'Regulator')';
-        isActuated = (isCheck | isThrottle) | isSignal;
+        isThrottle  = [AlgLinks.IsThrottle]';
+        isCheck     = [AlgLinks.IsCheck]';
+        isSV        = [AlgLinks.IsSV]';
+        isSignal    = [AlgLinks.IsSignal]';
+        isRegulator = [AlgLinks.IsRegulator]';
+        isActuated = (isSV | isThrottle) | isSignal;
         
         if ~isempty(U)
             Cv_Vec(isActuated) = U(isActuated); 
         end
         
-        isCvBased = isActuated | isRegulator; 
+        isCvBased = isActuated | isRegulator | isCheck; 
         
         % Reg integration
         if any(isRegulator)
@@ -232,7 +202,7 @@ function [XDOT, Massflow] = PhysicsEngine2(X, System, U)
         RawMassflow = Coeff_Vec .* Cv_Vec .* DensityTerm .* DPSoft .* SignTerm;
         
         % Both Check valves and Regulators act as one-way valves
-        Forward_Flow_Req = isCheck | isRegulator; 
+        Forward_Flow_Req = isCheck | isRegulator | isSV; 
         Check_Open_Factor = 0.5 + 0.5 * tanh(50 * DeltaP_Vec);
         CheckMask = (~Forward_Flow_Req) + (Forward_Flow_Req .* Check_Open_Factor);
         RawMassflow = RawMassflow .* CheckMask;
@@ -249,121 +219,139 @@ function [XDOT, Massflow] = PhysicsEngine2(X, System, U)
     % Upstream candidates
     Y_Up_Raw   = Y_Matrix(Link_Up, :);
     LiqSum_Up  = sum(Y_Up_Raw(:, 1:2), 2);
-    isLiquid_Up = 0.5 + 0.5 * tanh(1e2 * (LiqSum_Up - 0.05));
+    isLiquid_Up = 0.5 + 0.5 * tanh(1e3 * (LiqSum_Up - 0.05));
     isLiquid_Up = isLiquid_Up .* IsTank_Vec(Link_Up); 
     Y_Up_Strat = Y_Up_Raw;
     Y_Up_Strat(:, 3) = Y_Up_Strat(:, 3) .* (1 - isLiquid_Up);
-    Y_Up_Strat = Y_Up_Strat ./ (sum(Y_Up_Strat, 2) + 1e-9);
+    Y_Up_Strat = Y_Up_Strat ./ (sum(Y_Up_Strat, 2) + 1e-12);
 
     % Downstream candidates
     Y_Down_Raw   = Y_Matrix(Link_Down, :);
     LiqSum_Down  = sum(Y_Down_Raw(:, 1:2), 2);
-    isLiquid_Down = 0.5 + 0.5 * tanh(1e2 * (LiqSum_Down - 0.05));
+    isLiquid_Down = 0.5 + 0.5 * tanh(1e3 * (LiqSum_Down - 0.05));
     isLiquid_Down = isLiquid_Down .* IsTank_Vec(Link_Down); 
     Y_Down_Strat = Y_Down_Raw;
     Y_Down_Strat(:, 3) = Y_Down_Strat(:, 3) .* (1 - isLiquid_Down);
-    Y_Down_Strat = Y_Down_Strat ./ (sum(Y_Down_Strat, 2) + 1e-9);
+    Y_Down_Strat = Y_Down_Strat ./ (sum(Y_Down_Strat, 2) + 1e-12);
 
     Y_Trans = Y_Up_Strat .* Link_Dir + Y_Down_Strat .* (1 - Link_Dir);
 
     Flux_Total = Link_Flow;
-    Flux_Gas   = Link_Flow .* Y_Trans(:, 3);
-    Flux_Liq   = Link_Flow .* (1 - Y_Trans(:, 3));
     Flux_Spec  = Link_Flow .* Y_Trans;
 
     Net_Total = accumarray(Link_Down, Flux_Total, [PLength, 1]) - accumarray(Link_Up, Flux_Total, [PLength, 1]);
-    Net_Gas   = accumarray(Link_Down, Flux_Gas, [PLength, 1]) - accumarray(Link_Up, Flux_Gas, [PLength, 1]);
-    Net_Liq   = accumarray(Link_Down, Flux_Liq, [PLength, 1]) - accumarray(Link_Up, Flux_Liq, [PLength, 1]);
-
     Net_Spec = zeros(PLength, 3);
     Net_Spec(:,1) = accumarray(Link_Down, Flux_Spec(:,1), [PLength, 1]) - accumarray(Link_Up, Flux_Spec(:,1), [PLength, 1]);
     Net_Spec(:,2) = accumarray(Link_Down, Flux_Spec(:,2), [PLength, 1]) - accumarray(Link_Up, Flux_Spec(:,2), [PLength, 1]);
     Net_Spec(:,3) = accumarray(Link_Down, Flux_Spec(:,3), [PLength, 1]) - accumarray(Link_Up, Flux_Spec(:,3), [PLength, 1]);
 
-    TotalBurn = zeros(PLength, 1);
-    MassNode = V_Vec .* RhoNode;
+    %% State-Driven Chemical Kinetics & Spark Ignition
+    TotalBurn    = zeros(PLength, 1);
+    Q_Combustion = zeros(PLength, 1);
 
-    if Combustor
-        % Extract INSTANTANEOUS mass flows across the injectors natively
-        B_OX = max(Massflow(12), 0);
-        B_FU = max(Massflow(13), 0);
+    % Physical Kinetic Constants
+    T_ign   = 700;         % Auto-ignition temperature threshold [K] (Per NASA pure O2/IPA data)
+    T_trans = 120;         % Hyperbolic tangent transition smoothing width [K]
+    tau_mix = 1e-4;        % Reactant mixing/evaporation time scale constant [s]
+    HeatOfReaction = 6.0e6; % Shared reaction enthalpy [J/kg]
 
-        Y_OX_Local = Y_Matrix(IsComb_Vec, 1);
-        Y_FU_Local = Y_Matrix(IsComb_Vec, 2);
+    % Loop through nodes to calculate emergence parameters
+    for n = 1:PLength
+        if IsComb_Vec(n)
+            
+            Y_OX_local = Y_Matrix(n, 1);
+            Y_FU_local = Y_Matrix(n, 2);
+            local_OF = Y_OX_local / (Y_FU_local + 1e-9);
+            local_OF = max(0.8, min(local_OF, 3.3));
+            T_target = interp1(System.Combustion.CEA_OF, System.Combustion.CEA_Temp, local_OF, 'linear');
+            
+            % Softer Flammability Filter (100 multiplier instead of 1000)
+            % Threshold lowered to 1% to catch the leading edge of the spray
+            Flamm_OX = max(0, min(1, (Y_OX_local - 0.01) * 100));
+            Flamm_FU = max(0, min(1, (Y_FU_local - 0.01) * 100));
+            Flammable = Flamm_OX * Flamm_FU;
 
-        BurnDemand = B_OX + B_FU;
-        ChamberLiquid = (Y_OX_Local + Y_FU_Local) .* MassNode(IsComb_Vec);
-        MaxBurn = ChamberLiquid / 1e-4;
-        Burn_Scale = min(1.0, MaxBurn / (BurnDemand + 1e-8));
-        B_OX = B_OX * Burn_Scale * IgniterMask;
-        B_FU = B_FU * Burn_Scale * IgniterMask;
-        TotalBurn(IsComb_Vec) = B_OX + B_FU;
-
-        Net_Spec(IsComb_Vec, 1) = Net_Spec(IsComb_Vec, 1) - B_OX;
-        Net_Spec(IsComb_Vec, 2) = Net_Spec(IsComb_Vec, 2) - B_FU;
-        Net_Spec(IsComb_Vec, 3) = Net_Spec(IsComb_Vec, 3) + TotalBurn(IsComb_Vec);
-    end
-    
-    Beta_Gas = Pressure; 
-    Alpha_Vec = max(Alpha_Vec, 1e-4); 
-    InvBeta  = (Alpha_Vec ./ Beta_Gas) + ((1 - Alpha_Vec) ./ Beta_Liq);
-    Beta_Eff = 1 ./ (InvBeta + 1e-12);
-
-    dVol_Gas = Net_Gas ./ Rho_Gas_Vec;
-    dVol_Liq = Net_Liq ./ Rho_Liq_Vec;
-    dVol_Tot = dVol_Liq + dVol_Gas;
-    dP_Final = (Beta_Eff ./ V_Vec) .* dVol_Tot;
-
-    if any(IsComb_Vec)
-        V_Gas_Actual = V_Vec(IsComb_Vec) .* Alpha_Vec(IsComb_Vec);
-        V_Gas_Safe   = max(V_Gas_Actual, 0.001 * V_Vec(IsComb_Vec));
-
-        dM_Gas = TotalBurn(IsComb_Vec) + Net_Gas(IsComb_Vec);
-        dP_GasTerm = (R_Vec(IsComb_Vec) .* T_Vec(IsComb_Vec) ./ V_Gas_Safe) .* dM_Gas;
-
-        dM_Liq = Net_Liq(IsComb_Vec) - TotalBurn(IsComb_Vec);
-        dVolLiq = dM_Liq ./ max(Rho_Liq_Vec(IsComb_Vec), 1);
-        dP_Piston = (Pressure(IsComb_Vec) ./ V_Gas_Safe) .* dVolLiq;
-
-        dP_Final(IsComb_Vec) = dP_GasTerm + dP_Piston;
+            f_T = 0.5 + 0.5 * tanh((T_Vec(n) - T_ign) / T_trans);
+            f_T = f_T * (T_Vec(n) > (T_ign - 200)) * Flammable;
+            Mass_Gas_Local = V_Vec(n) * RhoNode(n);
+            B_OX_local = (Y_OX_local * Mass_Gas_Local) / tau_mix * f_T;
+            B_FU_local = (Y_FU_local * Mass_Gas_Local) / tau_mix * f_T;
+            
+            TotalBurn(n) = B_OX_local + B_FU_local;
+            
+            Net_Spec(n, 1) = Net_Spec(n, 1) - B_OX_local;
+            Net_Spec(n, 2) = Net_Spec(n, 2) - B_FU_local;
+            Net_Spec(n, 3) = Net_Spec(n, 3) + TotalBurn(n);
+            
+            HeatOfReaction = 2000 * (T_target - 298);
+            Q_Combustion(n) = TotalBurn(n) * HeatOfReaction;
+        end
     end
 
-    Mass_Node = V_Vec .* RhoNode;
-    dY_Num    = Net_Spec - Net_Total .* Y_Matrix;
-    dY_dt     = dY_Num ./ (Mass_Node + 1e-3);
-
-    Fixed_Vec = [System.Nodes.Fixed]';
-    dP_Final(Fixed_Vec == 1) = 0;
-    dY_dt(Fixed_Vec == 1, :) = 0;
-    % Smoothly dampen negative pressure changes
-    P_Raw = X(1:PLength);
-    Floor_Mask = 0.5 + 0.5 * tanh((P_Raw - 6895) / 1000); 
+    % Inject Physical Spark Plug Arc Energy to DART Node (Node 17)
+    % This acts as the external activation energy driving up local enthalpy
+    if ~isempty(IgniterIdx)
+        Q_Combustion(17) = Q_Combustion(17) + U(IgniterIdx) * 700; 
+    end
     
-    % Allow pressure to rise freely, but clamp pressure drops near zero
-    dP_Final = dP_Final .* Floor_Mask + max(dP_Final, 0) .* (1 - Floor_Mask);
-
     %% Enthalpy Transport & Energy Balance
-    % Upstream Enthalpy Advection
     H_Upstream = H_Vec(Link_Up) .* Link_Dir + H_Vec(Link_Down) .* (1 - Link_Dir);
     Flux_Enthalpy = Link_Flow .* H_Upstream;
     
     Net_Enthalpy = accumarray(Link_Down, Flux_Enthalpy, [PLength, 1]) ...
                  - accumarray(Link_Up, Flux_Enthalpy, [PLength, 1]);
 
-    % Combustion Heat Source Term
-    Q_Combustion = zeros(PLength, 1);
-    if Combustor
-        HeatOfReaction = 6.0e6; 
-        Q_Combustion(IsComb_Vec) = TotalBurn(IsComb_Vec) * HeatOfReaction;
-    end
-
-    % Unsteady Enthalpy ODE: dh/dt = (1/m) * (NetFlux_H + V*dP/dt + Q_comb)
-    % Unsteady Enthalpy ODE: dh/dt = (1/m) * (NetFlux_H - h*dm/dt + V*dP/dt + Q_comb)
+    % Unsteady Enthalpy Advection Residual
     dH_Num = Net_Enthalpy - Net_Total .* H_Vec;
-    dH_dt = (dH_Num + V_Vec .* dP_Final + Q_Combustion) ./ (Mass_Node + 1e-3);
-    dH_dt(Fixed_Vec == 1) = 0;
 
-    % Final State Derivative Assignment
+    %% Unified Coupled Thermodynamics & State Derivatives
+    Mass_Node = V_Vec .* RhoNode;
+
+    % Species Mass Fraction Derivatives
+    dY_Num = Net_Spec - Net_Total .* Y_Matrix;
+    dY_dt  = dY_Num ./ (Mass_Node + 1e-9);
+
+    % Calculate True Component Enthalpies for the Energy Residual
+    h_ox = A_ox .* T_Vec + 0.5 .* B_ox .* T_Vec.^2;
+    h_fu = A_fu .* T_Vec + 0.5 .* B_fu .* T_Vec.^2;
+    h_n2 = A_n2 .* T_Vec + 0.5 .* B_n2 .* T_Vec.^2;
+    H_flux_residual = dY_Num(:,1).*h_ox + dY_Num(:,2).*h_fu + dY_Num(:,3).*h_n2;
+
+    % Net Thermal Energy Source Term (Sigma_T)
+    Sigma_T = dH_Num + Q_Combustion - H_flux_residual;
+
+    % Net Volumetric Rate of Change from Phase Generation and Fluid Flow
+    dVol_dt_net = (Net_Spec(:,1) ./ rho_ox) + (Net_Spec(:,2) ./ rho_fu) + (Net_Spec(:,3) ./ rho_n2);
+
+    % Mixture Frozen Specific Heat Capacity
+    Cp_mix = A_mix + B_mix .* T_Vec;
+
+    % Effective Compliance Matrix (K_eff)
+    K_eff = (1 - Alpha_Vec) ./ Beta_Liq + Alpha_Vec ./ Pressure - (Alpha_Vec ./ (RhoNode .* Cp_mix .* T_Vec + 1e-6));
+    K_eff = max(K_eff, 1e-11); 
+    dP_Final = zeros(PLength, 1);
+    dH_dt    = zeros(PLength, 1);
+
+    % Solve Unified Coupled Pressure Derivative
+    Thermal_Expansion_Term = (Alpha_Vec .* Sigma_T) ./ (RhoNode .* V_Vec .* Cp_mix .* T_Vec + 1e-6);
+    dP_Final = (1 ./ K_eff) .* (Thermal_Expansion_Term + (dVol_dt_net ./ V_Vec));
+
+    % Unsteady Enthalpy Derivative (dh/dt)
+    Mass_Node(17) = Mass_Node(17) + 2e-4;
+    dH_dt = (dH_Num + V_Vec .* dP_Final + Q_Combustion) ./ (Mass_Node + 1e-6);
+
+    %% Boundary Control & Stability Protections
+    Fixed_Vec = [System.Nodes.Fixed]';
+    dP_Final(Fixed_Vec == 1) = 0;
+    dY_dt(Fixed_Vec == 1, :) = 0;
+    dH_dt(Fixed_Vec == 1)    = 0;
+
+    % Smoothly dampen negative pressure changes near zero floor
+    P_Raw = X(1:PLength);
+    Floor_Mask = 0.5 + 0.5 * tanh((P_Raw - 6895) / 1000); 
+    dP_Final = dP_Final .* Floor_Mask + max(dP_Final, 0) .* (1 - Floor_Mask);
+
+    %% Final State Derivative Mapping to Solver
     XDOT(1:PLength) = dP_Final;
     XDOT(YIdx_Start : HIdx_Start-1) = reshape(dY_dt', [], 1);
     XDOT(HIdx_Start : end) = dH_dt;

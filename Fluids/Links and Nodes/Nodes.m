@@ -10,8 +10,7 @@ else
 end
 
 if isCombustor
-    CstarEff = 0.83;
-    Node.Temp = 2666 * CstarEff^2; Node.R = 442; Node.Gamma = 1.207; Node.IsCombustor = true;
+    Node.Temp = 293; Node.R = 442; Node.Gamma = 1.207; Node.IsCombustor = true;
 else
     Node.Temp = 293; Node.R = 296.8; Node.Gamma = 1.2; Node.IsCombustor = false;
 end
