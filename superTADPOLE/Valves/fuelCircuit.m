@@ -28,7 +28,7 @@ function valve_coeff_fu_cmd = fuelCircuit(chamber_pressure_m, injector_pressure_
     rho_water = constantsSTADPOLE.dens_w; % [kg/m^3]
     
     % Feedback trim variables
-    k_fu = 0 * 4E-11; % [unitless], integral gain for fuel trim,  -------------Random value just to get the code to run
+    k_fu = 9E-12; % [unitless], integral gain for fuel trim,  -------------Random value just to get the code to run
     time_step = 0.001; % [s], based on loop time,  -------------Random value just to get the code to run
 
     persistent integral_error_fu
