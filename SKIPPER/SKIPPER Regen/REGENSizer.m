@@ -43,7 +43,7 @@ for i = 1:NumSamples
     AR = Geometries(i, 4:6);
     CW = Geometries(i, 7:8);
     try
-        [Lifespan(i), PressDrop(i)] = SKIPPERRegen(Data, NC, WT, AR, CW, 0);
+        [Lifespan(i), PressDrop(i)] = SKRegen2_ElectricBoogalo(Data, NC, WT, AR, CW, 0);
         if ~isreal(Lifespan(i)) || ~isreal(PressDrop(i))
             error('Complex physics output detected.'); 
         end
@@ -169,7 +169,7 @@ for k = 1:size(FineTuneCWs, 1)
     fprintf('  Evaluating %i local LHS samples... ', NumPhase2_Init);
     for i = 1:NumPhase2_Init
         try
-            [LocalLife(i), LocalPress(i)] = SKIPPERRegen(Data, LocalGeom(i, 9), LocalGeom(i, 1:3), LocalGeom(i, 4:6), FixedCW, 0);
+            [LocalLife(i), LocalPress(i)] = SKRegen2_ElectricBoogalo(Data, LocalGeom(i, 9), LocalGeom(i, 1:3), LocalGeom(i, 4:6), FixedCW, 0);
         catch
             LocalLife(i) = NaN; LocalPress(i) = NaN;
         end
@@ -290,7 +290,7 @@ title('Constraint Tracking: Coolant Pressure Drop');
 xlabel('Evaluation Number');
 ylabel('Pressure Drop [psi]');
 grid on; ylim([0, max(MaxDP + 50, prctile(PlotPress(~CrashIdx), 85))]);
-%SKIPPERRegen(Data, ChampionGeom(9), ChampionGeom(1:3), ChampionGeom(4:6), ChampionGeom(7:8), 1);
+%SKRegen2_ElectricBoogalo(Data, ChampionGeom(9), ChampionGeom(1:3), ChampionGeom(4:6), ChampionGeom(7:8), 1);
 %% Local Functions
 function [Geometries, Lifespan, PressDrop, logT_L, logT_P] = BOSearch(NumIter, Geometries, Lifespan, PressDrop, SearchLB, SearchUB, GlobalLB, GlobalUB, Data, MaxDP, FixedCW, logT_L, logT_P)
     
@@ -410,7 +410,7 @@ function [Geometries, Lifespan, PressDrop, logT_L, logT_P] = BOSearch(NumIter, G
         % Physical evaluation
         WT = x_next(1:3); AR = x_next(4:6); CW = x_next(7:8); NC = x_next(9);
         try
-            [Life_new, Drop_new] = SKIPPERRegen(Data, NC, WT, AR, CW, 0);
+            [Life_new, Drop_new] = SKRegen2_ElectricBoogalo(Data, NC, WT, AR, CW, 0);
             if ~isreal(Life_new) || ~isreal(Drop_new), error('Complex output.'); end
         catch
             Life_new = NaN; Drop_new = NaN;

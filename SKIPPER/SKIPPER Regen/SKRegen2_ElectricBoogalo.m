@@ -1,9 +1,11 @@
 % Regenerative Cooling Sizing Code
-% Authors: Adam Grendys
+% Authors: Adam Grendys & Pablo Plata
 % Start Date: 2/27/26
 % Description: This code is based off of PSP:AC's "size_regen" script written by Grant Williams, Zach Hodgdon, Andrew Radulovich, Alex Suppiah, Jan Ayala, Kamon Blong. 
+% Includes axial heat transfer via tracking mean wall temp and solving via
+% a tridiagonal matrix. Uses legacy regen code for initial guess 
 
-function [Lifespan, PressDrop, T_wg_out, T_wl_out, T_coolant_out, P_coolant_out] = SKIPPERRegen(Data, NumChannels, WallThickness, AspectRatio, ChannelWidth, DisplayMode)
+function [Lifespan, PressDrop] = SKRegen2_ElectricBoogalo(Data, NumChannels, WallThickness, AspectRatio, ChannelWidth, DisplayMode)
 New_CEA = false;
 fclose all;
 close all;
@@ -42,8 +44,6 @@ P_inlet = 192.08 * throttle + 257.47; % Regen inlet pressure [psi]
 total_OF = 1.2; % Total oxidizer/fuel ratio
 total_mdot = (throttle * Ft / Isp_eff) / 2.205; % Total chamber mass flow [kg/s]  
 mdot_coolant = total_mdot / (1 + total_OF); % Coolant/fuel mass flow [kg/s]
-
-qdot_tolerance = 0.0001; % Heat loop convergence criteria
 debug = 0; % Debug tool (1 = on, 0 = off)
 
 % Channel Defintion
@@ -324,9 +324,6 @@ if debug
     Qdot_check = zeros(1, steps);
 end
 
-counter = 1;
-error = zeros(1, steps); % Heat loop convergence error
-
 %% Call CEA for all Area Ratios
 if New_CEA
     fprintf("Running CEA. %d Iterations to run. (~%.2f minutes) \nIteration: ",steps,((steps*1.48-14)/60)); % gives time estimate to running CEA
@@ -362,6 +359,49 @@ end
 
 % Boundary Conditions
 if coolant_direction 
+    points = 1:steps;
+elseif ~coolant_direction 
+    points = 1:steps;
+    points = steps + 1 - points; %reverses direction - i.e from [1 2 3] to [3 2 1]
+else
+    fprintf("/nCHOOSE VALID COOLANT DIRECTION")
+end
+
+% Initial Temperature Guesses
+% Run the legacy 1D code for guesses
+[~, ~, T_wg_guess, T_wl_guess, T_cool_guess, P_cool_guess] = SKIPPERRegen(Data, NumChannels, WallThickness, AspectRatio, ChannelWidth, 0);
+T_coolant = T_cool_guess; 
+P_coolant = P_cool_guess; 
+T_wg = T_wg_guess; 
+T_wl = T_wl_guess;
+T_m = (T_wg + T_wl) ./ 2;  
+
+% Setup global loop controllers
+global_converged = 0;
+global_counter = 1;
+global_tol = 0.1; % Convergence tolerance in Kelvin
+
+% Precalculate constant geometries outside loop for computational efficiency
+fin_w = (2*pi*(r_interpolated + t_w_x) - w_c_x .* num_channels) ./ num_channels;
+A_hot = 2*pi .* r_interpolated ./ num_channels .* ds_vec;
+A_base = w_c_x .* ds_vec; % Channel floor area per station
+A_copper = (2 * pi * (r_interpolated + t_w_x / 2) .* t_w_x) / num_channels + fin_w .* h_c_x;
+
+% Fin and land geometry
+A_c_fin = fin_w .* ds_vec;
+P_fin = 2 * ds_vec;
+A_fin_surf = 2 * h_c_x .* ds_vec;
+
+% Fluid channel geometry
+A_channel = h_c_x .* w_c_x;
+p_wet = 2 * h_c_x + 2 * w_c_x;
+hydraulic_D = 4 * A_channel ./ p_wet;
+
+% Half-wall thickness for radial thermal resistance
+t_w_half = t_w_x ./ 2;
+
+% Boundary Conditions
+if coolant_direction 
     P_coolant(1) = P_inlet;
     T_coolant(1) = T_amb;
 
@@ -372,31 +412,24 @@ elseif ~coolant_direction
 
     points = 1:steps;
     points = steps + 1 - points; %reverses direction - i.e from [1 2 3] to [3 2 1]
-else
-    fprintf("/nCHOOSE VALID COOLANT DIRECTION")
 end
 
-% Initial Temperature Guesses
-r = Pr_g.^ (1 / 3); % Recovery factor
-T_wg = T_g .* (1 + (gamma - 1) / 2 .* r .* M .^ 2); % hotwall guess = recovery temp [K]
-T_wl = T_coolant; % coldwall guess = coolant start temp [K]
+while ~global_converged
+    % Previous guess
+    T_m_old = T_m;
 
-for i = points % 1 = injector, steps = exit
-    T_wg_min = T_coolant(i); % minimum temperature bound [K]
-    T_wg_max = 3000; % maximum temperature bound [K]
+    % Initialize resistance arrays for this iteration
+    R_g = zeros(1, steps);
+    R_l = zeros(1, steps);
+    R_ax = zeros(1, steps);
 
-    % Fluid Area
-    A_channel = h_c_x(i) * w_c_x(i);
-    p_wet = 2 * h_c_x(i) + 2 * w_c_x(i);
-    hydraulic_D = 4 * A_channel / p_wet; % channel hydrualic diameter [m]
-
-    counter = 1; % Heat Convergence Loop counter
-    converged = 0; % Heat Convergence Loop end parameter
-
-    while ~converged
-        deltaP_minor = 0;
+    for i = 1:steps
+        % Fluid Area
         r = Pr_g(i) ^ (1 / 3); % recovery factor for a turbulent free boundary layer [N/A] - biased towards larger engines, very small engines should use Pr^.5 (Heister Table 6.2).
         T_r(i) = T_g(i) * (1 + (gamma(i) - 1) / 2 * r * M(i) ^ 2); % recovery temperature [K] - corrects for compressible boundry layers (Heister EQ 6.15). 
+    
+        % Thermal conductivity calculation 
+        k_w_current(i) = interp1(k_w(:,1), k_w(:,2), T_m(i), 'linear', 'extrap');
 
         % Heat Transfer Correlation Selection
         if heat_correlation == 1
@@ -404,27 +437,16 @@ for i = points % 1 = injector, steps = exit
             w = log(mu_g(i) / mu_g_tot) / log(T_g(i) / T_g_tot); if isnan(w); w = 0; end
             sigma(i) = ((0.5 * (T_wg(i) / T_g_tot) * (1 + ((gamma(i) - 1) / 2) * M(i)^2) + 0.5) ^ (0.8 - w/5) * (1 + (gamma(i) - 1) / 2 * M(i)^2) ^ (w/5))^(-1); % film coefficient correction factor [N/A] (Huzel & Huang eq. 4-14 (pg.86))
             h_g(i) = heatflux_factor*(0.026 / (D_t ^ 0.2)) * ((mu_g(i) ^ 0.2) * cp_g(i) / (Pr_g(i) ^ 0.6)) * ((P_g_tot / c_star) ^ 0.8) * ((D_t / R_of_curve) ^ 0.1) * ((1/A_ratio(i)) ^ 0.9) * sigma(i); % gas film coefficient [W/m^2-K] - bartz equation (Huzel & Huang pg.86).
-
+    
         elseif heat_correlation == 2
             % Revised Bartz Correlation
             w = log(mu_g(i) / mu_g_tot) / log(T_g(i) / T_g_tot); if isnan(w); w = 0; end
             T_am = (T_wg(i) + T_g(i))/2;
             vel_g(i) = M(i) * sqrt(cp_g(i) * (gamma(i)-1) * T_r(i)); % velocity of the combustion flow, m/s
             h_g(i) = heatflux_factor * (0.026 / (2 * r_interpolated(i))^0.2) * (mu_g(i)^0.2 * cp_g(i) / (Pr_g(i) ^0.6)) * (rho_g(i) * vel_g(i))^0.8 * (T_g(i) / T_am)^0.8 * (T_am / T_g_tot)^(0.2 * w); % gas film coefficient [W/m^2-K] - revised bartz equation
-        else
-            fprintf("\n MUST SELECT VALID HEAT TRANSFER CORRELATION")
-            converged = 1; % Loop End
-        end
-
-        % RESISTOR 1: Combustion Gas - Hotwall Convection
-        A_hot = 2*pi * r_interpolated(i) / num_channels * ds_vec(i); % hotwall area [m^2]
-        Qdot_g(i) = h_g(i) * A_hot * (T_r(i) - T_wg(i)); % gas convective heat transfer [W]
-
-        % RESISTOR 2: Hotwall - Cold wall Conduction
-        k_w_current(i) = interp1(k_w(:,1), k_w(:,2), (T_wg(i)+T_wl(i))/2, 'linear', 'extrap');
-        T_wl(i) = T_wg(i) - (Qdot_g(i) / A_hot) * t_w_x(i) / k_w_current(i); % liquid wall temperature calculated via conduction through wall [K] (Heister EQ 6.29).        
+        end 
         
-        % RESISTOR 3: Coldwall - Coolant Convection
+        % Cold wall convection 
         if coolant == "isopropyl alcohol"
             P_kPa = P_coolant(i) / 1000;
             T_K = T_coolant(i);
@@ -452,220 +474,218 @@ for i = points % 1 = injector, steps = exit
             boilingPt(i) = double(py.CoolProp.CoolProp.PropsSI('T','Q',0,'P', P_coolant(i), coolant)); % boiling point of the coolant 
         end
 
-        vel_coolant(i) = mdot_channel / rho_coolant(i) / A_channel;
-        Re_coolant(i) = rho_coolant(i) * vel_coolant(i) * hydraulic_D / mu_coolant(i); % reynolds number for channel flow [N/A] (Huzel and Huang , pg 90)
+        vel_coolant(i) = mdot_channel / rho_coolant(i) / A_channel(i);
+        Re_coolant(i) = rho_coolant(i) * vel_coolant(i) * hydraulic_D(i) / mu_coolant(i); % reynolds number for channel flow [N/A] (Huzel and Huang , pg 90)
         Pr_coolant(i) = cp_coolant(i) * mu_coolant(i) / k_coolant(i); % prandtl number [N/A] (Huzel and Huang, pg 90) 
 
-        f = moody(roughness_abs(1) / hydraulic_D, Re_coolant(i), optionsMoody); % friction factor
-        ftest(i) = f;
+        f = moody(roughness_abs(1) / hydraulic_D(i), Re_coolant(i), optionsMoody); % friction factor
         Nu_l(i) = ((f / 8) * (Re_coolant(i) - 1000) * Pr_coolant(i)) / (1 + 12.7 * ((f / 8) ^ 0.5) * (Pr_coolant(i) ^ (2/3) - 1)); % Gnielinksy correlation nusselt number [N/A] - 0.5 < Pr < 2000, 3000 < Re < 5e6
-        h_l(i) = (Nu_l(i) * k_coolant(i)) / hydraulic_D; % liquid film coefficient [W/m^2-K] (Heister EQ 6.19)
-
-       % land/fin thickness at base
-        fin_w(i) = (2*pi*(r_interpolated(i) + t_w_x(i)) - w_c_x(i) * num_channels) / num_channels;
-        
-        if fin_w(i) <= 0
-            error("Invalid channel geometry: fin_w <= 0 at station %d", i);
-        end
+        h_l(i) = (Nu_l(i) * k_coolant(i)) / hydraulic_D(i); % liquid film coefficient [W/m^2-K] (Heister EQ 6.19)
         
         % Fins: rectangular land/rib, adiabatic tip
-        A_c_fin = fin_w(i) * ds_vec(i);      % conduction area
-        P_fin = 2 * ds_vec(i);               % two coolant wetted side faces
-        
-        m_fin = sqrt(h_l(i) * P_fin / (k_w_current(i) * A_c_fin));
+        m_fin = sqrt(h_l(i) * P_fin(i) / (k_w_current(i) * A_c_fin(i)));
         eta_fin(i) = tanh(m_fin * h_c_x(i)) / (m_fin * h_c_x(i));
 
-        A_fin_surf = 2 * h_c_x(i) * ds_vec(i);  % side area only
-        A_base = w_c_x(i) * ds_vec(i);       % channel floor area
-        
-        Qdot_fin(i) = eta_fin(i) * h_l(i) * A_fin_surf * (T_wl(i) - T_coolant(i));
-        Qdot_l(i) = h_l(i) * A_base * (T_wl(i) - T_coolant(i)) + Qdot_fin(i);
+        %% Build thermal resistance arrays
+        % Now tracking temperature at the center of the copper wall,
+        % instead of cold wall and hot wall (reconstructed later). Makes
+        % axial transfer simpler. Calling that center the "center node".
 
-        % Heat Loop Convergence Check
-        if abs(Qdot_g(i) - Qdot_l(i)) > qdot_tolerance && counter < 500
+        % Gas to center node (Convection + Half-Wall Conduction)
+        R_g(i) = (1 / (h_g(i) * A_hot(i))) + (t_w_half(i) / (k_w_current(i) * A_hot(i)));
 
-            if (Qdot_g(i) - Qdot_l(i)) > 0
-                T_wg_min = T_wg(i);
-            else 
-                T_wg_max = T_wg(i);
-            end 
+        % Center node to coolant (Convection + Half-Wall Conduction)
+        % I think am missing some fin math here
+        R_l(i) = (1 / (h_l(i) * (A_base(i) + eta_fin(i) * A_fin_surf(i)))) + (t_w_half(i) / (k_w_current(i) * A_hot(i)));
 
-            T_wg(i) = (T_wg_max + T_wg_min) / 2; 
-            counter = counter + 1;
-            
-            if debug % Debug Tool 
-                disp(i)
-                disp(T_wg(i))
-            end
+        % Axial resistance (Station to Station)
+        R_ax(i) = ds_vec(i) / (k_w_current(i) * A_copper(i));
+    end
+
+    %% Tridiagonal matrix build
+    % Think of the tridiagonal matrix as a way to quickly coule for axial
+    % heat transfer. All "tri-diagonal" means is that the diagonals above
+    % and below the main diagonal are also populated. The system we're
+    % solving is AT = B, where A is the tridiagonal matrix of resistances,
+    % T is the temeprature across the chamber, and B are our boundary
+    % conditions. It's easy to see that by coupling the terms above and
+    % below the main diagonal we essentially add coupling from the stations
+    % above and below (i.e., axial heat transfer lol).
+
+
+    inv_Rg = 1 ./ R_g;
+    inv_Rl = 1 ./ R_l;
+    inv_Rax = 1 ./ R_ax;
+    inv_Rax(end) = 0;       % Adiabatic at the end
+
+    % Shift the axial array to represent heat coming from the previous node
+    inv_Rax_prev = [0, inv_Rax(1:end-1)];
+
+    % Main diagonal: Sum of all conductances touching node i
+    % Gas + Liquid + Station above + Station below
+    main_diag = -(inv_Rg + inv_Rl + inv_Rax + inv_Rax_prev);
+
+    % Off-diagonals: The axial conductance linking the nodes
+    % This is the coupling
+    off_diag = inv_Rax(1:end-1);
+
+    % Main matrix
+    A_mat = diag(main_diag) + diag(off_diag, 1) + diag(off_diag, -1);
+    A_mat = sparse(A_mat);
+
+    % Build the Boundary Condition Vector [B]
+    B_vec = -( (T_r .* inv_Rg) + (T_coolant .* inv_Rl) )';
+
+    % Solve system
+    T_m_column = A_mat \ B_vec;
+    T_m = T_m_column';
+
+    % Calculate heat fluxes
+    Qdot_g = (T_r - T_m) ./ R_g; 
+    Qdot_l = (T_m - T_coolant) ./ R_l;
+
+    % Back-calculate Surface Temperatures [K]
+    T_wg = T_r - Qdot_g ./ (h_g .* A_hot);
+    A_cool_eff = A_base + eta_fin .* A_fin_surf; % Effective coolant wetted area
+    T_wl = T_coolant + Qdot_l ./ (h_l .* A_cool_eff);
+
+    % Update T_coolant and P_coolant
+    for i = points
+        if coolant_direction
+            j = i + 1;
         else
-            Qdot_avg = (Qdot_g(i) + Qdot_l(i)) / 2;
-            heatflux(i) = Qdot_avg / A_hot;
-            heatflux_fin(i) = Qdot_fin(i) / A_fin_surf;
-            
-            if debug % Debug Tool 
-                Bi_fin(i) = h_l(i) * (A_c_fin / P_fin) / k_w_current(i); % Fin Biot number (should be << 1)
-                fin_heat_fraction(i) = Qdot_fin(i) / Qdot_l(i); 
-                
-                error(i) = Qdot_g(i) - Qdot_l(i);
-              
-                if coolant_direction
-                    if i == 1
-                        Qdot_check(i) = mdot_coolant * cp_coolant(i) * (T_coolant(i) - T_amb);
-                    else 
-                        Qdot_check(i) = mdot_coolant * cp_coolant(i) * (T_coolant(i) - T_coolant(i-1));
-                    end
-                else
-                    if i == steps 
-                        Qdot_check(i) = mdot_coolant * cp_coolant(i) * (T_coolant(i) - T_amb);
-                    else
-                        Qdot_check(i) = mdot_coolant * cp_coolant(i) * (T_coolant(i) - T_coolant(i+1));
-                    end
-                end
-            end
-
-            if coolant_direction
-                j = i + 1;
-            else
-                j = i - 1;
-            end
-            
-            if j >= 1 && j <= steps
-                % Update next coolant temperature first
-                T_coolant(j) = T_coolant(i) + Qdot_avg / (mdot_channel * cp_coolant(i));
-            
-                % Carry wall guesses forward
-                T_wg(j) = T_wg(i);
-                T_wl(j) = T_wl(i);
-            
-                % Current station geometry
-                A_i = h_c_x(i) * w_c_x(i);
-                Pwet_i = 2 * h_c_x(i) + 2 * w_c_x(i);
-                Dh_i = 4 * A_i / Pwet_i;
-            
-                % Next station geometry
-                A_j = h_c_x(j) * w_c_x(j);
-                Pwet_j = 2 * h_c_x(j) + 2 * w_c_x(j);
-                Dh_j = 4 * A_j / Pwet_j;
-            
-                % Estimate next density using updated temperature and current pressure
-                if coolant == "isopropyl alcohol"
-                    rho_j_est = Data.F_rho(T_K, P_kPa);
-                else
-                    rho_j_est = double(py.CoolProp.CoolProp.PropsSI('D', 'T', T_coolant(j), 'P', P_coolant(i), coolant));
-                end
-            
-                % Velocities at current and next station
-                V_i = mdot_channel / (rho_coolant(i) * A_i);
-                V_j = mdot_channel / (rho_j_est * A_j);
-            
-                % Major loss using channel arc length instead of axial dx
-                deltaP_major = PressureLoss_factor * f * rho_coolant(i) / 2 * vel_coolant(i)^2 / hydraulic_D * ds_vec(i);
-            
-                % Local minor losses
-                K_local = 0;
-                if i == idx_Cv
-                    K_local = K_local + P_minor_coefs(1);
-                end
-                if i == idx_throat
-                    K_local = K_local + P_minor_coefs(2);
-                end
-                if i == idx_inj
-                    K_local = K_local + P_minor_coefs(3);
-                end
-            
-                deltaP_minor = K_local * (rho_coolant(i) * V_i^2 / 2);
-            
-                % Static pressure change due to velocity and density change
-                deltaP_accel = 0.5 * (rho_j_est * V_j^2 - rho_coolant(i) * V_i^2);
-            
-                % Total pressure update
-                P_coolant(j) = P_coolant(i) - deltaP_major - deltaP_minor - deltaP_accel;
-            end
-                
-            Qtot = Qtot + Qdot_avg * num_channels; %total heat through entire chamber [W]
-   
-            % structural calculations
-            if i <= steps 
-                yield(i) = interp1(yield_strength(:,1), yield_strength(:,2), T_wg(i), 'linear', 'extrap');
-                E_current(i) = interp1(E(:,1), E(:,2), T_wg(i), 'linear', 'extrap');
-                CTE_current(i) = interp1(CTE(:,1), CTE(:,2), T_wg(i), 'linear', 'extrap');
-                CTE_liq_side(i) = interp1(CTE(:,1), CTE(:,2), T_wl(i), 'linear', 'extrap');
-                elong(i) = interp1(elongation_break(:,1), elongation_break(:,2), T_wg(i),'linear','extrap');
-                if elong(i) > .25
-                    elong(i) = .25;
-                end
-                epsilon_emax(i) = ((yield(i)*1000000)/ E_current(i));
-
-                deltaT1(i) = T_wg(i) - T_wl(i);
-                deltaT2(i) = ((T_wg(i) + T_wl(i))/2) - T_coolant(i); 
-
-                sigma_tp(i) = ( ((P_coolant(i)-P_g(i))/2).*((w_c_x(i)./t_w_x(i)).^2) );
-                sigma_tp_cold(i) =  ( ((P_coolant(i))/2).*((w_c_x(i)./t_w_x(i)).^2) );
-                sigma_tt(i) = (E_current(i)*CTE_current(i)*heatflux(i)*t_w_x(i))/(2*(1-v)*k_w_current(i));
-                sigma_t(i) = ( ((P_coolant(i)-P_g(i))/2).*((w_c_x(i)./t_w_x(i)).^2) ) + (E_current(i)*CTE_current(i)*heatflux(i)*t_w_x(i))/(2*(1-v)*k_w_current(i)); % tangential stress
-                sigma_lc(i) = E_current(i)*(CTE_liq_side(i)*(T_wl(i)-T_coolant(i)) + ((CTE_liq_side(i)*deltaT1(i))/(2*(1-v))));
-                sigma_ll(i) = E_current(i)*(CTE_current(i)*(T_wg(i)-T_coolant(i)) + ((CTE_current(i)*deltaT1(i))/(2*(1-v))));
-
-
-                sigma_vc(i) = sqrt(sigma_lc(i)^2 + sigma_t(i)^2 - sigma_lc(i)*sigma_t(i));
-                sigma_vl(i) = sqrt(sigma_ll(i)^2 + sigma_t(i)^2 - sigma_ll(i)*sigma_t(i));
-
-                % Calculate total Strains
-                epsilon_lc(i) = ((CTE_liq_side(i)*deltaT1(i))/(2*(1-v))) + CTE_liq_side(i)*(T_wl(i)-T_coolant(i));
-                epsilon_ll(i) = ((CTE_current(i)*deltaT1(i))/(2*(1-v))) + CTE_current(i)*(T_wg(i)-T_coolant(i));  
-                epsilon_tp(i) = ( ((P_coolant(i)-P_g(i))/2).*((w_c_x(i)./t_w_x(i)).^2) )  /E_current(i);
-                epsilon_tt(i) = ((E_current(i)*CTE_current(i)*heatflux(i)*t_w_x(i))/(2*(1-v)*k_w_current(i)))  /E_current(i);
-                epsilon_t(i) = 1.15 * (( ((P_coolant(i)-P_g(i))/2).*((w_c_x(i)./t_w_x(i)).^2) ) + (E_current(i)*CTE_current(i)*heatflux(i)*t_w_x(i))/(2*(1-v)*k_w_current(i))) / E_current(i); % tangential stress
-                epsilon_vc(i) = sqrt(epsilon_lc(i)^2 + epsilon_t(i)^2 - epsilon_lc(i)*epsilon_t(i));
-                epsilon_vl(i) = sqrt(epsilon_ll(i)^2 + epsilon_t(i)^2 - epsilon_ll(i)*epsilon_t(i));
-
-                epsilon_tota(i) = ((CTE_current(i)*deltaT1(i))/(2*(1-v))) + CTE_current(i) * deltaT2(i); 
-                epsilon_tott(i) = epsilon_t(i);
-                epsilon_toteff(i) = (2/sqrt(3)) * sqrt(((epsilon_tott(i)^2)+ epsilon_tott(i)*epsilon_tota(i) + (epsilon_tota(i))^2));
-                sigma_a(i) = E_current(i) * epsilon_tota(i);
-                sigma_t2(i) = E_current(i) * epsilon_tott(i);
-                epsilon_pa(i) = epsilon_tota(i) - epsilon_emax(i);
-                epsilon_pt(i) = epsilon_tott(i) - epsilon_emax(i);
-                epsilon_emaxeff(i) = (2/sqrt(3)) * sqrt(((epsilon_emax(i)^2) + epsilon_emax(i)*epsilon_emax(i) + (epsilon_emax(i))^2));
-                if epsilon_pa(i) < 0
-                    epsilon_pa(i) = 0;
-                end
-                if epsilon_pt(i) < 0
-                    epsilon_pt(i) = 0;
-                end
-                if epsilon_pa(i) == 0 && epsilon_pt(i) == 0 
-                    epsilon_eeff(i) = epsilon_toteff(i);
-                elseif epsilon_pa(i) > 0 && epsilon_pt(i) ==  0
-                    epsilon_eeff(i) = (2/sqrt(3)) * sqrt(((epsilon_tott(i)^2) + epsilon_tott(i)*epsilon_emax(i) + (epsilon_emax(i))^2));
-                elseif epsilon_pa(i) == 0 && epsilon_pt(i) > 0 
-                    epsilon_eeff(i) = (2/sqrt(3)) * sqrt(((epsilon_emax(i)^2) + epsilon_emax(i)*epsilon_tota(i) + (epsilon_tota(i))^2));
-                else 
-                    epsilon_eeff(i) = epsilon_emaxeff(i);
-                end
-
-                epsilon_peff(i) = (2/sqrt(3)) * sqrt(((epsilon_pt(i)^2) + epsilon_pt(i)*epsilon_pa(i) + (epsilon_pa(i))^2));
-                epsilon_cs(i) = 2*yield(i)/E_current(i) + ((elong(i)/2)*((N)^(-1/2)));
-                %epsilon_cs_tot(i) = epsilon_cs(i) + epsilon_emax(i); % Total strain after N # of hotfires
-
-                epsilon_cs_tot(i) = epsilon_cs(i) + epsilon_eeff(i)/2; % Total strain after N # of hotfires
-                MS_lowcycle(i) = epsilon_cs(i) / (epsilon_peff(i));
-                MS(i) = epsilon_cs_tot(i) / (epsilon_toteff(i));
-                num_fires(i) = 1/SF * ((2/elong(i))* (epsilon_toteff(i)- (epsilon_eeff(i)/2)))^(-2); %divide by 4 per NASA 5012C
-                num_fires_lowcycle(i) = 1/SF * ((2*epsilon_peff(i))/elong(i))^(-2); %divide by 4 per NASA 5012C
-                epsilon_cs_spacex(i) = (3.5 * yield(i)*((N)^(-.12)))/E_current(i) + (elong(i)/N)^(.6);
-                MS_spacex(i) = epsilon_cs_spacex(i) / epsilon_toteff(i);
-
-                sigma_eff(i) = E_current(i) * epsilon_toteff(i);
-                sigma_a(i) = E_current(i) * epsilon_tota(i);
-                sigma_t2(i) = E_current(i) * epsilon_tott(i);
-
-            end
-                
-            converged = 1;
+            j = i - 1;
         end
+        
+        if j >= 1 && j <= steps
+            % Update Temperature
+            T_coolant(j) = T_coolant(i) + Qdot_l(i) / (mdot_channel * cp_coolant(i));
+            
+            % Update Pressure
+            A_i = h_c_x(i) * w_c_x(i);
+            A_j = h_c_x(j) * w_c_x(j);
+            V_i = mdot_channel / (rho_coolant(i) * A_i);
+            
+            if coolant == "isopropyl alcohol"
+                P_kPa = P_coolant(i) / 1000;
+                rho_j_est = Data.F_rho(T_coolant(j), P_kPa);
+            else
+                rho_j_est = double(py.CoolProp.CoolProp.PropsSI('D', 'T', T_coolant(j), 'P', P_coolant(i), coolant));
+            end
+            
+            V_j = mdot_channel / (rho_j_est * A_j);
+            
+            % Recalculate friction factor for pressure drop math
+            f_current = moody(roughness_abs(1) / hydraulic_D(i), Re_coolant(i), optionsMoody); 
+            
+            % Major loss
+            deltaP_major = PressureLoss_factor * f_current * rho_coolant(i) / 2 * vel_coolant(i)^2 / hydraulic_D(i) * ds_vec(i);
+            
+            % Minor loss
+            K_local = 0;
+            if i == idx_Cv; K_local = K_local + P_minor_coefs(1); end
+            if i == idx_throat; K_local = K_local + P_minor_coefs(2); end
+            if i == idx_inj; K_local = K_local + P_minor_coefs(3); end
+            deltaP_minor = K_local * (rho_coolant(i) * V_i^2 / 2);
+            
+            % Acceleration loss
+            deltaP_accel = 0.5 * (rho_j_est * V_j^2 - rho_coolant(i) * V_i^2);
+            
+            % Apply pressure drop
+            P_coolant(j) = P_coolant(i) - deltaP_major - deltaP_minor - deltaP_accel;
+        end
+    end
 
-    end % Heat transfer convergence loop end
-end % Axial station loop end
+    % Convergence check 
+    error_max = max(abs(T_m - T_m_old));
+    if error_max < global_tol
+        global_converged = 1;
+    end
+    
+    global_counter = global_counter + 1;
+    
+    if debug
+        fprintf('Iteration %d: Max Temp Change = %.4f K\n', global_counter, error_max);
+    end
+end
+Qtot = sum(Qdot_l) * num_channels; 
+heatflux = Qdot_g ./ A_hot;
+heatflux_fin = (eta_fin .* h_l .* (T_wl - T_coolant)); 
+
+for i = 1:steps
+    % Pull properties
+    yield(i) = interp1(yield_strength(:,1), yield_strength(:,2), T_wg(i), 'linear', 'extrap');
+    E_current(i) = interp1(E(:,1), E(:,2), T_wg(i), 'linear', 'extrap');
+    CTE_current(i) = interp1(CTE(:,1), CTE(:,2), T_wg(i), 'linear', 'extrap');
+    CTE_liq_side(i) = interp1(CTE(:,1), CTE(:,2), T_wl(i), 'linear', 'extrap');
+    elong(i) = interp1(elongation_break(:,1), elongation_break(:,2), T_wg(i),'linear','extrap');
+    if elong(i) > .25
+        elong(i) = .25;
+    end
+    epsilon_emax(i) = ((yield(i)*1000000)/ E_current(i));
+
+    deltaT1(i) = T_wg(i) - T_wl(i);
+    deltaT2(i) = ((T_wg(i) + T_wl(i))/2) - T_coolant(i); 
+
+    % Stresses
+    sigma_tp(i) = ( ((P_coolant(i)-P_g(i))/2).*((w_c_x(i)./t_w_x(i)).^2) );
+    sigma_tp_cold(i) =  ( ((P_coolant(i))/2).*((w_c_x(i)./t_w_x(i)).^2) );
+    sigma_tt(i) = (E_current(i)*CTE_current(i)*heatflux(i)*t_w_x(i))/(2*(1-v)*k_w_current(i));
+    sigma_t(i) = ( ((P_coolant(i)-P_g(i))/2).*((w_c_x(i)./t_w_x(i)).^2) ) + (E_current(i)*CTE_current(i)*heatflux(i)*t_w_x(i))/(2*(1-v)*k_w_current(i)); 
+    sigma_lc(i) = E_current(i)*(CTE_liq_side(i)*(T_wl(i)-T_coolant(i)) + ((CTE_liq_side(i)*deltaT1(i))/(2*(1-v))));
+    sigma_ll(i) = E_current(i)*(CTE_current(i)*(T_wg(i)-T_coolant(i)) + ((CTE_current(i)*deltaT1(i))/(2*(1-v))));
+
+    sigma_vc(i) = sqrt(sigma_lc(i)^2 + sigma_t(i)^2 - sigma_lc(i)*sigma_t(i));
+    sigma_vl(i) = sqrt(sigma_ll(i)^2 + sigma_t(i)^2 - sigma_ll(i)*sigma_t(i));
+
+    % Strains
+    epsilon_lc(i) = ((CTE_liq_side(i)*deltaT1(i))/(2*(1-v))) + CTE_liq_side(i)*(T_wl(i)-T_coolant(i));
+    epsilon_ll(i) = ((CTE_current(i)*deltaT1(i))/(2*(1-v))) + CTE_current(i)*(T_wg(i)-T_coolant(i));  
+    epsilon_tp(i) = ( ((P_coolant(i)-P_g(i))/2).*((w_c_x(i)./t_w_x(i)).^2) )  /E_current(i);
+    epsilon_tt(i) = ((E_current(i)*CTE_current(i)*heatflux(i)*t_w_x(i))/(2*(1-v)*k_w_current(i)))  /E_current(i);
+    epsilon_t(i) = 1.15 * (( ((P_coolant(i)-P_g(i))/2).*((w_c_x(i)./t_w_x(i)).^2) ) + (E_current(i)*CTE_current(i)*heatflux(i)*t_w_x(i))/(2*(1-v)*k_w_current(i))) / E_current(i); 
+    epsilon_vc(i) = sqrt(epsilon_lc(i)^2 + epsilon_t(i)^2 - epsilon_lc(i)*epsilon_t(i));
+    epsilon_vl(i) = sqrt(epsilon_ll(i)^2 + epsilon_t(i)^2 - epsilon_ll(i)*epsilon_t(i));
+
+    epsilon_tota(i) = ((CTE_current(i)*deltaT1(i))/(2*(1-v))) + CTE_current(i) * deltaT2(i); 
+    epsilon_tott(i) = epsilon_t(i);
+    epsilon_toteff(i) = (2/sqrt(3)) * sqrt(((epsilon_tott(i)^2)+ epsilon_tott(i)*epsilon_tota(i) + (epsilon_tota(i))^2));
+    sigma_a(i) = E_current(i) * epsilon_tota(i);
+    sigma_t2(i) = E_current(i) * epsilon_tott(i);
+    epsilon_pa(i) = epsilon_tota(i) - epsilon_emax(i);
+    epsilon_pt(i) = epsilon_tott(i) - epsilon_emax(i);
+    epsilon_emaxeff(i) = (2/sqrt(3)) * sqrt(((epsilon_emax(i)^2) + epsilon_emax(i)*epsilon_emax(i) + (epsilon_emax(i))^2));
+    if epsilon_pa(i) < 0
+        epsilon_pa(i) = 0;
+    end
+    if epsilon_pt(i) < 0
+        epsilon_pt(i) = 0;
+    end
+    if epsilon_pa(i) == 0 && epsilon_pt(i) == 0 
+        epsilon_eeff(i) = epsilon_toteff(i);
+    elseif epsilon_pa(i) > 0 && epsilon_pt(i) ==  0
+        epsilon_eeff(i) = (2/sqrt(3)) * sqrt(((epsilon_tott(i)^2) + epsilon_tott(i)*epsilon_emax(i) + (epsilon_emax(i))^2));
+    elseif epsilon_pa(i) == 0 && epsilon_pt(i) > 0 
+        epsilon_eeff(i) = (2/sqrt(3)) * sqrt(((epsilon_emax(i)^2) + epsilon_emax(i)*epsilon_tota(i) + (epsilon_tota(i))^2));
+    else 
+        epsilon_eeff(i) = epsilon_emaxeff(i);
+    end
+
+    epsilon_peff(i) = (2/sqrt(3)) * sqrt(((epsilon_pt(i)^2) + epsilon_pt(i)*epsilon_pa(i) + (epsilon_pa(i))^2));
+    epsilon_cs(i) = 2*yield(i)/E_current(i) + ((elong(i)/2)*((N)^(-1/2)));
+
+    epsilon_cs_tot(i) = epsilon_cs(i) + epsilon_eeff(i)/2; 
+    MS_lowcycle(i) = epsilon_cs(i) / (epsilon_peff(i));
+    MS(i) = epsilon_cs_tot(i) / (epsilon_toteff(i));
+    num_fires(i) = 1/SF * ((2/elong(i))* (epsilon_toteff(i)- (epsilon_eeff(i)/2)))^(-2); 
+    num_fires_lowcycle(i) = 1/SF * ((2*epsilon_peff(i))/elong(i))^(-2); 
+    epsilon_cs_spacex(i) = (3.5 * yield(i)*((N)^(-.12)))/E_current(i) + (elong(i)/N)^(.6);
+    MS_spacex(i) = epsilon_cs_spacex(i) / epsilon_toteff(i);
+
+    sigma_eff(i) = E_current(i) * epsilon_toteff(i);
+    sigma_a(i) = E_current(i) * epsilon_tota(i);
+    sigma_t2(i) = E_current(i) * epsilon_tott(i);
+end
 
 overall_MS = min(MS);
 overall_MS_lowcycle = min(MS_lowcycle);
@@ -679,12 +699,6 @@ plastic_deformation_cyclic = sum(dx * epsilon_pa); %Permanent axial deformation 
 %% Output
 Lifespan = Engine_life;
 PressDrop = (max(P_coolant) - min(P_coolant)) / 6894.76;
-
-% NEW: Export arrays for the matrix solver guess
-T_wg_out = T_wg;
-T_wl_out = T_wl;
-T_coolant_out = T_coolant;
-P_coolant_out = P_coolant;
 if DisplayMode == 1
     %% FORMATTED OUTPUT
     fprintf("\nEngine Throttle: %.1f", throttle * 100)
@@ -772,14 +786,14 @@ if DisplayMode == 1
     hold on 
     set(gca, 'FontName', 'Times New Roman')
     yyaxis left
-    plot(x_interpolated, P_coolant / 6894.76)
-    plot(x_interpolated, P_g / 6894.76, 'y')
+    plot(x_interpolated / 0.0254, P_coolant / 6894.76)
+    plot(x_interpolated / 0.0254, P_g / 6894.76, 'y')
     title("Liquid Pressure Loss")
     xlabel("Location [in]")
     ylabel("Pressure [PSI]")
     set(gca, 'YColor', [0 0 0])
     yyaxis right
-    plot(x_interpolated, r_interpolated .* u.M2IN, 'green', 'LineStyle', '-');
+    plot(x_interpolated / 0.0254, r_interpolated .* u.M2IN, 'green', 'LineStyle', '-');
     ylabel('Radius [in]')
     set(gca, 'YColor', [0 0 0])
     legend("Liquid Pressure","Gas Pressure","Chamber Contour", 'Location', 'southwest')
@@ -787,7 +801,7 @@ if DisplayMode == 1
     subplot(2,2,3)
     hold on 
     set(gca, 'FontName', 'Times New Roman')
-    plot(x_interpolated, vel_coolant);
+    plot(x_interpolated / 0.0254, vel_coolant);
     title("Coolant Velocity")
     xlabel("Location [in]")
     ylabel('Velocity [m/s]')
@@ -796,7 +810,7 @@ if DisplayMode == 1
     subplot(2,2,4)
     hold on 
     set(gca, 'FontName', 'Times New Roman')
-    plot(x_interpolated, T_coolant);
+    plot(x_interpolated / 0.0254, T_coolant);
     title("Coolant Temperature")
     xlabel("Location [in]")
     ylabel('Temperature [K]')
@@ -811,13 +825,13 @@ if DisplayMode == 1
     hold on;
     set(gca, 'FontName', 'Times New Roman')
     yyaxis left
-    plot(x_interpolated, heatflux / 1000, 'red', 'LineStyle', '-');
-    plot(x_interpolated, heatflux_fin / 1000,'yellow', 'LineStyle', '-');
+    plot(x_interpolated / 0.0254, heatflux / 1000, 'red', 'LineStyle', '-');
+    plot(x_interpolated / 0.0254, heatflux_fin / 1000,'yellow', 'LineStyle', '-');
     ylabel('Heat Flux [kW/m^2]')
     set(gca, 'YColor', [0 0 0])
     grid on
     yyaxis right
-    plot(x_interpolated, r_interpolated .* u.M2IN, 'green', 'LineStyle', '-');
+    plot(x_interpolated / 0.0254, r_interpolated .* u.M2IN, 'green', 'LineStyle', '-');
     ylabel('Radius [in]')
     set(gca, 'YColor', [0 0 0])
     legend('Convective Heat Flux', 'Fin Heat Flux' , 'Chamber Contour','Location','west')
@@ -826,7 +840,7 @@ if DisplayMode == 1
     subplot(2,2,3)
     hold on 
     set(gca, 'FontName', 'Times New Roman')
-    plot(x_interpolated, h_g / 1000)
+    plot(x_interpolated / 0.0254, h_g / 1000)
     title("Gas Heat Transfer Coefficient")
     xlabel("Location [in]");
     ylabel("Bartz HTC [kW/m^2-K]")
@@ -834,7 +848,7 @@ if DisplayMode == 1
     subplot(2,2,4)
     hold on 
     set(gca, 'FontName', 'Times New Roman')
-    plot(x_interpolated, h_l / 1000)
+    plot(x_interpolated / 0.0254, h_l / 1000)
     title("Liquid Heat Transfer Coefficient")
     xlabel("Location [in]");
     ylabel("Gnielinski HTC [kW/m^2-K]")
@@ -846,14 +860,14 @@ if DisplayMode == 1
     hold on
     set(gca, 'FontName', 'Times New Roman')
     yyaxis left
-    plot(x_interpolated, w_c_x * 1000);
-    plot(x_interpolated, h_c_x * 1000);
+    plot(x_interpolated / 0.0254, w_c_x * 1000);
+    plot(x_interpolated / 0.0254, h_c_x * 1000);
     title("Channel Dimensions");
     xlabel("Location [in]");
     ylabel("Channel Dimensions [mm]")
     set(gca, 'YColor', [0 0 0])
     yyaxis right
-    plot(x_interpolated, r_interpolated .* u.M2IN, 'green', 'LineStyle', '-');
+    plot(x_interpolated / 0.0254, r_interpolated .* u.M2IN, 'green', 'LineStyle', '-');
     ylabel('Chamber Contour [in]')
     set(gca, 'YColor', [0 0 0])
     legend('Channel Width', 'Channel Height', 'Chamber Contour','Location','west')
@@ -862,7 +876,7 @@ if DisplayMode == 1
     hold on
     set(gca, 'FontName', 'Times New Roman')
     set(gca, 'YAxisLocation', 'right');
-    plot(x_interpolated, h_c_x ./ w_c_x);
+    plot(x_interpolated / 0.0254, h_c_x ./ w_c_x);
     title("Channel Aspect Ratio");
     xlabel("Location [in]");
     ylim([0, 4])
@@ -871,14 +885,14 @@ if DisplayMode == 1
     hold on
     set(gca, 'FontName', 'Times New Roman')
     yyaxis left
-    plot(x_interpolated, fin_w * 1000);
-    plot(x_interpolated, h_c_x * 1000);
+    plot(x_interpolated / 0.0254, fin_w * 1000);
+    plot(x_interpolated / 0.0254, h_c_x * 1000);
     title("Fin Dimensions")
     xlabel("Location [in]");
     ylabel("Fin Dimensions [mm]")
     set(gca, 'YColor', [0 0 0])
     yyaxis right
-    plot(x_interpolated, r_interpolated .* u.M2IN, 'green', 'LineStyle', '-');
+    plot(x_interpolated / 0.0254, r_interpolated .* u.M2IN, 'green', 'LineStyle', '-');
     ylabel('Chamber Contour [in]')
     set(gca, 'YColor', [0 0 0])
     legend('Fin Width', 'Fin Height', 'Chamber Contour','Location','west')
@@ -887,7 +901,7 @@ if DisplayMode == 1
     hold on
     set(gca, 'FontName', 'Times New Roman')
     set(gca, 'YAxisLocation', 'right');
-    plot(x_interpolated, h_c_x ./ fin_w);
+    plot(x_interpolated / 0.0254, h_c_x ./ fin_w);
     title("Fin Aspect Ratio");
     xlabel("Location [in]");
     grid on
@@ -897,13 +911,13 @@ if DisplayMode == 1
     figure('Name'  , 'Strain Check');
     subplot(2,1,1); hold on; set(gca, 'FontName', 'Times New Roman')
     yyaxis left                               
-    plot(x_interpolated, epsilon_toteff * 100);
-    plot(x_interpolated, epsilon_cs_tot * 100);
+    plot(x_interpolated / 0.0254, epsilon_toteff * 100);
+    plot(x_interpolated / 0.0254, epsilon_cs_tot * 100);
     xlabel("Location [in]");
     ylabel("Strain [%]");
     set(gca, 'YColor', [0 0 0])
     yyaxis right;
-    plot(x_interpolated, r_interpolated .* u.M2IN, 'green', 'LineStyle', '-');
+    plot(x_interpolated / 0.0254, r_interpolated .* u.M2IN, 'green', 'LineStyle', '-');
     ylabel('Radius [in]');
     set(gca, 'YColor', [0 0 0])
     legend("Total Effective Strain", "Total Allowable Cyclic Strain" , 'Chamber Contour', 'Location' , 'west');
@@ -912,8 +926,8 @@ if DisplayMode == 1
     subplot(2,1,2)
     hold on
     set(gca, 'FontName', 'Times New Roman')
-    plot(x_interpolated, epsilon_peff * 100);
-    plot(x_interpolated, epsilon_cs * 100) 
+    plot(x_interpolated / 0.0254, epsilon_peff * 100);
+    plot(x_interpolated / 0.0254, epsilon_cs * 100) 
     xlabel("Location [in]");
     ylabel("Strain [%]");
     legend("Effective Plastic Strain", "Allowable Cyclic Plastic Strain", 'Location' , 'west')
@@ -927,14 +941,14 @@ if DisplayMode == 1
     hold on
     set(gca, 'FontName', 'Times New Roman')
     yyaxis left
-    plot(x_interpolated, epsilon_vl * 100);
-    plot(x_interpolated, epsilon_vc * 100);
+    plot(x_interpolated / 0.0254, epsilon_vl * 100);
+    plot(x_interpolated / 0.0254, epsilon_vc * 100);
     title("Von Mises Strain")
     xlabel("Location [in]")
     ylabel("Percent Strain [%]")
     set(gca, 'YColor', [0 0 0])
     yyaxis right
-    plot(x_interpolated, r_interpolated .* u.M2IN, 'green', 'LineStyle', '-');
+    plot(x_interpolated / 0.0254, r_interpolated .* u.M2IN, 'green', 'LineStyle', '-');
     ylabel('Radius [in]')
     set(gca, 'YColor', [0 0 0])
     legend('At the Lands','At the Channels', 'Chamber Contour','Location','west')
@@ -943,9 +957,9 @@ if DisplayMode == 1
     hold on 
     set(gca, 'FontName', 'Times New Roman')
     hold on
-    plot(x_interpolated, epsilon_t * 100,"b");
-    plot(x_interpolated, epsilon_tp * 100,"m");
-    plot(x_interpolated, epsilon_tt * 100,"r");
+    plot(x_interpolated / 0.0254, epsilon_t * 100,"b");
+    plot(x_interpolated / 0.0254, epsilon_tp * 100,"m");
+    plot(x_interpolated / 0.0254, epsilon_tt * 100,"r");
     legend("Total Strain", "Pressure contribution", "Thermal Contribution",'Location','west')
     title("Tangential Strain")
     xlabel("Location [in]")
@@ -955,8 +969,8 @@ if DisplayMode == 1
     subplot(2,2,4)
     hold on 
     set(gca, 'FontName', 'Times New Roman')
-    plot(x_interpolated, epsilon_lc * 100);
-    plot(x_interpolated, epsilon_ll * 100);
+    plot(x_interpolated / 0.0254, epsilon_lc * 100);
+    plot(x_interpolated / 0.0254, epsilon_ll * 100);
     title("Longitudinal Strain")
     legend("At the Channels", "At the Lands",'Location','west');
     xlabel("Location [in]")
@@ -970,15 +984,15 @@ if DisplayMode == 1
     hold on
     set(gca, 'FontName', 'Times New Roman')
     yyaxis left
-    plot(x_interpolated, sigma_vl * 0.000001); 
-    plot(x_interpolated, sigma_vc * 0.000001);
-    plot(x_interpolated, yield, "yellow");
+    plot(x_interpolated / 0.0254, sigma_vl * 0.000001); 
+    plot(x_interpolated / 0.0254, sigma_vc * 0.000001);
+    plot(x_interpolated / 0.0254, yield, "yellow");
     title("Von Mises Stress")
     xlabel("Location [in]")
     ylabel("Stress [MPA]")
     set(gca, 'YColor', [0 0 0])
     yyaxis right
-    plot(x_interpolated, r_interpolated .* u.M2IN, 'green', 'LineStyle', '-');
+    plot(x_interpolated / 0.0254, r_interpolated .* u.M2IN, 'green', 'LineStyle', '-');
     ylabel('Radius [in]')
     set(gca, 'YColor', [0 0 0])
     legend('At the Lands','At the Channels' , 'Yield Stress at Temperature' ,'Chamber Contour','Location','west')
@@ -987,10 +1001,10 @@ if DisplayMode == 1
     hold on 
     set(gca, 'FontName', 'Times New Roman')
     hold on
-    plot(x_interpolated, sigma_t * 0.000001,"b");
-    plot(x_interpolated, sigma_tp * 0.000001,"m");
-    plot(x_interpolated, sigma_tt * 0.000001,"r");
-    plot(x_interpolated, yield, "yellow");
+    plot(x_interpolated / 0.0254, sigma_t * 0.000001,"b");
+    plot(x_interpolated / 0.0254, sigma_tp * 0.000001,"m");
+    plot(x_interpolated / 0.0254, sigma_tt * 0.000001,"r");
+    plot(x_interpolated / 0.0254, yield, "yellow");
     legend("Total Stress", "Pressure contribution", "Thermal Contribution", 'Yield Stress at Temperature', 'Location','west')
     title("Tangential Stress")
     xlabel("Location [in]")
@@ -1000,9 +1014,9 @@ if DisplayMode == 1
     subplot(2,2,4)
     hold on 
     set(gca, 'FontName', 'Times New Roman')
-    plot(x_interpolated, sigma_lc * 0.000001);
-    plot(x_interpolated, sigma_ll * 0.000001);
-    plot(x_interpolated, yield, "yellow");
+    plot(x_interpolated / 0.0254, sigma_lc * 0.000001);
+    plot(x_interpolated / 0.0254, sigma_ll * 0.000001);
+    plot(x_interpolated / 0.0254, yield, "yellow");
     title("Longitudinal Stress")
     legend("At the Channels", "At the Lands", 'Yield Stress at Temperature', 'Location','west');
     xlabel("Location [in]")

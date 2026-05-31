@@ -10,11 +10,11 @@
 
 
  problem rocket fr
-     p(bar) = 8.6184
+     p(bar) = 17.2369
      o/f = 1.2
-     sup = 1
+     sup = 2.8056
  reac
-     fuel = C3H8O,2propanol t(K) = 414.827 wt% = 100.000
+     fuel = C3H8O,2propanol t(K) = 402.049 wt% = 100.000
      ox = O2(L) t(K) = 90.170
  outp trans
  end
@@ -24,13 +24,13 @@
 
  TRACE= 0.00E+00  S/R= 0.000000E+00  H/R= 0.000000E+00  U/R= 0.000000E+00
 
- Pc,BAR =     8.618400
+ Pc,BAR =    17.236900
 
  Pc/P =
 
  SUBSONIC AREA RATIOS =
 
- SUPERSONIC AREA RATIOS =     1.0000
+ SUPERSONIC AREA RATIOS =     2.8056
 
  NFZ=  1  Mdot/Ac= 0.000000E+00  Ac/At= 0.000000E+00
 
@@ -39,7 +39,7 @@
 
     REACTANT          WT.FRAC   (ENERGY/R),K   TEMP,K  DENSITY
         EXPLODED FORMULA
- F: C3H8O,2propanol  1.000000  -0.313533E+05   414.83  0.0000
+ F: C3H8O,2propanol  1.000000  -0.315294E+05   402.05  0.0000
           C  3.00000  H  8.00000  O  1.00000
  O: O2(L)            1.000000  -0.156101E+04    90.17  0.0000
           O  2.00000
@@ -123,7 +123,7 @@
 
                        EFFECTIVE FUEL     EFFECTIVE OXIDANT        MIXTURE
  ENTHALPY                  h(2)/R              h(1)/R               h0/R
- (KG-MOL)(K)/KG       -0.52172825E+03     -0.48783267E+02     -0.26375826E+03
+ (KG-MOL)(K)/KG       -0.52465947E+03     -0.48783267E+02     -0.26509063E+03
 
  KG-FORM.WT./KG             bi(2)               bi(1)               b0i
   *C                   0.49920942E-01      0.00000000E+00      0.22691337E-01
@@ -131,7 +131,7 @@
   *O                   0.16640314E-01      0.62502344E-01      0.41655967E-01
 
  POINT ITN      T            C           H           O 
-   1   21    2684.282     -13.416      -9.808     -19.134
+   1   20    2697.227     -12.761      -9.467     -19.088
 
 
 
@@ -139,56 +139,56 @@
 
            THEORETICAL ROCKET PERFORMANCE ASSUMING FROZEN COMPOSITION
 
- Pin =   125.0 PSIA
+ Pin =   250.0 PSIA
  CASE =                
 
              REACTANT                    WT FRACTION      ENERGY      TEMP
                                           (SEE NOTE)     KJ/KG-MOL      K  
- FUEL        C3H8O,2propanol              1.0000000   -260687.073    414.827
+ FUEL        C3H8O,2propanol              1.0000000   -262151.687    402.049
  OXIDANT     O2(L)                        1.0000000    -12979.000     90.170
 
  O/F=    1.20000  %FUEL= 45.454545  R,EQ.RATIO= 1.815773  PHI,EQ.RATIO= 1.996763
 
                  CHAMBER   THROAT     EXIT
- Pinf/P            1.0000   1.7967   1.7967
- P, BAR            8.6184   4.7968   4.7968
- T, K             2684.28  2398.22  2398.22
- RHO, KG/CU M    7.2478-1 4.5152-1 4.5152-1
- H, KJ/KG        -2193.02 -2852.05 -2852.05
- U, KJ/KG        -3382.12 -3914.43 -3914.43
- G, KJ/KG        -37828.5 -34689.9 -34689.9
- S, KJ/(KG)(K)    13.2756  13.2756  13.2756
+ Pinf/P            1.0000   1.7963   15.060
+ P, BAR            17.237   9.5958   1.1446
+ T, K             2697.23  2410.48  1572.23
+ RHO, KG/CU M    1.4449 0 9.0009-1 1.6460-1
+ H, KJ/KG        -2204.10 -2865.09 -4715.01
+ U, KJ/KG        -3397.02 -3931.19 -5410.37
+ G, KJ/KG        -37172.8 -34116.2 -25098.5
+ S, KJ/(KG)(K)    12.9647  12.9647  12.9647
 
- M, (1/n)          18.769   18.769   18.769
- Cp, KJ/(KG)(K)    2.3227   2.2836   2.2836
- GAMMAs            1.2357   1.2407   1.2407
- SON VEL,M/SEC     1212.2   1148.1   1148.1
- MACH NUMBER        0.000    1.000    1.000
+ M, (1/n)          18.799   18.799   18.799
+ Cp, KJ/(KG)(K)    2.3239   2.2851   2.1101
+ GAMMAs            1.2350   1.2400   1.2652
+ SON VEL,M/SEC     1213.8   1149.8    938.0
+ MACH NUMBER        0.000    1.000    2.389
 
  TRANSPORT PROPERTIES (GASES ONLY)
    CONDUCTIVITY IN UNITS OF MILLIWATTS/(CM)(K)
 
- VISC,MILLIPOISE  0.85044  0.78377  0.78377
+ VISC,MILLIPOISE  0.85332  0.78659  0.57713
 
   WITH FROZEN REACTIONS
 
- Cp, KJ/(KG)(K)    2.3227   2.2836   2.2836
- CONDUCTIVITY      3.3706   3.0365   3.0365
- PRANDTL NUMBER    0.5860   0.5895   0.5895
+ Cp, KJ/(KG)(K)    2.3239   2.2851   2.1101
+ CONDUCTIVITY      3.3798   3.0456   2.0332
+ PRANDTL NUMBER    0.5867   0.5902   0.5989
 
  PERFORMANCE PARAMETERS
 
- Ae/At                      1.0000   1.0000
- CSTAR, M/SEC               1662.6   1662.6
- CF                         0.6905   0.6905
- Ivac, M/SEC                2073.4   2073.4
- Isp, M/SEC                 1148.1   1148.1
+ Ae/At                      1.0000   2.8056
+ CSTAR, M/SEC               1665.6   1665.6
+ CF                         0.6903   1.3455
+ Ivac, M/SEC                2077.0   2551.2
+ Isp, M/SEC                 1149.8   2240.9
 
  MOLE FRACTIONS
 
- *CO             0.36608   *CO2            0.05981   *H              0.00946
- *H2             0.26852   H2O             0.29318   *O              0.00006
- *OH             0.00285   *O2             0.00003
+ *CO             0.36687   *CO2            0.05971   *H              0.00704
+ *H2             0.26957   H2O             0.29461   *O              0.00003
+ *OH             0.00215   *O2             0.00001
 
   * THERMODYNAMIC PROPERTIES FITTED TO 20000.K
 

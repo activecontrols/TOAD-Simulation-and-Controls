@@ -11,12 +11,16 @@ function cf = moody(ed, Re, options)
 % Note: Laminar and turbulent flow are correctly accounted for
 
 if Re < 0
-error(sprintf('Reynolds number = %f cannot be negative', 'Re'));
-elseif Re < 2000
-cf = 64 / Re; return % laminar flow
+    error(sprintf('Reynolds number = %f cannot be negative', 'Re'));
 end
+
+% Causes discontinuities at low throttle, consider smoother transitions
+% elseif Re < 2000
+%     cf = 64 / Re; return % laminar flow
+% end
+
 if ed > 0.05
-warning(sprintf('epsilon/diameter ratio = %f is not on Moody chart', ed));
+    warning(sprintf('epsilon/diameter ratio = %f is not on Moody chart', ed));
 end
 % if Re < 4000
 %     warning('Re = %f in transition range, Re'); 
