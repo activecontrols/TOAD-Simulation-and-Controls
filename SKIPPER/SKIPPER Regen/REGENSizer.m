@@ -21,21 +21,22 @@ Data = LoadData();
 rng(42);
 
 %% Parameter sampling (inches)
-Thickness = [0.05; 0.1];    AR = [0.3; 3.0];  Width = [0.01; 0.125];
-LowerBounds = [ones(1, 3) * Thickness(1), ones(1, 3) * AR(1), ones(1, 2) * Width(1), 40];
+Thickness = [0.05; 0.1];    AR = [1; 3.0];  Width = [0.01; 0.125];
+LowerBounds = [ones(1, 3) * Thickness(1), ones(1, 3) * AR(1), ones(1, 2) * Width(1), 70];
 UpperBounds = [ones(1, 3) * Thickness(2), ones(1, 3) * AR(2), ones(1, 2) * Width(2), 80];
 InputRange  = UpperBounds - LowerBounds;    
 MaxDP = 150; % * 0.5^2; % psi
 
 % Latin Hypercube Sampling for parameter space for GP training
 NumDims = length(LowerBounds);
-NumSamples = 150;
+NumSamples = 250;
 LHS = HyperSampl(NumSamples, NumDims);
 Geometries = LowerBounds + LHS .* InputRange;
 
 %% Feed sample space through SKIPPERRegen.m to evaluate physics
 Lifespan = zeros(NumSamples, 1);
 PressDrop = zeros(NumSamples, 1);
+MaxChamberTemp = zeros(NumSamples, 1);
 Invalid = 0;
 for i = 1:NumSamples
     NC = Geometries(i, 9);
@@ -43,7 +44,7 @@ for i = 1:NumSamples
     AR = Geometries(i, 4:6);
     CW = Geometries(i, 7:8);
     try
-        [Lifespan(i), PressDrop(i)] = SKRegen2_ElectricBoogalo(Data, NC, WT, AR, CW, 0);
+        [Lifespan(i), PressDrop(i), MaxChamberTemp(i)] = SKRegen2_ElectricBoogalo(Data, NC, WT, AR, CW, 0);
         if ~isreal(Lifespan(i)) || ~isreal(PressDrop(i))
             error('Complex physics output detected.'); 
         end
@@ -62,10 +63,10 @@ fprintf('Initial Evaluation complete!, %.2f%% of sampled geometries were invalid
 %% Phase 1: Continuous Global Optimization
 NumPhase1 = 100;
 fprintf('\nStarting Phase 1: Continuous Search\n');
-[Geometries, Lifespan, PressDrop, logT_L, logT_P] = BOSearch( ...
-    NumPhase1, Geometries, Lifespan, PressDrop, ...
+[Geometries, Lifespan, PressDrop, MaxChamberTemp, logT_L, logT_P, logT_T] = BOSearch( ...
+    NumPhase1, Geometries, Lifespan, PressDrop, MaxChamberTemp, ...
     LowerBounds, UpperBounds, LowerBounds, UpperBounds, ...
-    Data, MaxDP, [], [], []);
+    Data, MaxDP, [], [], [], []);
 
 % Identify Continuous Champion
 ValidIdx = ~isnan(Lifespan) & (PressDrop <= MaxDP);
@@ -165,27 +166,34 @@ for k = 1:size(FineTuneCWs, 1)
     
     LocalLife = zeros(NumPhase2_Init, 1);
     LocalPress = zeros(NumPhase2_Init, 1);
+    LocalTemp = zeros(NumPhase2_Init, 1);
     
     fprintf('  Evaluating %i local LHS samples... ', NumPhase2_Init);
     for i = 1:NumPhase2_Init
+
+        WT_loc = LocalGeom(i, 1:3);
+        AR_loc = LocalGeom(i, 4:6);
+        CW_loc = LocalGeom(i, 7:8);
+        NC_loc = LocalGeom(i, 9);
         try
-            [LocalLife(i), LocalPress(i)] = SKRegen2_ElectricBoogalo(Data, LocalGeom(i, 9), LocalGeom(i, 1:3), LocalGeom(i, 4:6), FixedCW, 0);
+            [LocalLife(i), LocalPress(i), LocalTemp(i)] = SKRegen2_ElectricBoogalo(Data, NC_loc, WT_loc, AR_loc, CW_loc, 0);
         catch
-            LocalLife(i) = NaN; LocalPress(i) = NaN;
+            LocalLife(i) = NaN; LocalPress(i) = NaN; LocalTemp(i) = NaN;
         end
     end
     fprintf('Done.\n');
     
     % Cold-Start Local BO Search (FT bounds act as absolute normalization bounds)
-    [OptGeom, OptLife, OptPress, ~, ~] = BOSearch( ...
-        NumPhase2_Search, LocalGeom, LocalLife, LocalPress, ...
+    [OptGeom, OptLife, OptPress, OptTemp, ~, ~, ~] = BOSearch( ...
+        NumPhase2_Search, LocalGeom, LocalLife, LocalPress, LocalTemp, ...
         FT_LB, FT_UB, FT_LB, FT_UB, ... 
-        Data, MaxDP, FixedCW, [], []);
+        Data, MaxDP, FixedCW, [], [], []);
         
     % Append to master array for final plotting
     Geometries = [Geometries; OptGeom];
     Lifespan = [Lifespan; OptLife];
     PressDrop = [PressDrop; OptPress];
+    MaxChamberTemp = [MaxChamberTemp; OptTemp];
     CurrentTotalEvals = CurrentTotalEvals + NumPhase2_Init + NumPhase2_Search;
     FT_EndIndices = [FT_EndIndices, CurrentTotalEvals];
 end
@@ -292,12 +300,10 @@ ylabel('Pressure Drop [psi]');
 grid on; ylim([0, max(MaxDP + 50, prctile(PlotPress(~CrashIdx), 85))]);
 %SKRegen2_ElectricBoogalo(Data, ChampionGeom(9), ChampionGeom(1:3), ChampionGeom(4:6), ChampionGeom(7:8), 1);
 %% Local Functions
-function [Geometries, Lifespan, PressDrop, logT_L, logT_P] = BOSearch(NumIter, Geometries, Lifespan, PressDrop, SearchLB, SearchUB, GlobalLB, GlobalUB, Data, MaxDP, FixedCW, logT_L, logT_P)
-    
+function [Geometries, Lifespan, PressDrop, MaxChamberTemp, logT_L, logT_P, logT_T] = BOSearch(NumIter, Geometries, Lifespan, PressDrop, MaxChamberTemp, SearchLB, SearchUB, GlobalLB, GlobalUB, Data, MaxDP, FixedCW, logT_L, logT_P, logT_T) 
     NumDims = length(GlobalLB);
     GlobalRange = GlobalUB - GlobalLB;
 
-    % Fix dimensions 7 and 8 if provided
     if ~isempty(FixedCW)
         SearchLB(7:8) = FixedCW;
         SearchUB(7:8) = FixedCW;
@@ -306,17 +312,17 @@ function [Geometries, Lifespan, PressDrop, logT_L, logT_P] = BOSearch(NumIter, G
     LB_norm = (SearchLB - GlobalLB) ./ GlobalRange;
     UB_norm = (SearchUB - GlobalLB) ./ GlobalRange;
 
-    % Initialize hyperparams if not warm-starting
     if isempty(logT_L)
         logT_L = [log(0.5) * ones(NumDims, 1); 0; log(0.01)];
         logT_P = logT_L;
+        logT_T = logT_L; % Initialize Temp GP hyperparams
     end
 
     options_GP  = optimoptions('fminunc', 'Display', 'off', 'Algorithm', 'quasi-newton', 'MaxFunctionEvaluations', 1000);
-    options_ACQ = optimoptions('fmincon', 'Display', 'off', 'Algorithm', 'sqp',          'MaxFunctionEvaluations', 1000);
+    options_ACQ = optimoptions('fmincon', 'Display', 'off', 'Algorithm', 'sqp', 'MaxFunctionEvaluations', 1000);
 
     for iter = 1:NumIter
-        % Output scaling
+        % Output Scaling
         LifespanDEV  = std(Lifespan,  'omitnan'); 
         LifespanMEAN = mean(Lifespan, 'omitnan');
         LifespanSCALED = (Lifespan - LifespanMEAN) / LifespanDEV;
@@ -329,7 +335,15 @@ function [Geometries, Lifespan, PressDrop, logT_L, logT_P] = BOSearch(NumIter, G
 
         ValidMask = ~isnan(Lifespan);
         WorstLifespan = min(LifespanSCALED(ValidMask));
-        LifespanSCALED(isnan(LifespanSCALED)) = WorstLifespan - 0.1;
+        LifespanSCALED(isnan(LifespanSCALED)) = WorstLifespan - 2;
+        
+        % Temperature Scaling (Only trained on valid runs)
+        TempDEV = std(MaxChamberTemp(ValidMask), 'omitnan');
+        if TempDEV == 0 || isnan(TempDEV)
+            TempDEV = 1; 
+        end
+        TempMEAN = mean(MaxChamberTemp(ValidMask), 'omitnan');
+        TempSCALED = (MaxChamberTemp - TempMEAN) / TempDEV;
 
         GeometriesNorm = (Geometries - GlobalLB) ./ GlobalRange;
         GeometriesNorm_Valid = GeometriesNorm(ValidMask, :);
@@ -343,34 +357,37 @@ function [Geometries, Lifespan, PressDrop, logT_L, logT_P] = BOSearch(NumIter, G
         end
 
         % GP Training
-        logT_L = fminunc(@(t) NLML(t, GeometriesNorm,              LifespanSCALED),             logT_L, options_GP);
+        logT_L = fminunc(@(t) NLML(t, GeometriesNorm, LifespanSCALED), logT_L, options_GP);
         logT_P = fminunc(@(t) NLML(t, GeometriesNorm_Valid, PressDropSCALED(ValidMask)), logT_P, options_GP);
+        logT_T = fminunc(@(t) NLML(t, GeometriesNorm_Valid, TempSCALED(ValidMask)), logT_T, options_GP);
+        
         ThetaOpt_LIFE  = exp(logT_L);
         ThetaOpt_PRESS = exp(logT_P);
+        ThetaOpt_TEMP  = exp(logT_T);
 
+        % Life GP
         len_L = ThetaOpt_LIFE(1:end-2)';  sig_L = ThetaOpt_LIFE(end-1);  noise_L = ThetaOpt_LIFE(end);
         K_L   = MaternKernel(GeometriesNorm, GeometriesNorm, len_L, sig_L) + noise_L * eye(size(GeometriesNorm, 1));
-        
-        % Progressive jitter for Life GP
         [L_L, pL] = chol(K_L, 'lower');
         jitterL = 1e-6;
-        while pL > 0
-            [L_L, pL] = chol(K_L + jitterL * max(diag(K_L)) * eye(size(K_L,1)), 'lower');
-            jitterL = jitterL * 10;
-        end
+        while pL > 0; [L_L, pL] = chol(K_L + jitterL * max(diag(K_L)) * eye(size(K_L,1)), 'lower'); jitterL = jitterL * 10; end
         a_L   = L_L' \ (L_L \ LifespanSCALED);
 
+        % Pressure GP
         len_P = ThetaOpt_PRESS(1:end-2)'; sig_P = ThetaOpt_PRESS(end-1); noise_P = ThetaOpt_PRESS(end);
         K_P   = MaternKernel(GeometriesNorm_Valid, GeometriesNorm_Valid, len_P, sig_P) + noise_P * eye(NumValid);
-        
-        % Progressive jitter for Pressure GP
         [L_P, pP] = chol(K_P, 'lower');
         jitterP = 1e-6;
-        while pP > 0
-            [L_P, pP] = chol(K_P + jitterP * max(diag(K_P)) * eye(size(K_P,1)), 'lower');
-            jitterP = jitterP * 10;
-        end
+        while pP > 0; [L_P, pP] = chol(K_P + jitterP * max(diag(K_P)) * eye(size(K_P,1)), 'lower'); jitterP = jitterP * 10; end
         a_P   = L_P' \ (L_P \ PressDropSCALED(ValidMask));
+        
+        % Temperature GP
+        len_T = ThetaOpt_TEMP(1:end-2)'; sig_T = ThetaOpt_TEMP(end-1); noise_T = ThetaOpt_TEMP(end);
+        K_T   = MaternKernel(GeometriesNorm_Valid, GeometriesNorm_Valid, len_T, sig_T) + noise_T * eye(NumValid);
+        [L_T, pT] = chol(K_T, 'lower');
+        jitterT = 1e-6;
+        while pT > 0; [L_T, pT] = chol(K_T + jitterT * max(diag(K_T)) * eye(size(K_T,1)), 'lower'); jitterT = jitterT * 10; end
+        a_T   = L_T' \ (L_T \ TempSCALED(ValidMask));
 
         % Grid Search
         NumGrid = 50000;
@@ -378,14 +395,19 @@ function [Geometries, Lifespan, PressDrop, logT_L, logT_P] = BOSearch(NumIter, G
 
         [muLIFE_g,  stdLIFE_g]  = PredictGP(GridGeometriesNorm, GeometriesNorm,       L_L, a_L, ThetaOpt_LIFE);
         [muPRESS_g, stdPRESS_g] = PredictGP(GridGeometriesNorm, GeometriesNorm_Valid, L_P, a_P, ThetaOpt_PRESS);
+        [muTEMP_g,  ~]          = PredictGP(GridGeometriesNorm, GeometriesNorm_Valid, L_T, a_T, ThetaOpt_TEMP);
+        
         stdLIFE_g  = max(real(stdLIFE_g),  1e-6);
         stdPRESS_g = max(real(stdPRESS_g), 1e-6);
 
-        xi = 0.01;
+        xi = 0.005;
         Z  = (muLIFE_g - BestValidScaled - xi) ./ stdLIFE_g;
         EI = stdLIFE_g .* (Z .* NormCDF(Z) + NormPDF(Z));
         PoF_g = NormCDF((MaxDP_Scaled - muPRESS_g) ./ stdPRESS_g);
-        GridScores = -EI .* PoF_g;
+        
+        % Soft Penalty implementation for the Grid initialization
+        WeightFactor = 0.015; % Adjust for temp importance
+        GridScores = (-EI .* PoF_g) + (WeightFactor .* muTEMP_g);
 
         [~, SortedIdx] = sort(GridScores);
 
@@ -394,8 +416,11 @@ function [Geometries, Lifespan, PressDrop, logT_L, logT_P] = BOSearch(NumIter, G
         BestCandidates = zeros(NumStarts, NumDims);
         BestAcqVals    = zeros(NumStarts, 1);
 
+        % Passing the Temp GP objects to the Acquisition function
         AcqObj = @(x_norm) Acquisition(x_norm, GeometriesNorm, GeometriesNorm_Valid, ...
-                                        LB_norm, UB_norm, L_L, a_L, ThetaOpt_LIFE, L_P, a_P, ThetaOpt_PRESS, MaxDP_Scaled, BestValidScaled);
+                                        LB_norm, UB_norm, L_L, a_L, ThetaOpt_LIFE, ...
+                                        L_P, a_P, ThetaOpt_PRESS, MaxDP_Scaled, BestValidScaled, ...
+                                        L_T, a_T, ThetaOpt_TEMP, WeightFactor);
 
         for j = 1:NumStarts
             x0_norm = GridGeometriesNorm(SortedIdx(j), :);
@@ -410,17 +435,18 @@ function [Geometries, Lifespan, PressDrop, logT_L, logT_P] = BOSearch(NumIter, G
         % Physical evaluation
         WT = x_next(1:3); AR = x_next(4:6); CW = x_next(7:8); NC = x_next(9);
         try
-            [Life_new, Drop_new] = SKRegen2_ElectricBoogalo(Data, NC, WT, AR, CW, 0);
+            [Life_new, Drop_new, MaxT_new] = SKRegen2_ElectricBoogalo(Data, NC, WT, AR, CW, 0);
             if ~isreal(Life_new) || ~isreal(Drop_new), error('Complex output.'); end
         catch
-            Life_new = NaN; Drop_new = NaN;
+            Life_new = NaN; Drop_new = NaN; MaxT_new = NaN;
         end
         if ~isnan(Life_new)
-            fprintf('Eval Complete! %.2f Cycles & %.2f psi drop\n', Life_new, Drop_new);
+            fprintf('Eval Complete! %.2f Cycles & %.2f psi drop, %.2f K Chamber\n', Life_new, Drop_new, MaxT_new);
         end
 
-        Geometries = [Geometries; x_next];
-        Lifespan   = [Lifespan;   Life_new];
-        PressDrop  = [PressDrop;  Drop_new];
+        Geometries     = [Geometries; x_next];
+        Lifespan       = [Lifespan; Life_new];
+        PressDrop      = [PressDrop; Drop_new];
+        MaxChamberTemp = [MaxChamberTemp; MaxT_new];
     end
 end

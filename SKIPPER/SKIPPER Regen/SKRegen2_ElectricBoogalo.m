@@ -5,7 +5,7 @@
 % Includes axial heat transfer via tracking mean wall temp and solving via
 % a tridiagonal matrix. Uses legacy regen code for initial guess 
 
-function [Lifespan, PressDrop] = SKRegen2_ElectricBoogalo(Data, NumChannels, WallThickness, AspectRatio, ChannelWidth, DisplayMode)
+function [Lifespan, PressDrop, MaxChamberTemp] = SKRegen2_ElectricBoogalo(Data, NumChannels, WallThickness, AspectRatio, ChannelWidth, DisplayMode)
 New_CEA = false;
 fclose all;
 close all;
@@ -24,7 +24,7 @@ FEA_outputs = 0; % 1 = yes, 0 = no
 dogleg = 0; % 1 = yes, 0 = no, supertadpole regen channel dogleg at injector
 traditional = 1;  % 1 = yes, 0 = no, changes how channel dimensions are interpolated for a traditonal vs. printed chamber
 
-throttle = 1; % throttle percent - e.g. 1 = 100%, 0.5 = 50%
+throttle = 0.5; % throttle percent - e.g. 1 = 100%, 0.5 = 50%
 num_channels = round(NumChannels); % number of regenerative cooling channels      
 coolant = "isopropyl alcohol"; % coolant definition ("isopropyl alcohol", "water", "methanol", "ethanol")
 fuel = {'C3H8O,2propanol'}; % fuel definition
@@ -697,6 +697,8 @@ chamber_CDA = mdot_coolant / sqrt(2 * mean(rho_coolant) * (max(P_coolant) - min(
 plastic_deformation_cyclic = sum(dx * epsilon_pa); %Permanent axial deformation per hot fire [in]
 
 %% Output
+chamber_indices = x_interpolated <= -converging_length;
+MaxChamberTemp = max(T_wg(chamber_indices));
 Lifespan = Engine_life;
 PressDrop = (max(P_coolant) - min(P_coolant)) / 6894.76;
 if DisplayMode == 1

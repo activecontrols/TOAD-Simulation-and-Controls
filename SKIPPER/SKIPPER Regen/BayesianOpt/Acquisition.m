@@ -1,32 +1,29 @@
-function Score = Acquisition(xstar, X_train_life, X_train_press, LowerBounds, UpperBounds, L_LIFE, alpha_LIFE, ThetaOpt_LIFE, L_PRESS, alpha_PRESS, ThetaOpt_PRESS, MaxDP_Scaled, BestValidScaled)
-    % All inputs are in normalized [0,1]^D space.
-    % X_train_life  -- all training points (invalid ones carry penalty)
-    % X_train_press -- valid-only training points for the pressure GP (FIX 2)
-
-    % 1. Enforce bounds
+function Score = Acquisition(xstar, X_train_life, X_train_press, LowerBounds, UpperBounds, L_LIFE, alpha_LIFE, ThetaOpt_LIFE, L_PRESS, alpha_PRESS, ThetaOpt_PRESS, MaxDP_Scaled, BestValidScaled, L_TEMP, alpha_TEMP, ThetaOpt_TEMP, WeightFactor)
+    % Enforce bounds
     if any(xstar < LowerBounds) || any(xstar > UpperBounds)
         Score = realmax; 
         return;
     end
 
-    % 2. Get GP Predictions
+    % Get GP Predictions
     [muLIFE,  stdLIFE]  = PredictGP(xstar, X_train_life,  L_LIFE,  alpha_LIFE,  ThetaOpt_LIFE);
     [muPRESS, stdPRESS] = PredictGP(xstar, X_train_press, L_PRESS, alpha_PRESS, ThetaOpt_PRESS);
+    [muTEMP,  ~]        = PredictGP(xstar, X_train_press, L_TEMP,  alpha_TEMP,  ThetaOpt_TEMP);
 
-    % 3. Smooth uncertainties to prevent fmincon from crashing
+    % Smooth uncertainties
     stdLIFE  = max(real(stdLIFE),  1e-6);
     stdPRESS = max(real(stdPRESS), 1e-6);
 
-    % 4. Expected Improvement
-    % FIX 3: xi >= 0 required. Negative xi makes EI non-zero almost
-    %         everywhere, eliminating discriminative acquisition signal.
-    xi = 0.01;
+    % Expected Improvement
+    xi = 0.005;
     Z  = (muLIFE - BestValidScaled - xi) / stdLIFE;
     EI = stdLIFE * (Z * NormCDF(Z) + NormPDF(Z));
 
-    % 5. Probability of Feasibility
+    % Probability of Feasibility (Pressure Drop)
     PoF = NormCDF((MaxDP_Scaled - muPRESS) / stdPRESS);
+    BoundedTemp = NormCDF(muTEMP);
 
-    % 6. Final score (minimised by fmincon)
-    Score = -EI * PoF;
+    % Final score with Soft Penalty
+    % fmincon minimizes the score. A higher predicted temperature adds to the score, penalizing the geometry.
+    Score = (-EI * PoF) + (WeightFactor * BoundedTemp);
 end
