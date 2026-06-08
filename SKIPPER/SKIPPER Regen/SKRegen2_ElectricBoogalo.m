@@ -24,7 +24,7 @@ FEA_outputs = 0; % 1 = yes, 0 = no
 dogleg = 0; % 1 = yes, 0 = no, supertadpole regen channel dogleg at injector
 traditional = 1;  % 1 = yes, 0 = no, changes how channel dimensions are interpolated for a traditonal vs. printed chamber
 
-throttle = 0.5; % throttle percent - e.g. 1 = 100%, 0.5 = 50%
+throttle = 0.75; % throttle percent - e.g. 1 = 100%, 0.5 = 50%
 num_channels = round(NumChannels); % number of regenerative cooling channels      
 coolant = "isopropyl alcohol"; % coolant definition ("isopropyl alcohol", "water", "methanol", "ethanol")
 fuel = {'C3H8O,2propanol'}; % fuel definition
@@ -368,12 +368,10 @@ else
 end
 
 % Initial Temperature Guesses
-% Run the legacy 1D code for guesses
-[~, ~, T_wg_guess, T_wl_guess, T_cool_guess, P_cool_guess] = SKIPPERRegen(Data, NumChannels, WallThickness, AspectRatio, ChannelWidth, 0);
-T_coolant = T_cool_guess; 
-P_coolant = P_cool_guess; 
-T_wg = T_wg_guess; 
-T_wl = T_wl_guess;
+T_coolant = Data.TempGuess;
+P_coolant = Data.PressGuess;
+T_wg = Data.TWG_Guess;
+T_wl = Data.TWL_Guess;
 T_m = (T_wg + T_wl) ./ 2;  
 
 % Setup global loop controllers
@@ -735,7 +733,10 @@ if DisplayMode == 1
         writematrix(Excel_inputs, 'FEA_regen_large.xls');
         % EXCEL COLS: h_c, w_c, x-val, gas-temp, recovery-temp, gas-film-coeff, gas-pressure, coolant-temp, coolant-film-coeff, coolant-pressure 
     end
-    
+    % End De la (actual) Code 
+    elapsedTime = toc;
+    fprintf('\nThe code ran in %.4f seconds.\n', elapsedTime)
+
     %% PLOTS
     % Debug Plots
     if debug
@@ -1035,10 +1036,6 @@ if DisplayMode == 1
     else
         Channel_CS_Plot(num_channels,t_w,h_c,w_c,[r_interpolated(1), r_t, r_interpolated(end)],8,[" Chamber", " Throat", " Nozzle"]);
     end
-    
-    % End De la Code 
-    elapsedTime = toc;
-    fprintf('\nThe code ran in %.4f seconds.\n', elapsedTime)
 end
 end
 
