@@ -16,7 +16,7 @@ constantsSTADPOLE.a_i_o = 3.14577787810908e-5; % [m^2] area injector ox
 constantsSTADPOLE.a_i_f = 2.60064441031368e-5; % [m^2] area injector fuel
 constantsSTADPOLE.r = 442.234043; % [J/kg-K], specific gas constant of exhaust (molecular weight 18.8 g/mol)
 constantsSTADPOLE.c_star = 1430; % [m/s] characteristic velocity
-constantsSTADPOLE.OF_target = 1.2;
+constantsSTADPOLE.OF_target = 1.7;
 
 % oxygen and fuel circuit constants (temporary until i get injector
 % pressures)
