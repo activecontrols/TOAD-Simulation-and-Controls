@@ -28,7 +28,7 @@ function [injPress, valve_coeff_fu_cmd] = fuelCircuit(chamber_pressure_m, inject
     rho_water = constantsSTADPOLE.dens_w; % [kg/m^3]
     
     % Feedback trim variables
-    k_fu = 9E-12; % [unitless], integral gain for fuel trim,  -------------Random value just to get the code to run
+    k_fu = 1E-11; % [unitless], integral gain for fuel trim,  -------------Random value just to get the code to run
     time_step = 0.001; % [s], based on loop time,  -------------Random value just to get the code to run
 
     persistent integral_error_fu
@@ -43,7 +43,6 @@ function [injPress, valve_coeff_fu_cmd] = fuelCircuit(chamber_pressure_m, inject
     massflow_ox_m = discharge_coeff_ox * orifice_area_ox * term_1; % [kg/s]
     massflow_fu_cmd = massflow_ox_m / of_ratio; % [kg/s]
     injector_pressure_fu_cmd = chamber_pressure_m + (massflow_fu_cmd ^ 2) / (2 * rho_fu * (discharge_coeff_fu * orifice_area_fu) ^ 2); % [Pa]
-    % Can cause imaginary values
     friction_pressure_drop_fu = massflow_fu_cmd^2 * 2082581.1;
     valve_coeff_fu_cmd = massflow_fu_cmd *  sqrt(max(1 / (rho_fu * rho_water * (tank_pressure_fu_m - friction_pressure_drop_fu - injector_pressure_fu_cmd)), 0)); % [m^3.5/kg^0.5]
     injPress = injector_pressure_fu_cmd;

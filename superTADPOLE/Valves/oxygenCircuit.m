@@ -26,7 +26,7 @@ function [injPress, valve_coeff_ox_cmd] = oxygenCircuit(thrust_cmd, chamber_pres
     rho_water = constantsSTADPOLE.dens_w; % [kg/m^3]
     
     % Feedback trim variables
-    k_ox = 4E-13; % [unitless], integral gain for oxygen trim,  -------------Random value just to get the code to run
+    k_ox = 1E-11; % [unitless], integral gain for oxygen trim,  -------------Random value just to get the code to run
     time_step = 0.001; % [s], based on loop time,  -------------Random value just to get the code to run
 
     persistent integral_error_ox
