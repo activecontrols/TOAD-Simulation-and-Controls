@@ -1,4 +1,4 @@
-function valve_coeff_fu_cmd = fuelCircuit(chamber_pressure_m, injector_pressure_ox_m, injector_pressure_fu_m, tank_pressure_fu_m, constantsSTADPOLE)
+function [injPress, valve_coeff_fu_cmd] = fuelCircuit(chamber_pressure_m, injector_pressure_ox_m, injector_pressure_fu_m, tank_pressure_fu_m, constantsSTADPOLE)
     
     % Notes:
     % - Fuel valve is the follow valve
@@ -46,6 +46,7 @@ function valve_coeff_fu_cmd = fuelCircuit(chamber_pressure_m, injector_pressure_
     % Can cause imaginary values
     friction_pressure_drop_fu = massflow_fu_cmd^2 * 2082581.1;
     valve_coeff_fu_cmd = massflow_fu_cmd *  sqrt(max(1 / (rho_fu * rho_water * (tank_pressure_fu_m - friction_pressure_drop_fu - injector_pressure_fu_cmd)), 0)); % [m^3.5/kg^0.5]
+    injPress = injector_pressure_fu_cmd;
     
     % Feedback trim equations
     error_fu = injector_pressure_fu_cmd - injector_pressure_fu_m; % [Pa]
