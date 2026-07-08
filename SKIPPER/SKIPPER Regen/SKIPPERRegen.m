@@ -592,7 +592,7 @@ for i = points % 1 = injector, steps = exit
                 CTE_liq_side(i) = interp1(CTE(:,1), CTE(:,2), T_wl(i), 'linear', 'extrap');
                 elong(i) = interp1(elongation_break(:,1), elongation_break(:,2), T_wg(i),'linear','extrap');
 
-                if ((elong(i) > 0.25) && (materialchoice == 0)) % cap elongation to break at 25% if running with AL6061-RAM2
+                if ((elong(i) > 0.25) && (materialchoice == 0)) % cap elongation to break at 25% if running with AL6061-RAM2 (weird material property superplasticity shenanigans, somewhat arbitrary cap that tracked with LCF data in MSFC pre-print)
                     elong(i) = 0.25;
                 end
 
