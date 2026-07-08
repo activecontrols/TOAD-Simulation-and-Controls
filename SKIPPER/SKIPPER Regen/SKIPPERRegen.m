@@ -591,9 +591,11 @@ for i = points % 1 = injector, steps = exit
                 CTE_current(i) = interp1(CTE(:,1), CTE(:,2), T_wg(i), 'linear', 'extrap');
                 CTE_liq_side(i) = interp1(CTE(:,1), CTE(:,2), T_wl(i), 'linear', 'extrap');
                 elong(i) = interp1(elongation_break(:,1), elongation_break(:,2), T_wg(i),'linear','extrap');
-                if elong(i) > .25
-                    elong(i) = .25;
+
+                if ((elong(i) > 0.25) && (materialchoice == 0)) % cap elongation to break at 25% if running with AL6061-RAM2
+                    elong(i) = 0.25;
                 end
+
                 epsilon_emax(i) = ((yield(i)*1000000)/ E_current(i));
 
                 deltaT1(i) = T_wg(i) - T_wl(i);
