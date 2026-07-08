@@ -29,7 +29,7 @@ MaxDP = 150; % * 0.5^2; % psi
 
 % Latin Hypercube Sampling for parameter space for GP training
 NumDims = length(LowerBounds);
-NumSamples = 250;
+NumSamples = 252;
 LHS = HyperSampl(NumSamples, NumDims);
 Geometries = LowerBounds + LHS .* InputRange;
 

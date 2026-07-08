@@ -24,7 +24,7 @@ FEA_outputs = 0; % 1 = yes, 0 = no
 dogleg = 0; % 1 = yes, 0 = no, supertadpole regen channel dogleg at injector
 traditional = 1;  % 1 = yes, 0 = no, changes how channel dimensions are interpolated for a traditonal vs. printed chamber
 
-throttle = 0.5; % throttle percent - e.g. 1 = 100%, 0.5 = 50%
+throttle = 1; % throttle percent - e.g. 1 = 100%, 0.5 = 50%
 num_channels = round(NumChannels); % number of regenerative cooling channels      
 coolant = "isopropyl alcohol"; % coolant definition ("isopropyl alcohol", "water", "methanol", "ethanol")
 fuel = {'C3H8O,2propanol'}; % fuel definition
@@ -35,11 +35,11 @@ fuel_temp = throttle * -25.556 + 427.605; % [K], linear fit for predicted regen 
 oxidizer_temp = 90.17; % [K]
 
 Ft = 660; % Engine Thrust [lbf]
-Isp_max = 192.94; % Isp at Maximum Throttle [s]
-Isp_min = 168.44; % Isp at Minimum Throttle (50%) [s]
+Isp_max = 185.631; % Isp at Maximum Throttle [s]
+Isp_min = 166.629; % Isp at Minimum Throttle (50%) [s]
 Isp_eff = Isp_min + 2 * (throttle - 0.5) * (Isp_max - Isp_min); % linear interpolated Isp (min throttle assumed 50%)
 P_c = throttle * 250; % chamber pressure [psi] 
-P_e = throttle * 16.5; % exit pressure [psi]
+P_e = throttle * 17; % exit pressure [psi]
 P_inlet = 192.08 * throttle + 257.47; % Regen inlet pressure [psi]  
 total_OF = 1.2; % Total oxidizer/fuel ratio
 total_mdot = (throttle * Ft / Isp_eff) / 2.205; % Total chamber mass flow [kg/s]  
