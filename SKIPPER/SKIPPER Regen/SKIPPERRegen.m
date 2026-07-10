@@ -21,6 +21,7 @@ coolant_direction = 0; % 0 = opposite flow, 1 = flow with hot gas
 FEA_outputs = 0; % 1 = yes, 0 = no
 dogleg = 0; % 1 = yes, 0 = no, supertadpole regen channel dogleg at injector
 traditional = 1;  % 1 = yes, 0 = no, changes how channel dimensions are interpolated for a traditonal vs. printed chamber
+peak_point_strain_input = 0.0; % 0 = disabled, peak point strain percent input from FEA - e.g. 0.015 = 1.5%, 0.005 = 0.5%
 
 throttle = 1; % throttle percent - e.g. 1 = 100%, 0.5 = 50%
 num_channels = round(NumChannels); % number of regenerative cooling channels      
@@ -624,6 +625,9 @@ for i = points % 1 = injector, steps = exit
                 epsilon_tota(i) = ((CTE_current(i)*deltaT1(i))/(2*(1-v))) + CTE_current(i) * deltaT2(i); 
                 epsilon_tott(i) = epsilon_t(i);
                 epsilon_toteff(i) = (2/sqrt(3)) * sqrt(((epsilon_tott(i)^2)+ epsilon_tott(i)*epsilon_tota(i) + (epsilon_tota(i))^2));
+                if (peak_point_strain_input ~= 0) % Set total effective strain to the input peak point strain if the peak point strain is input 
+                    epsilon_toteff(i) = peak_point_strain_input;
+                end
                 sigma_a(i) = E_current(i) * epsilon_tota(i);
                 sigma_t2(i) = E_current(i) * epsilon_tott(i);
                 epsilon_pa(i) = epsilon_tota(i) - epsilon_emax(i);
@@ -647,8 +651,9 @@ for i = points % 1 = injector, steps = exit
 
                 epsilon_peff(i) = (2/sqrt(3)) * sqrt(((epsilon_pt(i)^2) + epsilon_pt(i)*epsilon_pa(i) + (epsilon_pa(i))^2));
                 epsilon_cs(i) = 2*yield(i)/E_current(i) + ((elong(i)/2)*((N)^(-1/2)));
-                %epsilon_cs_tot(i) = epsilon_cs(i) + epsilon_emax(i); % Total strain after N # of hotfires
-
+                if (peak_point_strain_input ~= 0) % Set effective plastic strain to the input peak point strain minus the effective elastic strain if the peak point strain is input 
+                    epsilon_peff(i) = epsilon_toteff(i) - epsilon_eeff(i);
+                end
                 epsilon_cs_tot(i) = epsilon_cs(i) + epsilon_eeff(i)/2; % Total strain after N # of hotfires
                 MS_lowcycle(i) = epsilon_cs(i) / (epsilon_peff(i));
                 MS(i) = epsilon_cs_tot(i) / (epsilon_toteff(i));
@@ -696,7 +701,9 @@ if DisplayMode == 1
     fprintf("\nEngine life (hot fires) Lowcycle: %.02f", Engine_life_lowcycle)
     fprintf("\nManson Universal Slopes Margin of safety for engine life of %0.0f hot fires: %.02f", N/8, overall_MS_spacex)
     fprintf("\nSafety factor to yield: %.02f", yield_SF)
-    fprintf("\nAxial Plastic Deformation per Cycle: %.05f in", plastic_deformation_cyclic)
+    if (peak_point_strain_input == 0)
+        fprintf("\nAxial Plastic Deformation per Cycle: %.05f in", plastic_deformation_cyclic)
+    end
     fprintf("\nTotal Heat Input: %.2f kW", Qtot / 10^3)
     fprintf("\nCoolant Pressure Drop: %.2f psi", (max(P_coolant) - min(P_coolant)) / 6894.76)
     fprintf("\nMax Hotwall Temp: %.2f K", max(T_wg))
