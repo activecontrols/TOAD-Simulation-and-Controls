@@ -1,4 +1,4 @@
-function [injPress, valve_coeff_ox_cmd] = oxygenCircuit(thrust_cmd, chamber_pressure_m, tank_pressure_ox_m, constantsSTADPOLE)
+function [injPress, valve_angle_ox_cmd] = oxygenCircuit(thrust_cmd, chamber_pressure_m, tank_pressure_ox_m, constantsSTADPOLE)
     
     % Notes:
     % - Oxygen valve is the lead valve
@@ -48,5 +48,6 @@ function [injPress, valve_coeff_ox_cmd] = oxygenCircuit(thrust_cmd, chamber_pres
     error_ox = chamber_pressure_cmd - chamber_pressure_m; % [Pa]
     integral_error_ox = integral_error_ox + error_ox * time_step;
     trim_ox = k_ox * integral_error_ox;
-    % valve_coeff_ox_cmd = valve_coeff_ox_cmd + trim_ox; % [m^3.5/kg^0.5]
+    valve_coeff_ox_cmd = valve_coeff_ox_cmd + trim_ox
+    valve_angle_ox_cmd = CoefficientToAngle(valve_coeff_ox_cmd)
 

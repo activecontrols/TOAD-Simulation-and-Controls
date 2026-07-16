@@ -1,4 +1,4 @@
-function [injPress, valve_coeff_fu_cmd] = fuelCircuit(chamber_pressure_m, injector_pressure_ox_m, injector_pressure_fu_m, tank_pressure_fu_m, constantsSTADPOLE)
+function [injPress, valve_angle_fu_cmd] = fuelCircuit(chamber_pressure_m, injector_pressure_ox_m, injector_pressure_fu_m, tank_pressure_fu_m, constantsSTADPOLE)
     
     % Notes:
     % - Fuel valve is the follow valve
@@ -51,5 +51,5 @@ function [injPress, valve_coeff_fu_cmd] = fuelCircuit(chamber_pressure_m, inject
     error_fu = injector_pressure_fu_cmd - injector_pressure_fu_m; % [Pa]
     integral_error_fu = integral_error_fu + error_fu * time_step;
     trim_fu = k_fu * integral_error_fu;
-    % valve_coeff_fu_cmd = valve_coeff_fu_cmd + trim_fu; % [m^3.5/kg^0.5]
-
+    valve_coeff_fu_cmd = valve_coeff_fu_cmd + trim_fu; % [m^3.5/kg^0.5]
+    valve_angle_fu_cmd = CoefficientToAngle(valve_coeff_fu_cmd);
