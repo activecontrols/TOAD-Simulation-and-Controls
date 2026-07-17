@@ -79,6 +79,16 @@ opti.subject_to(-pi/15 <= U(2,:) <= pi/15); % Gimbal phi limits
 opti.subject_to(0.5 * MaxThrust_val <= U(3,:) <= MaxThrust_val); % Throttle
 opti.subject_to(-10 <= U(4,:) <= 10);     % Roll torque limits
 
+%% Rate constraints
+max_gimbal_rate = deg2rad(20);   % deg/s, tune to lin act spec.
+max_thrust_rate = 5000;          % N/s
+
+for k = 1:N-1
+    opti.subject_to(-max_gimbal_rate*dt <= U(1,k+1)-U(1,k) <= max_gimbal_rate*dt);
+    opti.subject_to(-max_gimbal_rate*dt <= U(2,k+1)-U(2,k) <= max_gimbal_rate*dt);
+    opti.subject_to(-max_thrust_rate*dt <= U(3,k+1)-U(3,k) <= max_thrust_rate*dt);
+end
+
 %% Boundary Constraints
 % Initial state (On the pad)
 q0 = [1; 0; 0; 0]; % Upright
@@ -123,7 +133,16 @@ opti.set_initial(U(3, :), repmat(constantsTOAD.m_wet * constantsTOAD.g, 1, N));
 
 %% Cost Function (needs lots of improvement)
 % Add weightings for control usage
-opti.minimize(-(X(14, end) + X(15, end)) + 5 * T_total);
+w_rate = [1e-1; 1e-1; 1e-6; 1e-2];
+w_mag = [1e-2; 1e-2; 0; 1e-3];
+w_omega = 1e-2;
+
+dU = U(:, 2:end) - U(:, 1:end-1);
+rate_cost = sum(sum(w_rate .* dU.^2));
+reg_cost = sum(sum(w_mag .* U.^2));
+omega_cost = w_omega * sum(sum(X(11:13, :).^2));
+
+opti.minimize(-(X(14,end) + X(15,end)) + 5*T_total + reg_cost + rate_cost + omega_cost);
 
 %% Solver Configuration
 p_opts = struct('expand', true);
