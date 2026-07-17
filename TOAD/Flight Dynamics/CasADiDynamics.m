@@ -1,4 +1,4 @@
-addpath('../casadi-3.7.2-windows64-matlab2018b/')
+addpath('./CasADi/')
 import casadi.*
 
 % States
@@ -10,11 +10,13 @@ m_lox = MX.sym('m_lox', 1);
 m_ipa = MX.sym('m_ipa', 1);
 
 % Constants
-J = MX.sym('J', 1);
+J = MX.sym('J', 3, 3);
+J_d = MX.sym('J_d', 3, 3);
+TB_d = MX.sym('TB_d', 3);
 m_dry = MX.sym('m_dry', 1);
 g = MX.sym('g');
 rTB = MX.sym('rTB');
-MaxThrust = MX.sym('MaxThust');
+MaxThrust = MX.sym('MaxThrust');
 MaxMdot = MX.sym('MaxMdot');
 OF = MX.sym('OF');
 OxMassI = MX.sym('OxMassI');
@@ -105,9 +107,8 @@ netTau = (MB - zetaCross(omegaB) * J_tot * omegaB);
 % Function inputs
 x = [q; r; v; omegaB; m_lox; m_ipa];
 u = [theta; phi; thrust; roll];
-params = [m_dry, g, rTB, Ox_Z, OxMassI, OxHeight, Fu_Z, FuMassI, FuHeight, J, OxRadius, FuRadius, MaxThrust, OF, MaxMdot, MaxMdot_d];
+params = [m_dry, g, rTB, Ox_Z, OxMassI, OxHeight, Fu_Z, FuMassI, FuHeight, J(:), OxRadius, FuRadius, MaxThrust, OF, MaxMdot, MaxMdot_d];
 
 %State derivatives
 xdot = [qdot; rdot; vdot; netTau; mdot_lox; mdot_ipa];
-
-dynamics_fnc = Function('dynamics_fnc', {x, u, params}, {xdot})
+dynamics_fnc = Function('dynamics_fnc', {x, u, params}, {xdot}); 
