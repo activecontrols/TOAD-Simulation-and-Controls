@@ -1,4 +1,4 @@
-addpath('./CasADi/')
+addpath('C:\MATLAB Tools\casadi-3.7.2-windows64-matlab2018b')
 import casadi.*
 
 % States
@@ -107,7 +107,8 @@ netTau = (MB - zetaCross(omegaB) * J_tot * omegaB);
 % Function inputs
 x = [q; r; v; omegaB; m_lox; m_ipa];
 u = [theta; phi; thrust; roll];
-params = [m_dry, g, rTB, Ox_Z, OxMassI, OxHeight, Fu_Z, FuMassI, FuHeight, J(:), OxRadius, FuRadius, MaxThrust, OF, MaxMdot, MaxMdot_d];
+params = [m_dry; g; rTB; Ox_Z; OxMassI; OxHeight; Fu_Z; FuMassI; FuHeight; 
+    J(:); OxRadius; FuRadius; MaxThrust; OF; MaxMdot; MaxMdot_d; J_d(:); TB_d];
 
 %State derivatives
 xdot = [qdot; rdot; vdot; netTau; mdot_lox; mdot_ipa];
