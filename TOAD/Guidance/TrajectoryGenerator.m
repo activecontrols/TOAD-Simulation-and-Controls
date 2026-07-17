@@ -89,34 +89,51 @@ for k = 1:N-1
     opti.subject_to(-max_thrust_rate*dt <= U(3,k+1)-U(3,k) <= max_thrust_rate*dt);
 end
 
-%% Boundary Constraints
+%% Trajectory Design (Boundaries)
+
+    N_ascent = round(0.15*N);
+    N_flip = round(0.5 * N);
+    N_approach = round(0.8*N);
+    
 % Initial state (On the pad)
-q0 = [1; 0; 0; 0]; % Upright
-r0 = [0; 0; 0];
-v0 = [0; 0; 0];
-w0 = [0; 0; 0];
-m_lox0 = constantsTOAD.OxMass;
-m_ipa0 = constantsTOAD.FuMass;
-opti.subject_to(X(:, 1) == [q0; r0; v0; w0; m_lox0; m_ipa0]);
+    q0 = [1; 0; 0; 0]; % Upright
+    r0 = [0; 0; 0];
+    v0 = [0; 0; 0];
+    w0 = [0; 0; 0];
+    m_lox0 = constantsTOAD.OxMass;
+    m_ipa0 = constantsTOAD.FuMass;
+    opti.subject_to(X(:, 1) == [q0; r0; v0; w0; m_lox0; m_ipa0]);
 
 % Final state (On the landing zone)
-r_f = [2; 0; 0]; % Example downrange landing pad
-opti.subject_to(X(1:4, end) == q0); % Upright upon landing
-opti.subject_to(X(5:7, end) == r_f); 
-opti.subject_to(X(8:10, end) == [0;0;0]); % Zero velocity
+    r_f = [5; 0; 0]; % Example downrange landing pad
+    opti.subject_to(X(1:4, end) == q0); % Upright upon landing
+    opti.subject_to(X(5:7, end) == r_f); 
+    opti.subject_to(X(8:10, end) == [0;0;0]); % Zero velocity
 
-%% Loose Backflip Waypoint
-mid_node = round(N / 2);
-q_inverted = [0; 0; 1; 0];
-q_mid = X(1:4, mid_node);
+%% Trajectory
+    
+% Ascent 
+    for k = 1:N_ascent
+        opti.subject_to(-1 <= X(5:6, k) <= 1);
+    end
+    opti.subject_to(X(10, N_ascent) >= 5);
+    
+% Flip
+    q_inverted = [0; 0; 1; 0];
+    q_flip = X(1:4, N_flip);
+    
+    % Squared quaternion dot product >= 0.98 ensures the attitude is very close 
+    % to inverted, but allows the solver a slight tolerance.
+    dot_prod = q_inverted' * q_flip;
+    opti.subject_to(dot_prod^2 >= 0.98);
+    opti.subject_to(X(7, N_flip) >= 30);
 
-% Squared quaternion dot product >= 0.98 ensures the attitude is very close 
-% to inverted, but allows the solver a slight tolerance.
-dot_prod = q_inverted' * q_mid;
-opti.subject_to(dot_prod^2 >= 0.95);
-
-% Optional loose positional waypoint at the apex to prevent crashing during the flip
-opti.subject_to(X(7, mid_node) >= 20);
+% Descent (glideslope constrained)
+    glideslope_angle = deg2rad(15);
+    for k = N_approach:N+1
+        horiz_dist_sq = (X(5,k) - r_f(1))^2 + (X(6,k) - r_f(2))^2;
+        opti.subject_to(horiz_dist_sq <= (tan(glideslope_angle) * X(7,k))^2);
+    end
 
 %% Initial Guess
 % Linearly interpolate positions from start to end
