@@ -9,9 +9,9 @@
 import casadi.*
 opti = casadi.Opti();
 N = 100;              % Number of control intervals
-T_total = opti.variable(); % Total flight time (can be a decision variable or fixed)
-opti.subject_to(T_total > 0);
-opti.set_initial(T_total, 10); % Initial guess, using as decision 
+T_total = 40; % opti.variable(); % Total flight time (can be a decision variable or fixed)
+% opti.subject_to(T_total > 0);
+% opti.set_initial(T_total, 10); % Initial guess, using as decision 
 dt = T_total / N;     % Time step
 
 % Decision Variables
@@ -92,7 +92,7 @@ end
 
 %% Trajectory Design (Boundaries)
 
-    N_ascent = round(0.15*N);
+    N_ascent = round(0.2*N);
     N_flip = round(0.5 * N);
     N_approach = round(0.8*N);
     
@@ -106,7 +106,7 @@ end
     opti.subject_to(X(:, 1) == [q0; r0; v0; w0; m_lox0; m_ipa0]);
 
 % Final state (On the landing zone)
-    r_f = [5; 0; 0]; % Example downrange landing pad
+    r_f = [5; 5; 0]; % Example downrange landing pad
     opti.subject_to(X(1:4, end) == q0); % Upright upon landing
     opti.subject_to(X(5:7, end) == r_f); 
     opti.subject_to(X(8:10, end) == [0;0;0]); % Zero velocity
@@ -116,6 +116,7 @@ end
 % Ascent 
     for k = 1:N_ascent
         opti.subject_to(-1 <= X(5:6, k) <= 1);
+        opti.subject_to(X(7, k) >= -1);
     end
     opti.subject_to(X(10, N_ascent) >= 3);
     
@@ -129,12 +130,20 @@ end
     opti.subject_to(dot_prod^2 >= 0.85);
     opti.subject_to(X(7, N_flip) >= 30);
 
-% Descent (glideslope constrained)
-    glideslope_angle = deg2rad(15);
-    for k = N_approach:N+1
-        horiz_dist_sq = (X(5,k) - r_f(1))^2 + (X(6,k) - r_f(2))^2;
-        opti.subject_to(horiz_dist_sq <= (tan(glideslope_angle) * X(7,k))^2);
+    for k = 1:N+1
+        if k ~= N_flip
+            opti.subject_to(-50 <= X(5:6, k) <= 50);
+            opti.subject_to(-1 <= X(7, k) <= 200);
+        end
     end
+
+% Descent (glideslope constrained)
+    % glideslope_angle = deg2rad(15);
+    % for k = N_approach:N+1
+    %     horiz_dist_sq = (X(5,k) - r_f(1))^2 + (X(6,k) - r_f(2))^2;
+    %     opti.subject_to(horiz_dist_sq <= (tan(glideslope_angle) * X(7,k))^2);
+    %     opti.subject_to(X(7, k) >= 0);
+    % end
 
 %% Initial Guess
 % Linearly interpolate positions from start to end
@@ -151,11 +160,15 @@ opti.set_initial(U(3, :), repmat(constantsTOAD.m_wet * constantsTOAD.g, 1, N));
 
 %% Cost Function (needs lots of improvement)
 % Add weightings for control usage
-w_rate = [1; 1; 1e-6; 1e-2];
+w_rate = [5e1; 5e1; 1e-4; 1e-1];
 w_mag = [1e-2; 1e-2; 0; 1e-3];
 w_omega = 1e-2;
+w_pos = 1e-2;
+w_vel = 1e-1;
 
 dU = U(:, 2:end) - U(:, 1:end-1);
+pos_cost = w_vel * sum(sum(X(5:7, :).^2));
+vel_cost = w_vel * sum(sum(X(8:10, :).^2));
 rate_cost = sum(sum(w_rate .* dU.^2));
 reg_cost = sum(sum(w_mag .* U.^2));
 omega_cost = w_omega * sum(sum(X(11:13, :).^2));
