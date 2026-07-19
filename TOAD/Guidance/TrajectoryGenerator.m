@@ -95,6 +95,10 @@ end
     N_ascent = round(0.2*N);
     N_flip = round(0.5 * N);
     N_approach = round(0.8*N);
+
+% Sandbox constraint
+    opti.subject_to(-50 <= X(5:6, :) <= 50);
+    opti.subject_to(-1 <= X(7, :) <= 200);
     
 % Initial state (On the pad)
     q0 = [1; 0; 0; 0]; % Upright
@@ -130,13 +134,6 @@ end
     opti.subject_to(dot_prod^2 >= 0.85);
     opti.subject_to(X(7, N_flip) >= 30);
 
-    for k = 1:N+1
-        if k ~= N_flip
-            opti.subject_to(-50 <= X(5:6, k) <= 50);
-            opti.subject_to(-1 <= X(7, k) <= 200);
-        end
-    end
-
 % Descent (glideslope constrained)
     % glideslope_angle = deg2rad(15);
     % for k = N_approach:N+1
@@ -164,7 +161,7 @@ w_rate = [5e1; 5e1; 1e-4; 1e-1];
 w_mag = [1e-2; 1e-2; 0; 1e-3];
 w_omega = 1e-2;
 w_pos = 1e-2;
-w_vel = 1e-1;
+w_vel = 1e-3;
 
 dU = U(:, 2:end) - U(:, 1:end-1);
 pos_cost = w_vel * sum(sum(X(5:7, :).^2));
@@ -173,7 +170,7 @@ rate_cost = sum(sum(w_rate .* dU.^2));
 reg_cost = sum(sum(w_mag .* U.^2));
 omega_cost = w_omega * sum(sum(X(11:13, :).^2));
 
-opti.minimize(-(X(14,end) + X(15,end)) + 5*T_total + reg_cost + rate_cost + omega_cost);
+opti.minimize(-(X(14,end) + X(15,end)) + reg_cost + rate_cost + omega_cost + pos_cost);
 
 %% Solver Configuration
 p_opts = struct('expand', true);
