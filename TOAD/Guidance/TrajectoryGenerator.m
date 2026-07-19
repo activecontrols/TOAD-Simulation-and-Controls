@@ -8,7 +8,7 @@
 %% Setup and initialization 
 import casadi.*
 opti = casadi.Opti();
-N = 200;              % Number of control intervals
+N = 100;              % Number of control intervals
 T_total = opti.variable(); % Total flight time (can be a decision variable or fixed)
 opti.subject_to(T_total > 0);
 opti.set_initial(T_total, 10); % Initial guess, using as decision 
@@ -69,6 +69,7 @@ for k = 1:N+1
     q_k = X(1:4, k);
     opti.subject_to(sum(q_k.^2) == 1);
 end
+opti.subject_to(-20 <= X(5:6, :) <= 20);
 
 %% Control Bounds 
 MaxThrust_val = constantsTOAD.MaxThrust;
@@ -110,13 +111,13 @@ end
     opti.subject_to(X(5:7, end) == r_f); 
     opti.subject_to(X(8:10, end) == [0;0;0]); % Zero velocity
 
-%% Trajectory
+%% Trajectory Design (Path)
     
 % Ascent 
     for k = 1:N_ascent
         opti.subject_to(-1 <= X(5:6, k) <= 1);
     end
-    opti.subject_to(X(10, N_ascent) >= 5);
+    opti.subject_to(X(10, N_ascent) >= 3);
     
 % Flip
     q_inverted = [0; 0; 1; 0];
@@ -125,7 +126,7 @@ end
     % Squared quaternion dot product >= 0.98 ensures the attitude is very close 
     % to inverted, but allows the solver a slight tolerance.
     dot_prod = q_inverted' * q_flip;
-    opti.subject_to(dot_prod^2 >= 0.98);
+    opti.subject_to(dot_prod^2 >= 0.85);
     opti.subject_to(X(7, N_flip) >= 30);
 
 % Descent (glideslope constrained)
@@ -150,7 +151,7 @@ opti.set_initial(U(3, :), repmat(constantsTOAD.m_wet * constantsTOAD.g, 1, N));
 
 %% Cost Function (needs lots of improvement)
 % Add weightings for control usage
-w_rate = [1e-1; 1e-1; 1e-6; 1e-2];
+w_rate = [1; 1; 1e-6; 1e-2];
 w_mag = [1e-2; 1e-2; 0; 1e-3];
 w_omega = 1e-2;
 
@@ -164,6 +165,7 @@ opti.minimize(-(X(14,end) + X(15,end)) + 5*T_total + reg_cost + rate_cost + omeg
 %% Solver Configuration
 p_opts = struct('expand', true);
 s_opts = struct('max_iter', 3000, 'tol', 1e-4, 'constr_viol_tol', 1e-4);
+s_opts.hessian_approximation = 'limited-memory';
 opti.solver('ipopt', p_opts, s_opts);
 
 %% Solve
