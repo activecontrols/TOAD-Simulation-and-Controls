@@ -6,19 +6,17 @@
 % 7/17/2026
 
 %% Setup and initialization 
+CasADiDynamics;
+if ~exist("constantsTOAD")
+    LoadTOADSim;
+end
 import casadi.*
 opti = casadi.Opti();
-N = 100;              % Number of control intervals
-T_total = 40; % opti.variable(); % Total flight time (can be a decision variable or fixed)
-% opti.subject_to(T_total > 0);
-% opti.set_initial(T_total, 10); % Initial guess, using as decision 
+N = 120;              % Number of control intervals
+T_total = opti.variable();
+opti.subject_to(10 <= T_total <= 50);  
+opti.set_initial(T_total, 35);         
 dt = T_total / N;     % Time step
-
-% Decision Variables
-% State vector x: [q(4); r(3); v(3); omegaB(3); m_lox(1); m_ipa(1)]
-X = opti.variable(15, N+1);
-% Control vector u: [theta(1); phi(1); thrust(1); roll(1)]
-U = opti.variable(4, N);
 
 % Force dispersion parameters to zero
 MaxMdot_d_val = 0;
@@ -46,102 +44,134 @@ params_val = [
     J_d_vec;                  % J_d(:)
     TB_d_val                  % TB_d 
 ];
-%% Integration Loop (RK4), Enforcing dynamics between nodes.
-for k = 1:N
-    x_k = X(:, k);
-    u_k = U(:, k);
-    
-    % RK4 substeps using your dynamics_fnc
-    k1 = dynamics_fnc(x_k,             u_k, params_val);
-    k2 = dynamics_fnc(x_k + dt/2 * k1, u_k, params_val);
-    k3 = dynamics_fnc(x_k + dt/2 * k2, u_k, params_val);
-    k4 = dynamics_fnc(x_k + dt * k3,   u_k, params_val);
-    
-    x_next = x_k + dt/6 * (k1 + 2*k2 + 2*k3 + k4);
-    
-    % "Close the gap" constraint (Multiple Shooting)
-    opti.subject_to(X(:, k+1) == x_next);
-end
+%% Problem Scaling
+% Characteristic scales chosen so that Xhat, Uhat live near O(1)-O(10) at most.
+L_c   = 50;                                   % position scale
+V_c   = sqrt(constantsTOAD.g * L_c);          % velocity scale
+W_c   = sqrt(constantsTOAD.g / L_c);          % angular rate scale
+F_c   = constantsTOAD.MaxThrust;              % thrust scal
+G_c   = pi/15;                                % gimbal angle scale
+Roll_c = 10;                                  % roll torque scale
+Mlox_c = constantsTOAD.OxMass;                % oxidizer mass scale
+Mipa_c = constantsTOAD.FuMass;                % fuel mass scale
+
+% State scale vector
+Sx = [1;1;1;1; L_c;L_c;L_c; V_c;V_c;V_c; W_c;W_c;W_c; Mlox_c; Mipa_c];
+
+% Input scale vector
+Su = [G_c; G_c; F_c; Roll_c];
+
+% Decision Variables
+Xhat = opti.variable(15, N+1);
+Uhat = opti.variable(4, N);
+
+% Physical-unit aliasesm, use in the script CasADi broadcasts the Nx1 scale vector
+% against the NxM variable matrix elementwise.
+X = Sx .* Xhat;
+U = Su .* Uhat;
+
+%% Integration (RK4), Enforcing dynamics between nodes.
+% Build a single-step RK4 integrator as its own CasADi Function
+xhat_sym = MX.sym('xhat', 15);
+uhat_sym = MX.sym('uhat', 4);
+dt_sym   = MX.sym('dt');
+
+% Convert to physical units
+x_sym = Sx .* xhat_sym; 
+u_sym = Su .* uhat_sym;
+
+k1 = dynamics_fnc(x_sym,                u_sym, params_val);
+k2 = dynamics_fnc(x_sym + dt_sym/2*k1,  u_sym, params_val);
+k3 = dynamics_fnc(x_sym + dt_sym/2*k2,  u_sym, params_val);
+k4 = dynamics_fnc(x_sym + dt_sym*k3,    u_sym, params_val);
+x_next_sym = x_sym + dt_sym/6*(k1 + 2*k2 + 2*k3 + k4);
+
+% Back to nondimensional 
+xhat_next_sym = x_next_sym ./ Sx;
+F_step = Function('F_step', {xhat_sym, uhat_sym, dt_sym}, {xhat_next_sym});
+
+% Map it across all N intervals at once
+F_map = F_step.map(N);             
+dt_row = repmat(dt, 1, N);          
+Xhat_next_all = F_map(Xhat(:, 1:N), Uhat, dt_row);   % single vectorized call, shape 15 x N
+
+% Replace the entire for-loop with one vectorized constraint
+opti.subject_to(Xhat(:, 2:end) == Xhat_next_all);
 
 %% Path Constraints
 for k = 1:N+1
-    % Enforce unit for quaternion
     q_k = X(1:4, k);
     opti.subject_to(sum(q_k.^2) == 1);
 end
-opti.subject_to(-20 <= X(5:6, :) <= 20);
 
-%% Control Bounds 
+%% Boundaries
+
 MaxThrust_val = constantsTOAD.MaxThrust;
-% opti.subject_to(-pi/24 <= U(1,:) <= pi/24); % Gimbal theta limits
-% opti.subject_to(-pi/24 <= U(2,:) <= pi/24); % Gimbal phi limits 
-opti.subject_to(-pi/15 <= U(1,:) <= pi/15); % Gimbal theta limits
-opti.subject_to(-pi/15 <= U(2,:) <= pi/15); % Gimbal phi limits 
-opti.subject_to(0.5 * MaxThrust_val <= U(3,:) <= MaxThrust_val); % Throttle
-opti.subject_to(-10 <= U(4,:) <= 10);     % Roll torque limits
-
-%% Rate constraints
 max_gimbal_rate = deg2rad(20);   % deg/s, tune to lin act spec.
 max_thrust_rate = 5000;          % N/s
 
+% Initial state (On the pad)
+q0 = [1; 0; 0; 0];               % Upright
+r0 = [0; 0; 0];
+v0 = [0; 0; 0];
+w0 = [0; 0; 0];
+m_lox0 = constantsTOAD.OxMass;
+m_ipa0 = constantsTOAD.FuMass;
+
+% Final state (On the landing zone)
+r_f = [5; 5; 0];                 
+
+% Flip target attitude
+q_inverted = [0; 0; 1; 0];
+
+% Sandbox constraint
+opti.subject_to(-20 <= X(5:6, :) <= 20);
+opti.subject_to(-1 <= X(7, :) <= 200);
+
+% Initial state
+    opti.subject_to(X(:, 1) == [q0; r0; v0; w0; m_lox0; m_ipa0]);
+
+% Final state
+    opti.subject_to(X(1:4, end) == q0);
+    opti.subject_to(X(5:7, end) == r_f);
+    opti.subject_to(X(8:10, end) == [0;0;0]);
+    opti.subject_to(X(14:15, end) > 0);
+%% Control Bounds
+opti.subject_to(-pi/15 <= U(1,:) <= pi/15);
+opti.subject_to(-pi/15 <= U(2,:) <= pi/15);
+opti.subject_to(0.5 * MaxThrust_val <= U(3,:) <= MaxThrust_val);
+opti.subject_to(-10 <= U(4,:) <= 10);
+
+%% Rate constraints (physical rate limits — keep on U, not Uhat)
 for k = 1:N-1
     opti.subject_to(-max_gimbal_rate*dt <= U(1,k+1)-U(1,k) <= max_gimbal_rate*dt);
     opti.subject_to(-max_gimbal_rate*dt <= U(2,k+1)-U(2,k) <= max_gimbal_rate*dt);
     opti.subject_to(-max_thrust_rate*dt <= U(3,k+1)-U(3,k) <= max_thrust_rate*dt);
 end
 
-%% Trajectory Design (Boundaries)
-
-    N_ascent = round(0.2*N);
-    N_flip = round(0.5 * N);
-    N_approach = round(0.8*N);
-
-% Sandbox constraint
-    opti.subject_to(-50 <= X(5:6, :) <= 50);
-    opti.subject_to(-1 <= X(7, :) <= 200);
-    
-% Initial state (On the pad)
-    q0 = [1; 0; 0; 0]; % Upright
-    r0 = [0; 0; 0];
-    v0 = [0; 0; 0];
-    w0 = [0; 0; 0];
-    m_lox0 = constantsTOAD.OxMass;
-    m_ipa0 = constantsTOAD.FuMass;
-    opti.subject_to(X(:, 1) == [q0; r0; v0; w0; m_lox0; m_ipa0]);
-
-% Final state (On the landing zone)
-    r_f = [5; 5; 0]; % Example downrange landing pad
-    opti.subject_to(X(1:4, end) == q0); % Upright upon landing
-    opti.subject_to(X(5:7, end) == r_f); 
-    opti.subject_to(X(8:10, end) == [0;0;0]); % Zero velocity
-
-%% Trajectory Design (Path)
-    
-% Ascent 
+%% Trajectory 
+N_ascent   = round(0.2*N);
+N_flip     = round(0.5*N);
+N_approach = round(0.85*N);
+% Ascent
     for k = 1:N_ascent
         opti.subject_to(-1 <= X(5:6, k) <= 1);
         opti.subject_to(X(7, k) >= -1);
     end
     opti.subject_to(X(10, N_ascent) >= 3);
-    
+
 % Flip
-    q_inverted = [0; 0; 1; 0];
     q_flip = X(1:4, N_flip);
-    
-    % Squared quaternion dot product >= 0.98 ensures the attitude is very close 
-    % to inverted, but allows the solver a slight tolerance.
     dot_prod = q_inverted' * q_flip;
-    opti.subject_to(dot_prod^2 >= 0.85);
+    opti.subject_to(dot_prod >= 0.95);
     opti.subject_to(X(7, N_flip) >= 30);
 
-% Descent (glideslope constrained)
-    % glideslope_angle = deg2rad(15);
-    % for k = N_approach:N+1
-    %     horiz_dist_sq = (X(5,k) - r_f(1))^2 + (X(6,k) - r_f(2))^2;
-    %     opti.subject_to(horiz_dist_sq <= (tan(glideslope_angle) * X(7,k))^2);
-    %     opti.subject_to(X(7, k) >= 0);
-    % end
-
+% Descent 
+    pos_xy = X(5:6, N_approach:end);
+    vel_xy = X(8:9, N_approach:end);
+    opti.subject_to( (pos_xy(1,:) - r_f(1)).^2 + (pos_xy(2,:) - r_f(2)).^2 <= 1^2 );
+    opti.subject_to( vel_xy(1,:).^2 + vel_xy(2,:).^2 <= 1^2 );
+    
 %% Initial Guess
 % Linearly interpolate positions from start to end
 r_guess = [linspace(r0(1), r_f(1), N+1);
@@ -150,47 +180,58 @@ r_guess = [linspace(r0(1), r_f(1), N+1);
 
 % Set constant upright quaternion guess (avoids zero-norm singularity)
 q_guess = repmat([1; 0; 0; 0], 1, N+1);
-
-opti.set_initial(X(1:4, :), q_guess);
-opti.set_initial(X(5:7, :), r_guess);
-opti.set_initial(U(3, :), repmat(constantsTOAD.m_wet * constantsTOAD.g, 1, N));
+opti.set_initial(Xhat(1:4, :), q_guess);             
+opti.set_initial(Xhat(5:7, :), r_guess / L_c);         
+opti.set_initial(Xhat(14,:), linspace(1, 0.05, N+1)); 
+opti.set_initial(Xhat(15,:), linspace(1, 0.05, N+1));  
+opti.set_initial(Xhat(8:10,:), zeros(3, N+1));
+opti.set_initial(Xhat(11:13,:), zeros(3, N+1));
+opti.set_initial(Uhat(3, :), repmat(constantsTOAD.m_wet * constantsTOAD.g / F_c, 1, N));  
 
 %% Cost Function (needs lots of improvement)
-% Add weightings for control usage
-w_rate = [5e1; 5e1; 1e-4; 1e-1];
-w_mag = [1e-2; 1e-2; 0; 1e-3];
-w_omega = 1e-2;
-w_pos = 1e-2;
-w_vel = 1e-3;
+% --- Fixed cost function ---
+w_mag  = 3e-3 * ones(4,1);
+w_rate = 8e-2 * ones(4,1); 
+w_jerk = 1e-1 * ones(4,1); 
+w_omega = 2e-2;
+w_time = 2e-2;   
 
-dU = U(:, 2:end) - U(:, 1:end-1);
-pos_cost = w_vel * sum(sum(X(5:7, :).^2));
-vel_cost = w_vel * sum(sum(X(8:10, :).^2));
-rate_cost = sum(sum(w_rate .* dU.^2));
-reg_cost = sum(sum(w_mag .* U.^2));
-omega_cost = w_omega * sum(sum(X(11:13, :).^2));
+dU = Uhat(:, 2:end) - Uhat(:, 1:end-1);
+d2U = dU(:, 2:end) - dU(:, 1:end-1);
 
-opti.minimize(-(X(14,end) + X(15,end)) + reg_cost + rate_cost + omega_cost + pos_cost);
+rate_cost  = sum(sum(w_rate .* dU.^2));
+jerk_cost  = sum(sum(w_jerk .* d2U.^2));          
+reg_cost   = sum(sum(w_mag .* Uhat.^2));
+omega_cost = w_omega * sum(sum(Xhat(11:13, :).^2));
+time_cost  = w_time * T_total.^2;
+
+opti.minimize(-(Xhat(14,end) + Xhat(15,end)) + reg_cost + rate_cost + jerk_cost + ...
+    omega_cost + time_cost);
 
 %% Solver Configuration
 p_opts = struct('expand', true);
 s_opts = struct('max_iter', 3000, 'tol', 1e-4, 'constr_viol_tol', 1e-4);
-s_opts.hessian_approximation = 'limited-memory';
+% s_opts.hessian_approximation = 'limited-memory';
 opti.solver('ipopt', p_opts, s_opts);
 
 %% Solve
 try
     sol = opti.solve();
     disp('Optimal trajectory found!');
-catch
+    
+    % Extract results for success
+    X_res = Sx .* sol.value(Xhat);
+    U_res = Su .* sol.value(Uhat);
+    T_res = sol.value(T_total);
+    
+catch e
     disp('Solver failed. Retrieving debug values...');
-    sol = opti.debug;
+    
+    % Extract results using the debug interface directly
+    X_res = Sx .* opti.debug.value(Xhat);
+    U_res = Su .* opti.debug.value(Uhat);
+    T_res = opti.debug.value(T_total);
 end
-
-% Extract results for plotting
-X_res = sol.value(X);
-U_res = sol.value(U);
-T_res = sol.value(T_total);
 
 %% --- Post-Processing & Visualization ---
 % Extract state and control arrays for plotting

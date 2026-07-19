@@ -98,11 +98,12 @@ J_tot = J_dry + J_lox + J_ipa + J_d;
 % Body frame moment (Roll torque along the thrust vector axis due to contra
 % EDF) (TODO: UPDATE for use with RCS)
 % Off center moments for Simulation
-MB = zetaCross([0; 0; -CGz] + TB_d)*TB + (TB * roll) / thrust;
+thrustDir = [cos(theta)*sin(phi); -sin(theta); cos(theta)*cos(phi)];
+MB = zetaCross([0;0;-CGz] + TB_d)*TB + roll * thrustDir;
 
 % Dynamics
 qdot = 0.5 * HamiltonianProd(q) * [0; omegaB];
-netTau = (MB - zetaCross(omegaB) * J_tot * omegaB);
+omegaBdot = (MB - zetaCross(omegaB) * J_tot * omegaB) ./ diag(J_tot);
 
 % Function inputs
 x = [q; r; v; omegaB; m_lox; m_ipa];
@@ -111,5 +112,5 @@ params = [m_dry; g; rTB; Ox_Z; OxMassI; OxHeight; Fu_Z; FuMassI; FuHeight;
     J(:); OxRadius; FuRadius; MaxThrust; OF; MaxMdot; MaxMdot_d; J_d(:); TB_d];
 
 %State derivatives
-xdot = [qdot; rdot; vdot; netTau; mdot_lox; mdot_ipa];
+xdot = [qdot; rdot; vdot; omegaBdot; mdot_lox; mdot_ipa];
 dynamics_fnc = Function('dynamics_fnc', {x, u, params}, {xdot}); 
