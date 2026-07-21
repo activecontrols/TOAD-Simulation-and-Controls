@@ -21,15 +21,17 @@ Data = LoadData();
 rng(41);
 
 %% Parameter sampling (inches)
-Thickness = [0.05; 0.1];    AR = [1; 3.0];  Width = [0.02; 0.125];
+Thickness = [0.05; 0.09];    AR = [0.5; 3.0];  Width = [0.02; 0.125];
 LowerBounds = [ones(1, 3) * Thickness(1), ones(1, 3) * AR(1), ones(1, 2) * Width(1), 40];
 UpperBounds = [ones(1, 3) * Thickness(2), ones(1, 3) * AR(2), ones(1, 2) * Width(2), 60];
 InputRange  = UpperBounds - LowerBounds;    
 MaxDP = 150; % * 0.5^2; % psi
+ODLimit = 3.98; % in, max allowable liner OD for manufacturability
+R_chamber = Data.Contour(1,2);
 
 % Latin Hypercube Sampling for parameter space for GP training
 NumDims = length(LowerBounds);
-NumSamples = 252;
+NumSamples = 250;
 LHS = HyperSampl(NumSamples, NumDims);
 Geometries = LowerBounds + LHS .* InputRange;
 
@@ -43,6 +45,10 @@ for i = 1:NumSamples
     WT = Geometries(i, 1:3);
     AR = Geometries(i, 4:6);
     CW = Geometries(i, 7:8);
+    if LinerODCalc(Geometries(i, :), R_chamber) > ODLimit
+        Lifespan(i) = NaN; PressDrop(i) = NaN; Invalid = Invalid + 1;
+        continue;
+    end
     try
         [Lifespan(i), PressDrop(i), MaxChamberTemp(i)] = SKRegen2_ElectricBoogalo(Data, NC, WT, AR, CW, 0);
         if ~isreal(Lifespan(i)) || ~isreal(PressDrop(i))
@@ -66,10 +72,10 @@ fprintf('\nStarting Phase 1: Continuous Search\n');
 [Geometries, Lifespan, PressDrop, MaxChamberTemp, logT_L, logT_P, logT_T] = BOSearch( ...
     NumPhase1, Geometries, Lifespan, PressDrop, MaxChamberTemp, ...
     LowerBounds, UpperBounds, LowerBounds, UpperBounds, ...
-    Data, MaxDP, [], [], [], []);
+    Data, MaxDP, [], [], [], [],  R_chamber, ODLimit);
 
 % Identify Continuous Champion
-ValidIdx = ~isnan(Lifespan) & (PressDrop <= MaxDP);
+ValidIdx = ~isnan(Lifespan) & (PressDrop <= MaxDP) & (LinerODCalc(Geometries, R_chamber) <= ODLimit);
 if ~any(ValidIdx)
     error('Phase 1 found no valid designs satisfying constraints.');
 end
@@ -187,7 +193,7 @@ for k = 1:size(FineTuneCWs, 1)
     [OptGeom, OptLife, OptPress, OptTemp, ~, ~, ~] = BOSearch( ...
         NumPhase2_Search, LocalGeom, LocalLife, LocalPress, LocalTemp, ...
         FT_LB, FT_UB, FT_LB, FT_UB, ... 
-        Data, MaxDP, FixedCW, [], [], []);
+        Data, MaxDP, FixedCW, [], [], [], R_chamber, ODLimit);
         
     % Append to master array for final plotting
     Geometries = [Geometries; OptGeom];
@@ -207,8 +213,9 @@ Phase2Mask = false(TotalEvals, 1);
 Phase2Mask(Phase2Start:end) = true;
 
 % Define all valid indices for text output and plotting
-ValidMfgIdx = ~isnan(Lifespan) & (PressDrop <= MaxDP) & Phase2Mask;
-ValidGlobalIdx = ~isnan(Lifespan) & (PressDrop <= MaxDP);
+LinerODAll = LinerODCalc(Geometries, R_chamber);
+ValidMfgIdx = ~isnan(Lifespan) & (PressDrop <= MaxDP) & Phase2Mask & (LinerODAll <= ODLimit);
+ValidGlobalIdx = ~isnan(Lifespan) & (PressDrop <= MaxDP) & (LinerODAll <= ODLimit);
 
 if ~any(ValidMfgIdx)
     warning('No valid manufacturable geometries found in Phase 2.');
@@ -221,6 +228,8 @@ else
     
     BestPress    = PressDrop(AbsBestIdx);
     ChampionGeom = Geometries(AbsBestIdx, :);
+    
+    %% 
     LinerOD = 2 * (Data.Contour(1,2) + ChampionGeom(1) + ChampionGeom(7) * ChampionGeom(4));
     
     fprintf('\n======================================================\n');
@@ -302,7 +311,7 @@ ylabel('Pressure Drop [psi]');
 grid on; ylim([0, max(MaxDP + 50, prctile(PlotPress(~CrashIdx), 85))]);
 %SKRegen2_ElectricBoogalo(Data, ChampionGeom(9), ChampionGeom(1:3), ChampionGeom(4:6), ChampionGeom(7:8), 1);
 %% Local Functions
-function [Geometries, Lifespan, PressDrop, MaxChamberTemp, logT_L, logT_P, logT_T] = BOSearch(NumIter, Geometries, Lifespan, PressDrop, MaxChamberTemp, SearchLB, SearchUB, GlobalLB, GlobalUB, Data, MaxDP, FixedCW, logT_L, logT_P, logT_T) 
+function [Geometries, Lifespan, PressDrop, MaxChamberTemp, logT_L, logT_P, logT_T] = BOSearch(NumIter, Geometries, Lifespan, PressDrop, MaxChamberTemp, SearchLB, SearchUB, GlobalLB, GlobalUB, Data, MaxDP, FixedCW, logT_L, logT_P, logT_T, R_chamber, ODLimit) 
     NumDims = length(GlobalLB);
     GlobalRange = GlobalUB - GlobalLB;
 
@@ -322,6 +331,7 @@ function [Geometries, Lifespan, PressDrop, MaxChamberTemp, logT_L, logT_P, logT_
 
     options_GP  = optimoptions('fminunc', 'Display', 'off', 'Algorithm', 'quasi-newton', 'MaxFunctionEvaluations', 1000);
     options_ACQ = optimoptions('fmincon', 'Display', 'off', 'Algorithm', 'sqp', 'MaxFunctionEvaluations', 1000);
+    ODNonlcon = @(x_norm) deal(LinerODCalc(GlobalLB + x_norm .* GlobalRange, R_chamber) - ODLimit, []);
 
     for iter = 1:NumIter
         % Output Scaling
@@ -410,6 +420,8 @@ function [Geometries, Lifespan, PressDrop, MaxChamberTemp, logT_L, logT_P, logT_
         % Soft Penalty implementation for the Grid initialization
         WeightFactor = 0.015; % Adjust for temp importance
         GridScores = (-EI .* PoF_g) + (WeightFactor .* muTEMP_g);
+        GridGeomPhys = GlobalLB + GridGeometriesNorm .* GlobalRange;
+        GridScores(LinerODCalc(GridGeomPhys, R_chamber) > ODLimit) = Inf;
 
         [~, SortedIdx] = sort(GridScores);
 
@@ -426,8 +438,7 @@ function [Geometries, Lifespan, PressDrop, MaxChamberTemp, logT_L, logT_P, logT_
 
         for j = 1:NumStarts
             x0_norm = GridGeometriesNorm(SortedIdx(j), :);
-            [x_opt_norm, fval] = fmincon(AcqObj, x0_norm, [], [], [], [], LB_norm, UB_norm, [], options_ACQ);
-            BestCandidates(j, :) = x_opt_norm;
+            [x_opt_norm, fval] = fmincon(AcqObj, x0_norm, [], [], [], [], LB_norm, UB_norm, ODNonlcon, options_ACQ);            BestCandidates(j, :) = x_opt_norm;
             BestAcqVals(j)       = fval;
         end
 
@@ -436,14 +447,18 @@ function [Geometries, Lifespan, PressDrop, MaxChamberTemp, logT_L, logT_P, logT_
 
         % Physical evaluation
         WT = x_next(1:3); AR = x_next(4:6); CW = x_next(7:8); NC = x_next(9);
-        try
-            [Life_new, Drop_new, MaxT_new] = SKRegen2_ElectricBoogalo(Data, NC, WT, AR, CW, 0);
-            if ~isreal(Life_new) || ~isreal(Drop_new), error('Complex output.'); end
-        catch
+        if LinerODCalc(x_next, R_chamber) > ODLimit
             Life_new = NaN; Drop_new = NaN; MaxT_new = NaN;
-        end
-        if ~isnan(Life_new)
-            fprintf('Eval Complete! %.2f Cycles & %.2f psi drop, %.2f K Chamber\n', Life_new, Drop_new, MaxT_new);
+        else
+            try
+                [Life_new, Drop_new, MaxT_new] = SKRegen2_ElectricBoogalo(Data, NC, WT, AR, CW, 0);
+                if ~isreal(Life_new) || ~isreal(Drop_new), error('Complex output.'); end
+            catch
+                Life_new = NaN; Drop_new = NaN; MaxT_new = NaN;
+            end
+            if ~isnan(Life_new)
+                fprintf('Eval Complete! %.2f Cycles & %.2f psi drop, %.2f K Chamber\n', Life_new, Drop_new, MaxT_new);
+            end
         end
 
         Geometries     = [Geometries; x_next];
@@ -451,4 +466,7 @@ function [Geometries, Lifespan, PressDrop, MaxChamberTemp, logT_L, logT_P, logT_
         PressDrop      = [PressDrop; Drop_new];
         MaxChamberTemp = [MaxChamberTemp; MaxT_new];
     end
+end
+function OD = LinerODCalc(X, R_chamber)
+    OD = 2 * (R_chamber + X(:, 1) + X(:, 7) .* X(:, 4));
 end
