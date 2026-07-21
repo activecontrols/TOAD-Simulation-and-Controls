@@ -18,12 +18,12 @@ addpath("Material Data\");
 addpath("Contours\");
 addpath('BayesianOpt\');
 Data = LoadData();
-rng(42);
+rng(41);
 
 %% Parameter sampling (inches)
-Thickness = [0.05; 0.1];    AR = [1; 3.0];  Width = [0.01; 0.125];
-LowerBounds = [ones(1, 3) * Thickness(1), ones(1, 3) * AR(1), ones(1, 2) * Width(1), 70];
-UpperBounds = [ones(1, 3) * Thickness(2), ones(1, 3) * AR(2), ones(1, 2) * Width(2), 80];
+Thickness = [0.05; 0.1];    AR = [1; 3.0];  Width = [0.02; 0.125];
+LowerBounds = [ones(1, 3) * Thickness(1), ones(1, 3) * AR(1), ones(1, 2) * Width(1), 40];
+UpperBounds = [ones(1, 3) * Thickness(2), ones(1, 3) * AR(2), ones(1, 2) * Width(2), 60];
 InputRange  = UpperBounds - LowerBounds;    
 MaxDP = 150; % * 0.5^2; % psi
 
@@ -221,7 +221,8 @@ else
     
     BestPress    = PressDrop(AbsBestIdx);
     ChampionGeom = Geometries(AbsBestIdx, :);
-
+    LinerOD = 2 * (Data.Contour(1,2) + ChampionGeom(1) + ChampionGeom(7) * ChampionGeom(4));
+    
     fprintf('\n======================================================\n');
     fprintf(' CHAMPION MANUFACTURABLE PERFORMANCE:\n');
     fprintf('  Lifespan:      %.2f Cycles\n', BestLife);
@@ -231,6 +232,7 @@ else
     fprintf('  Aspect Ratio (C, T, N):   [%.4f, %.4f, %.4f]\n', ChampionGeom(4:6));
     fprintf('  Channel Width (C, N):     [%.4f, %.4f]\n',       ChampionGeom(7:8));
     fprintf('  Channel Count:            %i \n',                round(ChampionGeom(9)));
+    fprintf('  Liner OD:                 %.2f \n',              LinerOD);
     fprintf('======================================================\n');
 end
 
