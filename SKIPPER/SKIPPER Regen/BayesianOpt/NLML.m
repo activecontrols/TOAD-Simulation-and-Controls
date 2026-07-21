@@ -9,20 +9,17 @@ function NegLog = NLML(logTheta, Geometries, Objective)
 
     % Kernel
     K_mat = MaternKernel(Geometries, Geometries, lengthScales, signalVar);
-    K = K_mat + noiseVar * eye(NumSamples);
-
-    % Decomposition
+    
+    % Force jitter immediately to prevent RCOND during the '\' division
+    jitter = 1e-5 * max(diag(K_mat));
+    K = K_mat + (noiseVar + jitter) * eye(NumSamples);
+    
+    % Decomposition without the try/catch rescue
     try
         L = chol(K, 'lower');
     catch
-        % fminunc rescue: Add a tiny jitter to the diagonal
-        jitter = 1e-6 * max(diag(K));
-        try
-            L = chol(K + jitter * eye(NumSamples), 'lower');
-        catch
-            NegLog = 1e6; 
-            return;
-        end
+        NegLog = 1e6;
+        return;
     end
     
     % Compute the Negative Log Marginal Likelihood

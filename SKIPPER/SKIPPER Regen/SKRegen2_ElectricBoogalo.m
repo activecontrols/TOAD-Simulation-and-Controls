@@ -12,7 +12,7 @@ close all;
 u = convertUnits;
 CEA_input_name = 'regrendysCEA';
 dfTol = 5e-6;
-optionsMoody = optimset('TolX', dfTol, 'Display', 'off');
+optionsMoody = optimset('TolX', dfTol, 'Display', 'off', 'MaxIter', 100);
 tic
 
 %% SIMULATION PARAMETERS
@@ -412,7 +412,7 @@ elseif ~coolant_direction
     points = steps + 1 - points; %reverses direction - i.e from [1 2 3] to [3 2 1]
 end
 
-while ~global_converged
+while ~global_converged && global_counter < 500
     % Previous guess
     T_m_old = T_m;
 
@@ -605,6 +605,12 @@ while ~global_converged
     if debug
         fprintf('Iteration %d: Max Temp Change = %.4f K\n', global_counter, error_max);
     end
+end
+if ~global_converged
+    Lifespan = NaN;
+    PressDrop = NaN;
+    MaxChamberTemp = NaN;
+    return;
 end
 Qtot = sum(Qdot_l) * num_channels; 
 heatflux = Qdot_g ./ A_hot;

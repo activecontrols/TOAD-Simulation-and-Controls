@@ -12,7 +12,7 @@
  problem rocket fr
      p(bar) = 17.2369
      o/f = 1.2
-     sub = 5.5225
+     sup = 1
  reac
      fuel = C3H8O,2propanol t(K) = 402.049 wt% = 100.000
      ox = O2(L) t(K) = 90.170
@@ -28,9 +28,9 @@
 
  Pc/P =
 
- SUBSONIC AREA RATIOS =     5.5225
+ SUBSONIC AREA RATIOS =
 
- SUPERSONIC AREA RATIOS =
+ SUPERSONIC AREA RATIOS =     1.0000
 
  NFZ=  1  Mdot/Ac= 0.000000E+00  Ac/At= 0.000000E+00
 
@@ -150,39 +150,39 @@
  O/F=    1.20000  %FUEL= 45.454545  R,EQ.RATIO= 1.815773  PHI,EQ.RATIO= 1.996763
 
                  CHAMBER   THROAT     EXIT
- Pinf/P            1.0000   1.7963   1.0072
- P, BAR            17.237   9.5958   17.114
- T, K             2697.23  2410.48  2693.57
- RHO, KG/CU M    1.4449 0 9.0009-1 1.4366 0
- H, KJ/KG        -2204.10 -2865.09 -2212.61
- U, KJ/KG        -3397.02 -3931.19 -3403.90
- G, KJ/KG        -37172.8 -34116.2 -37133.8
+ Pinf/P            1.0000   1.7963   1.7963
+ P, BAR            17.237   9.5958   9.5958
+ T, K             2697.23  2410.48  2410.48
+ RHO, KG/CU M    1.4449 0 9.0009-1 9.0009-1
+ H, KJ/KG        -2204.10 -2865.09 -2865.09
+ U, KJ/KG        -3397.02 -3931.19 -3931.19
+ G, KJ/KG        -37172.8 -34116.2 -34116.2
  S, KJ/(KG)(K)    12.9647  12.9647  12.9647
 
  M, (1/n)          18.799   18.799   18.799
- Cp, KJ/(KG)(K)    2.3239   2.2851   2.3235
- GAMMAs            1.2350   1.2400   1.2351
- SON VEL,M/SEC     1213.8   1149.8   1213.0
- MACH NUMBER        0.000    1.000    0.108
+ Cp, KJ/(KG)(K)    2.3239   2.2851   2.2851
+ GAMMAs            1.2350   1.2400   1.2400
+ SON VEL,M/SEC     1213.8   1149.8   1149.8
+ MACH NUMBER        0.000    1.000    1.000
 
  TRANSPORT PROPERTIES (GASES ONLY)
    CONDUCTIVITY IN UNITS OF MILLIWATTS/(CM)(K)
 
- VISC,MILLIPOISE  0.85332  0.78659  0.85248
+ VISC,MILLIPOISE  0.85332  0.78659  0.78659
 
   WITH FROZEN REACTIONS
 
- Cp, KJ/(KG)(K)    2.3239   2.2851   2.3235
- CONDUCTIVITY      3.3798   3.0456   3.3756
- PRANDTL NUMBER    0.5867   0.5902   0.5868
+ Cp, KJ/(KG)(K)    2.3239   2.2851   2.2851
+ CONDUCTIVITY      3.3798   3.0456   3.0456
+ PRANDTL NUMBER    0.5867   0.5902   0.5902
 
  PERFORMANCE PARAMETERS
 
- Ae/At                      1.0000   5.5225
+ Ae/At                      1.0000   1.0000
  CSTAR, M/SEC               1665.6   1665.6
- CF                         0.6903   0.0783
- Ivac, M/SEC                2077.0   9263.2
- Isp, M/SEC                 1149.8    130.4
+ CF                         0.6903   0.6903
+ Ivac, M/SEC                2077.0   2077.0
+ Isp, M/SEC                 1149.8   1149.8
 
  MOLE FRACTIONS
 

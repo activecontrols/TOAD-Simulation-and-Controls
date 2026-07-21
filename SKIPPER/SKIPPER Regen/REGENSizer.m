@@ -23,48 +23,74 @@ rng(41);
 %% Parameter sampling (inches)
 Thickness = [0.05; 0.09];    AR = [0.5; 3.0];  Width = [0.02; 0.125];
 LowerBounds = [ones(1, 3) * Thickness(1), ones(1, 3) * AR(1), ones(1, 2) * Width(1), 40];
-UpperBounds = [ones(1, 3) * Thickness(2), ones(1, 3) * AR(2), ones(1, 2) * Width(2), 60];
+UpperBounds = [ones(1, 3) * Thickness(2), ones(1, 3) * AR(2), ones(1, 2) * Width(2), 80];
 InputRange  = UpperBounds - LowerBounds;    
-MaxDP = 150; % * 0.5^2; % psi
+MaxDP = 150; % psi
 ODLimit = 3.98; % in, max allowable liner OD for manufacturability
 R_chamber = Data.Contour(1,2);
 
-% Latin Hypercube Sampling for parameter space for GP training
 NumDims = length(LowerBounds);
-NumSamples = 250;
-LHS = HyperSampl(NumSamples, NumDims);
-Geometries = LowerBounds + LHS .* InputRange;
 
-%% Feed sample space through SKIPPERRegen.m to evaluate physics
-Lifespan = zeros(NumSamples, 1);
-PressDrop = zeros(NumSamples, 1);
-MaxChamberTemp = zeros(NumSamples, 1);
-Invalid = 0;
-for i = 1:NumSamples
-    NC = Geometries(i, 9);
-    WT = Geometries(i, 1:3);
-    AR = Geometries(i, 4:6);
-    CW = Geometries(i, 7:8);
-    if LinerODCalc(Geometries(i, :), R_chamber) > ODLimit
-        Lifespan(i) = NaN; PressDrop(i) = NaN; Invalid = Invalid + 1;
-        continue;
-    end
-    try
-        [Lifespan(i), PressDrop(i), MaxChamberTemp(i)] = SKRegen2_ElectricBoogalo(Data, NC, WT, AR, CW, 0);
-        if ~isreal(Lifespan(i)) || ~isreal(PressDrop(i))
-            error('Complex physics output detected.'); 
+%% Guaranteed Valid Initialization
+NumRequiredValid = 100; 
+Geometries = [];
+Lifespan = [];
+PressDrop = [];
+MaxChamberTemp = [];
+
+fprintf('Generating %i strictly valid geometries for GP initialization...\n', NumRequiredValid);
+InvalidCount = 0;
+TotalEvals = 0;
+
+% Loop until we have enough successful runs
+while size(Geometries, 1) < NumRequiredValid
+    BatchSize = 50;
+    LHS = HyperSampl(BatchSize, NumDims);
+    BatchGeom = LowerBounds + LHS .* InputRange;
+    
+    for i = 1:BatchSize
+        TotalEvals = TotalEvals + 1;
+        NC = BatchGeom(i, 9);
+        WT = BatchGeom(i, 1:3);
+        AR = BatchGeom(i, 4:6);
+        CW = BatchGeom(i, 7:8);
+        
+        % Filter out geometries that violate OD limit before running physics
+        if LinerODCalc(BatchGeom(i, :), R_chamber) > ODLimit
+            InvalidCount = InvalidCount + 1;
+            continue;
         end
-    catch
-        Lifespan(i) = NaN;
-        PressDrop(i) = NaN;
-        Invalid = Invalid + 1;
-        warning('Sample Number %i Produced invalid geometry', i);
-    end
-    if ~isnan(Lifespan(i))
-        fprintf('Evaluation #%i Complete!, %.2f Cycles & %.2f psi drop\n', i, Lifespan(i), PressDrop(i));
+        
+        try
+            [Life_new, Drop_new, MaxT_new] = SKRegen2_ElectricBoogalo(Data, NC, WT, AR, CW, 0);
+            
+            % Ensure outputs are real numbers and physically valid
+            if isreal(Life_new) && isreal(Drop_new) && ~isnan(Life_new)
+                Geometries = [Geometries; BatchGeom(i, :)];
+                Lifespan = [Lifespan; Life_new];
+                PressDrop = [PressDrop; Drop_new];
+                MaxChamberTemp = [MaxChamberTemp; MaxT_new];
+                
+                fprintf('Valid Sample %i/%i found! (Eval #%i) %.2f Cycles, %.2f psi drop\n', ...
+                    size(Geometries, 1), NumRequiredValid, TotalEvals, Life_new, Drop_new);
+                
+                % Break out of batch loop if we hit target
+                if size(Geometries, 1) == NumRequiredValid
+                    break;
+                end
+            else
+                InvalidCount = InvalidCount + 1;
+            end
+        catch
+            InvalidCount = InvalidCount + 1;
+        end
     end
 end
-fprintf('Initial Evaluation complete!, %.2f%% of sampled geometries were invalid\n', Invalid / NumSamples * 100);
+
+fprintf('\nInitialization Complete!\n');
+fprintf('Total Evaluations Required: %i\n', TotalEvals);
+fprintf('Failure Rate: %.2f%%\n', (InvalidCount / TotalEvals) * 100);
+NumSamples = size(Geometries, 1); 
 
 %% Phase 1: Continuous Global Optimization
 NumPhase1 = 100;
@@ -330,7 +356,12 @@ function [Geometries, Lifespan, PressDrop, MaxChamberTemp, logT_L, logT_P, logT_
     end
 
     options_GP  = optimoptions('fminunc', 'Display', 'off', 'Algorithm', 'quasi-newton', 'MaxFunctionEvaluations', 1000);
-    options_ACQ = optimoptions('fmincon', 'Display', 'off', 'Algorithm', 'sqp', 'MaxFunctionEvaluations', 1000);
+    options_ACQ = optimoptions('fmincon', ...
+    'Display', 'off', ...
+    'Algorithm', 'sqp', ...
+    'StepTolerance', 1e-3, ...      
+    'OptimalityTolerance', 1e-3, ...
+    'MaxFunctionEvaluations', 200); 
     ODNonlcon = @(x_norm) deal(LinerODCalc(GlobalLB + x_norm .* GlobalRange, R_chamber) - ODLimit, []);
 
     for iter = 1:NumIter
@@ -369,10 +400,17 @@ function [Geometries, Lifespan, PressDrop, MaxChamberTemp, logT_L, logT_P, logT_
         end
 
         % GP Training
+        % Only retrain GP hyperparameters every 15 iterations
+        % if mod(iter, 10) == 1 || iter == 1
+        %     logT_L = fminunc(@(t) NLML(t, GeometriesNorm, LifespanSCALED), logT_L, options_GP);
+        %     logT_P = fminunc(@(t) NLML(t, GeometriesNorm_Valid, PressDropSCALED(ValidMask)), logT_P, options_GP);
+        %     logT_T = fminunc(@(t) NLML(t, GeometriesNorm_Valid, TempSCALED(ValidMask)), logT_T, options_GP);
+        % end
+
         logT_L = fminunc(@(t) NLML(t, GeometriesNorm, LifespanSCALED), logT_L, options_GP);
         logT_P = fminunc(@(t) NLML(t, GeometriesNorm_Valid, PressDropSCALED(ValidMask)), logT_P, options_GP);
         logT_T = fminunc(@(t) NLML(t, GeometriesNorm_Valid, TempSCALED(ValidMask)), logT_T, options_GP);
-        
+
         ThetaOpt_LIFE  = exp(logT_L);
         ThetaOpt_PRESS = exp(logT_P);
         ThetaOpt_TEMP  = exp(logT_T);
@@ -402,7 +440,7 @@ function [Geometries, Lifespan, PressDrop, MaxChamberTemp, logT_L, logT_P, logT_
         a_T   = L_T' \ (L_T \ TempSCALED(ValidMask));
 
         % Grid Search
-        NumGrid = 50000;
+        NumGrid = 25000;
         GridGeometriesNorm = LB_norm + rand(NumGrid, NumDims) .* (UB_norm - LB_norm);
 
         [muLIFE_g,  stdLIFE_g]  = PredictGP(GridGeometriesNorm, GeometriesNorm,       L_L, a_L, ThetaOpt_LIFE);
