@@ -110,8 +110,8 @@ yield_strength = properties(1:7, 1:2);
 elongation_break = [properties(1:7,1) properties(1:7,5)];
 
 v = 0.33; % GUESS poissons ratio
-N = 35*8; % engine lifespan (for margin math)
 SF = 4; % lifespan saftey factor (4 per NASA 5012C)
+N = 35*SF; % engine lifespan (for margin math)
 
 % Contour Interpolation
 % contour = readmatrix('contour_SKIPPER_250_40.xlsx'); % import engine contour
@@ -654,13 +654,13 @@ for i = points % 1 = injector, steps = exit
                 if (peak_point_strain_input ~= 0) % Set effective plastic strain to the input peak point strain minus the effective elastic strain if the peak point strain is input 
                     epsilon_peff(i) = epsilon_toteff(i) - epsilon_eeff(i);
                 end
-                epsilon_cs_tot(i) = epsilon_cs(i) + epsilon_eeff(i)/2; % Total strain after N # of hotfires
-                MS_lowcycle(i) = epsilon_cs(i) / (epsilon_peff(i));
-                MS(i) = epsilon_cs_tot(i) / (epsilon_toteff(i));
-                num_fires(i) = 1/SF * ((2/elong(i))* (epsilon_toteff(i)- (epsilon_eeff(i)/2)))^(-2); %divide by 4 per NASA 5012C
-                num_fires_lowcycle(i) = 1/SF * ((2*epsilon_peff(i))/elong(i))^(-2); %divide by 4 per NASA 5012C
+                epsilon_cs_tot(i) = epsilon_cs(i) + epsilon_eeff(i)/2;
+                MS_lowcycle(i) = (epsilon_cs(i) / (epsilon_peff(i))) -1;
+                MS(i) = (epsilon_cs_tot(i) / (epsilon_toteff(i))) -1;
+                num_fires(i) = 1/SF * ((2/elong(i))* (epsilon_toteff(i)- (epsilon_eeff(i)/2)))^(-2); 
+                num_fires_lowcycle(i) = 1/SF * ((2*epsilon_peff(i))/elong(i))^(-2); 
                 epsilon_cs_spacex(i) = (3.5 * yield(i)*((N)^(-.12)))/E_current(i) + (elong(i)/N)^(.6);
-                MS_spacex(i) = epsilon_cs_spacex(i) / epsilon_toteff(i);
+                MS_spacex(i) = (epsilon_cs_spacex(i) / epsilon_toteff(i)) -1;
 
                 sigma_eff(i) = E_current(i) * epsilon_toteff(i);
                 sigma_a(i) = E_current(i) * epsilon_tota(i);
@@ -695,11 +695,11 @@ P_coolant_out = P_coolant;
 if DisplayMode == 1
     %% FORMATTED OUTPUT
     fprintf("\nEngine Throttle: %.1f", throttle * 100)
-    fprintf("\n\nMargin of safety for engine life of %0.0f hot fires: %.02f", N/8, overall_MS)
+    fprintf("\n\nMargin of safety for engine life of %0.0f hot fires: %.02f", N/SF, overall_MS)
     fprintf("\nEngine life (hot fires): %.02f", Engine_life)
-    fprintf("\nLowcycle Margin of safety for engine life of %0.0f hot fires: %.02f", N/8, overall_MS_lowcycle)
+    fprintf("\nLowcycle Margin of safety for engine life of %0.0f hot fires: %.02f", N/SF, overall_MS_lowcycle)
     fprintf("\nEngine life (hot fires) Lowcycle: %.02f", Engine_life_lowcycle)
-    fprintf("\nManson Universal Slopes Margin of safety for engine life of %0.0f hot fires: %.02f", N/8, overall_MS_spacex)
+    fprintf("\nManson Universal Slopes Margin of safety for engine life of %0.0f hot fires: %.02f", N/SF, overall_MS_spacex)
     fprintf("\nSafety factor to yield: %.02f", yield_SF)
     if (peak_point_strain_input == 0)
         fprintf("\nAxial Plastic Deformation per Cycle: %.05f in", plastic_deformation_cyclic)
