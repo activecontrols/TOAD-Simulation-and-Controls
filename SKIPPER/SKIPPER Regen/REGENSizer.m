@@ -21,18 +21,20 @@ Data = LoadData();
 rng(41);
 
 %% Parameter sampling (inches)
-Thickness = [0.05; 0.09];    AR = [0.5; 3.0];  Width = [0.02; 0.125];
-LowerBounds = [ones(1, 3) * Thickness(1), ones(1, 3) * AR(1), ones(1, 2) * Width(1), 40];
-UpperBounds = [ones(1, 3) * Thickness(2), ones(1, 3) * AR(2), ones(1, 2) * Width(2), 80];
+Thickness = [0.05; 0.09];    AR = [1; 4.5];  Width = [0.03; 0.100];
+LowerBounds = [ones(1, 3) * Thickness(1), ones(1, 3) * AR(1), ones(1, 3) * Width(1)];
+UpperBounds = [ones(1, 3) * Thickness(2), ones(1, 3) * AR(2), ones(1, 3) * Width(2)];
 InputRange  = UpperBounds - LowerBounds;    
-MaxDP = 150; % psi
+MaxDP = 50; % psi
 ODLimit = 3.98; % in, max allowable liner OD for manufacturability
 R_chamber = Data.Contour(1,2);
+NumChannels = 55;
+isMilled = true;
 
 NumDims = length(LowerBounds);
 
 %% Guaranteed Valid Initialization
-NumRequiredValid = 100; 
+NumRequiredValid = 75; 
 Geometries = [];
 Lifespan = [];
 PressDrop = [];
@@ -50,10 +52,10 @@ while size(Geometries, 1) < NumRequiredValid
     
     for i = 1:BatchSize
         TotalEvals = TotalEvals + 1;
-        NC = BatchGeom(i, 9);
+        NC = NumChannels;
         WT = BatchGeom(i, 1:3);
         AR = BatchGeom(i, 4:6);
-        CW = BatchGeom(i, 7:8);
+        CW = BatchGeom(i, 7:9);
         
         % Filter out geometries that violate OD limit before running physics
         if LinerODCalc(BatchGeom(i, :), R_chamber) > ODLimit
@@ -98,7 +100,7 @@ fprintf('\nStarting Phase 1: Continuous Search\n');
 [Geometries, Lifespan, PressDrop, MaxChamberTemp, logT_L, logT_P, logT_T] = BOSearch( ...
     NumPhase1, Geometries, Lifespan, PressDrop, MaxChamberTemp, ...
     LowerBounds, UpperBounds, LowerBounds, UpperBounds, ...
-    Data, MaxDP, [], [], [], [],  R_chamber, ODLimit);
+    Data, MaxDP, [], [], [], [],  R_chamber, ODLimit, NumChannels);
 
 % Identify Continuous Champion
 ValidIdx = ~isnan(Lifespan) & (PressDrop <= MaxDP) & (LinerODCalc(Geometries, R_chamber) <= ODLimit);
@@ -110,80 +112,85 @@ ValidGeometries = Geometries(ValidIdx, :);
 [~, bestIdx] = max(ValidLifespans);
 ContChampion = ValidGeometries(bestIdx, :);
 fprintf('\nGlobal Optimization Complete. Continuous Champion\n');
-fprintf('  WT=[%.4f, %.4f, %.4f], AR=[%.4f, %.4f, %.4f], CW=[%.4f, %.4f], NC=%i\n', ...
-        ContChampion(1:8), round(ContChampion(9)));
+fprintf('  WT=[%.4f, %.4f, %.4f], AR=[%.4f, %.4f, %.4f], CW=[%.4f, %.4f, %.4f], NC=%i\n', ...
+        ContChampion(1:9), NumChannels);
 
 %% Phase 2: Bracketing & Fine-Tuning
 fprintf('\nStarting Phase 2: Discrete Fine-Tuning\n');
-% Expanded standard slitting saw thicknesses (inches)
-CW_Avail = [
-    0.0100; % 0.01" (10 thou)
-    0.0120; % 0.012"
-    0.0130; % 0.013"
-    0.0140; % 0.014"
-    0.0156; % 1/64"
-    0.0160; % 0.016"
-    0.0180; % 0.018"
-    0.0200; % 0.02"
-    0.0230; % 0.023"
-    0.0250; % 0.025"
-    0.0280; % 0.028"
-    0.0312; % 1/32"
-    0.0320; % 0.032"
-    0.0350; % 0.035"
-    0.0360; % 0.036"
-    0.0400; % 0.04"
-    0.0450; % 0.045"
-    0.0469; % 3/64"
-    0.0510; % 0.051"
-    0.0570; % 0.057"
-    0.0625; % 1/16"
-    0.0640; % 0.064"
-    0.0720; % 0.072"
-    0.0781; % 5/64"
-    0.0810; % 0.081"
-    0.0910; % 0.091"
-    0.0938; % 3/32"
-    0.1020; % 0.102"
-    0.1140; % 0.114"
-    0.1250  % 1/8"
-];
 
-% Bracket Chamber Width
-diffC = CW_Avail - ContChampion(7);
-idxC_L = find(diffC <= 0, 1, 'last');  
-if isempty(idxC_L)
-    idxC_L = 1; 
+if isMilled
+    FineTuneCWs = [ContChampion(7), ContChampion(8)];
+else
+    % Expanded standard slitting saw thicknesses (inches)
+    CW_Avail = [
+        0.0100; % 0.01" (10 thou)
+        0.0120; % 0.012"
+        0.0130; % 0.013"
+        0.0140; % 0.014"
+        0.0156; % 1/64"
+        0.0160; % 0.016"
+        0.0180; % 0.018"
+        0.0200; % 0.02"
+        0.0230; % 0.023"
+        0.0250; % 0.025"
+        0.0280; % 0.028"
+        0.0312; % 1/32"
+        0.0320; % 0.032"
+        0.0350; % 0.035"
+        0.0360; % 0.036"
+        0.0400; % 0.04"
+        0.0450; % 0.045"
+        0.0469; % 3/64"
+        0.0510; % 0.051"
+        0.0570; % 0.057"
+        0.0625; % 1/16"
+        0.0640; % 0.064"
+        0.0720; % 0.072"
+        0.0781; % 5/64"
+        0.0810; % 0.081"
+        0.0910; % 0.091"
+        0.0938; % 3/32"
+        0.1020; % 0.102"
+        0.1140; % 0.114"
+        0.1250  % 1/8"
+    ];
+    
+    % Bracket Chamber Width
+    diffC = CW_Avail - ContChampion(7);
+    idxC_L = find(diffC <= 0, 1, 'last');  
+    if isempty(idxC_L)
+        idxC_L = 1; 
+    end
+    idxC_H = find(diffC >= 0, 1, 'first'); 
+    if isempty(idxC_H)
+        idxC_H = length(CW_Avail);
+    end
+    C_Opts = unique([CW_Avail(idxC_L), CW_Avail(idxC_H)]);
+    
+    % Bracket Nozzle / Throat Width
+    diffN = CW_Avail - ContChampion(8);
+    idxN_L = find(diffN <= 0, 1, 'last');
+    if isempty(idxN_L)
+        idxN_L = 1;
+    end
+    idxN_H = find(diffN >= 0, 1, 'first'); 
+    if isempty(idxN_H)
+        idxN_H = length(CW_Avail);
+    end
+    N_Opts = unique([CW_Avail(idxN_L), CW_Avail(idxN_H)]);
+    
+    % Generate configurations
+    [C_Grid, N_Grid] = ndgrid(C_Opts, N_Opts);
+    FineTuneCWs = [C_Grid(:), N_Grid(:)];
 end
-idxC_H = find(diffC >= 0, 1, 'first'); 
-if isempty(idxC_H)
-    idxC_H = length(CW_Avail);
-end
-C_Opts = unique([CW_Avail(idxC_L), CW_Avail(idxC_H)]);
-
-% Bracket Nozzle / Throat Width
-diffN = CW_Avail - ContChampion(8);
-idxN_L = find(diffN <= 0, 1, 'last');
-if isempty(idxN_L)
-    idxN_L = 1;
-end
-idxN_H = find(diffN >= 0, 1, 'first'); 
-if isempty(idxN_H)
-    idxN_H = length(CW_Avail);
-end
-N_Opts = unique([CW_Avail(idxN_L), CW_Avail(idxN_H)]);
-
-% Generate configurations
-[C_Grid, N_Grid] = ndgrid(C_Opts, N_Opts);
-FineTuneCWs = [C_Grid(:), N_Grid(:)];
 
 % Restrict search space for fine-tuning
-SearchRadius = 0.50 * InputRange;
+SearchRadius = 0.60 * InputRange;
 FT_LB = max(LowerBounds, ContChampion - SearchRadius);
 FT_UB = min(UpperBounds, ContChampion + SearchRadius);
 
-NumPhase2_Init = 70;
-NumPhase2_Search = 70;
+NumPhase2_Init = 60;
+NumPhase2_Search = 80;
 FT_EndIndices = []; 
 CurrentTotalEvals = NumSamples + NumPhase1;
 
@@ -205,8 +212,8 @@ for k = 1:size(FineTuneCWs, 1)
 
         WT_loc = LocalGeom(i, 1:3);
         AR_loc = LocalGeom(i, 4:6);
-        CW_loc = LocalGeom(i, 7:8);
-        NC_loc = LocalGeom(i, 9);
+        CW_loc = LocalGeom(i, 7:9);
+        NC_loc = NumChannels;
         try
             [LocalLife(i), LocalPress(i), LocalTemp(i)] = SKRegen2_ElectricBoogalo(Data, NC_loc, WT_loc, AR_loc, CW_loc, 0);
         catch
@@ -214,12 +221,12 @@ for k = 1:size(FineTuneCWs, 1)
         end
     end
     fprintf('Done.\n');
-    
+
     % Cold-Start Local BO Search (FT bounds act as absolute normalization bounds)
     [OptGeom, OptLife, OptPress, OptTemp, ~, ~, ~] = BOSearch( ...
         NumPhase2_Search, LocalGeom, LocalLife, LocalPress, LocalTemp, ...
         FT_LB, FT_UB, FT_LB, FT_UB, ... 
-        Data, MaxDP, FixedCW, [], [], [], R_chamber, ODLimit);
+        Data, MaxDP, FixedCW, [], [], [], R_chamber, ODLimit, NumChannels);
         
     % Append to master array for final plotting
     Geometries = [Geometries; OptGeom];
@@ -265,8 +272,8 @@ else
     fprintf(' OPTIMAL GEOMETRY [inches]:\n');
     fprintf('  Wall Thickness (C, T, N): [%.4f, %.4f, %.4f]\n', ChampionGeom(1:3));
     fprintf('  Aspect Ratio (C, T, N):   [%.4f, %.4f, %.4f]\n', ChampionGeom(4:6));
-    fprintf('  Channel Width (C, N):     [%.4f, %.4f]\n',       ChampionGeom(7:8));
-    fprintf('  Channel Count:            %i \n',                round(ChampionGeom(9)));
+    fprintf('  Channel Width (C, N):     [%.4f, %.4f, %.4f]\n', ChampionGeom(7:9));
+    fprintf('  Channel Count:            %i \n',                NumChannels);
     fprintf('  Liner OD:                 %.2f \n',              LinerOD);
     fprintf('======================================================\n');
 end
@@ -337,7 +344,7 @@ ylabel('Pressure Drop [psi]');
 grid on; ylim([0, max(MaxDP + 50, prctile(PlotPress(~CrashIdx), 85))]);
 %SKRegen2_ElectricBoogalo(Data, ChampionGeom(9), ChampionGeom(1:3), ChampionGeom(4:6), ChampionGeom(7:8), 1);
 %% Local Functions
-function [Geometries, Lifespan, PressDrop, MaxChamberTemp, logT_L, logT_P, logT_T] = BOSearch(NumIter, Geometries, Lifespan, PressDrop, MaxChamberTemp, SearchLB, SearchUB, GlobalLB, GlobalUB, Data, MaxDP, FixedCW, logT_L, logT_P, logT_T, R_chamber, ODLimit) 
+function [Geometries, Lifespan, PressDrop, MaxChamberTemp, logT_L, logT_P, logT_T] = BOSearch(NumIter, Geometries, Lifespan, PressDrop, MaxChamberTemp, SearchLB, SearchUB, GlobalLB, GlobalUB, Data, MaxDP, FixedCW, logT_L, logT_P, logT_T, R_chamber, ODLimit, NumChannels) 
     NumDims = length(GlobalLB);
     GlobalRange = GlobalUB - GlobalLB;
 
@@ -484,7 +491,7 @@ function [Geometries, Lifespan, PressDrop, MaxChamberTemp, logT_L, logT_P, logT_
         x_next = GlobalLB + BestCandidates(trueBestIdx, :) .* GlobalRange;
 
         % Physical evaluation
-        WT = x_next(1:3); AR = x_next(4:6); CW = x_next(7:8); NC = x_next(9);
+        WT = x_next(1:3); AR = x_next(4:6); CW = x_next(7:9); NC = NumChannels;
         if LinerODCalc(x_next, R_chamber) > ODLimit
             Life_new = NaN; Drop_new = NaN; MaxT_new = NaN;
         else

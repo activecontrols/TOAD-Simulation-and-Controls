@@ -5,7 +5,7 @@
 % Includes axial heat transfer via tracking mean wall temp and solving via
 % a tridiagonal matrix. Uses legacy regen code for initial guess 
 
-function [Lifespan, PressDrop, MaxChamberTemp] = SKRegen2_ElectricBoogalo(Data, NumChannels, WallThickness, AspectRatio, ChannelWidth, DisplayMode)
+function [Lifespan, PressDrop, TempArray] = SKRegen2_ElectricBoogalo(Data, NumChannels, WallThickness, AspectRatio, ChannelWidth, DisplayMode)
 New_CEA = false;
 fclose all;
 close all;
@@ -24,7 +24,7 @@ FEA_outputs = 0; % 1 = yes, 0 = no
 dogleg = 0; % 1 = yes, 0 = no, supertadpole regen channel dogleg at injector
 traditional = 1;  % 1 = yes, 0 = no, changes how channel dimensions are interpolated for a traditonal vs. printed chamber
 
-throttle = 1; % throttle percent - e.g. 1 = 100%, 0.5 = 50%
+throttle = 0.5; % throttle percent - e.g. 1 = 100%, 0.5 = 50%
 num_channels = round(NumChannels); % number of regenerative cooling channels      
 coolant = "isopropyl alcohol"; % coolant definition ("isopropyl alcohol", "water", "methanol", "ethanol")
 fuel = {'C3H8O,2propanol'}; % fuel definition
@@ -49,7 +49,7 @@ debug = 0; % Debug tool (1 = on, 0 = off)
 % Channel Defintion
 t_w = WallThickness .* 0.0254; % channel wall thickness [1 min 2] [m]    
 w_c = ChannelWidth .* 0.0254; % channel width [1 min] [m] 
-h_c = [w_c(1) .* AspectRatio(1), w_c(2) .* AspectRatio(2:3)]; % channel height [1 min 2] [m]
+h_c = w_c .* AspectRatio; % channel height [1 min 2] [m]
 
 heatflux_factor = -0.10833 * throttle + 0.6433; % Scaling factor [0 to 1], Linear Fit to Tadpole Data 
 
@@ -146,11 +146,11 @@ if traditional
             h_c_x(i) = h_c(1);
         elseif x_interpolated(i) > -converging_length && x_interpolated(i) <= 0
             t_w_x(i) = (t_w(2) - t_w(1)) / converging_length * x_interpolated(i) + t_w(2);
-            w_c_x(i) = w_c(2);
+            w_c_x(i) = (w_c(2) - w_c(1)) / converging_length * x_interpolated(i) + w_c(2);
             h_c_x(i) = h_c(2);
         else
             t_w_x(i) = (t_w(3) - t_w(2)) / diverging_length * x_interpolated(i) + t_w(2);
-            w_c_x(i) = w_c(2);
+            w_c_x(i) = (w_c(3) - w_c(2)) / diverging_length * x_interpolated(i) + w_c(2);
             h_c_x(i) = (h_c(3) - h_c(2)) / diverging_length * x_interpolated(i) + h_c(2);
         end
     end
@@ -609,7 +609,7 @@ end
 if ~global_converged
     Lifespan = NaN;
     PressDrop = NaN;
-    MaxChamberTemp = NaN;
+    TempArray = NaN;
     return;
 end
 Qtot = sum(Qdot_l) * num_channels; 
@@ -698,8 +698,7 @@ chamber_CDA = mdot_coolant / sqrt(2 * mean(rho_coolant) * (max(P_coolant) - min(
 plastic_deformation_cyclic = sum(dx * epsilon_pa); %Permanent axial deformation per hot fire [in]
 
 %% Output
-chamber_indices = x_interpolated <= -converging_length;
-MaxChamberTemp = max(T_wg(chamber_indices));
+TempArray = T_wg;
 Lifespan = Engine_life;
 PressDrop = (max(P_coolant) - min(P_coolant)) / 6894.76;
 if DisplayMode == 1
@@ -885,7 +884,7 @@ if DisplayMode == 1
     plot(x_interpolated / 0.0254, h_c_x ./ w_c_x);
     title("Channel Aspect Ratio");
     xlabel("Location [in]");
-    ylim([0, 4])
+    ylim([0, 5.2])
     grid on
     subplot(2,3,[4,5]);
     hold on
