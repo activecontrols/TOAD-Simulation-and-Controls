@@ -9,6 +9,9 @@ function cf = moody(ed, Re, options)
 % Output: f = friction factor
 %
 % Note: Laminar and turbulent flow are correctly accounted for
+if isnan(Re) || isinf(Re) || Re <= 0 || isnan(ed) || isinf(ed) || ed < 0
+    error(sprintf('Unphysical Properties detected'));
+end
 
 if Re < 0
     error(sprintf('Reynolds number = %f cannot be negative', 'Re'));

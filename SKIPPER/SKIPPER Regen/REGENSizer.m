@@ -18,47 +18,81 @@ addpath("Material Data\");
 addpath("Contours\");
 addpath('BayesianOpt\');
 Data = LoadData();
-rng(42);
+rng(41);
 
 %% Parameter sampling (inches)
-Thickness = [0.05; 0.1];    AR = [1; 3.0];  Width = [0.01; 0.125];
-LowerBounds = [ones(1, 3) * Thickness(1), ones(1, 3) * AR(1), ones(1, 2) * Width(1), 70];
-UpperBounds = [ones(1, 3) * Thickness(2), ones(1, 3) * AR(2), ones(1, 2) * Width(2), 80];
+Thickness = [0.05; 0.09];    AR = [1; 4.5];  Width = [0.03; 0.100];
+LowerBounds = [ones(1, 3) * Thickness(1), ones(1, 3) * AR(1), ones(1, 3) * Width(1)];
+UpperBounds = [ones(1, 3) * Thickness(2), ones(1, 3) * AR(2), ones(1, 3) * Width(2)];
 InputRange  = UpperBounds - LowerBounds;    
-MaxDP = 150; % * 0.5^2; % psi
+MaxDP = 50; % psi
+ODLimit = 3.98; % in, max allowable liner OD for manufacturability
+R_chamber = Data.Contour(1,2);
+NumChannels = 55;
+isMilled = true;
 
-% Latin Hypercube Sampling for parameter space for GP training
 NumDims = length(LowerBounds);
-NumSamples = 252;
-LHS = HyperSampl(NumSamples, NumDims);
-Geometries = LowerBounds + LHS .* InputRange;
 
-%% Feed sample space through SKIPPERRegen.m to evaluate physics
-Lifespan = zeros(NumSamples, 1);
-PressDrop = zeros(NumSamples, 1);
-MaxChamberTemp = zeros(NumSamples, 1);
-Invalid = 0;
-for i = 1:NumSamples
-    NC = Geometries(i, 9);
-    WT = Geometries(i, 1:3);
-    AR = Geometries(i, 4:6);
-    CW = Geometries(i, 7:8);
-    try
-        [Lifespan(i), PressDrop(i), MaxChamberTemp(i)] = SKRegen2_ElectricBoogalo(Data, NC, WT, AR, CW, 0);
-        if ~isreal(Lifespan(i)) || ~isreal(PressDrop(i))
-            error('Complex physics output detected.'); 
+%% Guaranteed Valid Initialization
+NumRequiredValid = 75; 
+Geometries = [];
+Lifespan = [];
+PressDrop = [];
+MaxChamberTemp = [];
+
+fprintf('Generating %i strictly valid geometries for GP initialization...\n', NumRequiredValid);
+InvalidCount = 0;
+TotalEvals = 0;
+
+% Loop until we have enough successful runs
+while size(Geometries, 1) < NumRequiredValid
+    BatchSize = 50;
+    LHS = HyperSampl(BatchSize, NumDims);
+    BatchGeom = LowerBounds + LHS .* InputRange;
+    
+    for i = 1:BatchSize
+        TotalEvals = TotalEvals + 1;
+        NC = NumChannels;
+        WT = BatchGeom(i, 1:3);
+        AR = BatchGeom(i, 4:6);
+        CW = BatchGeom(i, 7:9);
+        
+        % Filter out geometries that violate OD limit before running physics
+        if LinerODCalc(BatchGeom(i, :), R_chamber) > ODLimit
+            InvalidCount = InvalidCount + 1;
+            continue;
         end
-    catch
-        Lifespan(i) = NaN;
-        PressDrop(i) = NaN;
-        Invalid = Invalid + 1;
-        warning('Sample Number %i Produced invalid geometry', i);
-    end
-    if ~isnan(Lifespan(i))
-        fprintf('Evaluation #%i Complete!, %.2f Cycles & %.2f psi drop\n', i, Lifespan(i), PressDrop(i));
+        
+        try
+            [Life_new, Drop_new, MaxT_new] = SKRegen2_ElectricBoogalo(Data, NC, WT, AR, CW, 0);
+            
+            % Ensure outputs are real numbers and physically valid
+            if isreal(Life_new) && isreal(Drop_new) && ~isnan(Life_new)
+                Geometries = [Geometries; BatchGeom(i, :)];
+                Lifespan = [Lifespan; Life_new];
+                PressDrop = [PressDrop; Drop_new];
+                MaxChamberTemp = [MaxChamberTemp; MaxT_new];
+                
+                fprintf('Valid Sample %i/%i found! (Eval #%i) %.2f Cycles, %.2f psi drop\n', ...
+                    size(Geometries, 1), NumRequiredValid, TotalEvals, Life_new, Drop_new);
+                
+                % Break out of batch loop if we hit target
+                if size(Geometries, 1) == NumRequiredValid
+                    break;
+                end
+            else
+                InvalidCount = InvalidCount + 1;
+            end
+        catch
+            InvalidCount = InvalidCount + 1;
+        end
     end
 end
-fprintf('Initial Evaluation complete!, %.2f%% of sampled geometries were invalid\n', Invalid / NumSamples * 100);
+
+fprintf('\nInitialization Complete!\n');
+fprintf('Total Evaluations Required: %i\n', TotalEvals);
+fprintf('Failure Rate: %.2f%%\n', (InvalidCount / TotalEvals) * 100);
+NumSamples = size(Geometries, 1); 
 
 %% Phase 1: Continuous Global Optimization
 NumPhase1 = 100;
@@ -66,10 +100,10 @@ fprintf('\nStarting Phase 1: Continuous Search\n');
 [Geometries, Lifespan, PressDrop, MaxChamberTemp, logT_L, logT_P, logT_T] = BOSearch( ...
     NumPhase1, Geometries, Lifespan, PressDrop, MaxChamberTemp, ...
     LowerBounds, UpperBounds, LowerBounds, UpperBounds, ...
-    Data, MaxDP, [], [], [], []);
+    Data, MaxDP, [], [], [], [],  R_chamber, ODLimit, NumChannels);
 
 % Identify Continuous Champion
-ValidIdx = ~isnan(Lifespan) & (PressDrop <= MaxDP);
+ValidIdx = ~isnan(Lifespan) & (PressDrop <= MaxDP) & (LinerODCalc(Geometries, R_chamber) <= ODLimit);
 if ~any(ValidIdx)
     error('Phase 1 found no valid designs satisfying constraints.');
 end
@@ -78,80 +112,85 @@ ValidGeometries = Geometries(ValidIdx, :);
 [~, bestIdx] = max(ValidLifespans);
 ContChampion = ValidGeometries(bestIdx, :);
 fprintf('\nGlobal Optimization Complete. Continuous Champion\n');
-fprintf('  WT=[%.4f, %.4f, %.4f], AR=[%.4f, %.4f, %.4f], CW=[%.4f, %.4f], NC=%i\n', ...
-        ContChampion(1:8), round(ContChampion(9)));
+fprintf('  WT=[%.4f, %.4f, %.4f], AR=[%.4f, %.4f, %.4f], CW=[%.4f, %.4f, %.4f], NC=%i\n', ...
+        ContChampion(1:9), NumChannels);
 
 %% Phase 2: Bracketing & Fine-Tuning
 fprintf('\nStarting Phase 2: Discrete Fine-Tuning\n');
-% Expanded standard slitting saw thicknesses (inches)
-CW_Avail = [
-    0.0100; % 0.01" (10 thou)
-    0.0120; % 0.012"
-    0.0130; % 0.013"
-    0.0140; % 0.014"
-    0.0156; % 1/64"
-    0.0160; % 0.016"
-    0.0180; % 0.018"
-    0.0200; % 0.02"
-    0.0230; % 0.023"
-    0.0250; % 0.025"
-    0.0280; % 0.028"
-    0.0312; % 1/32"
-    0.0320; % 0.032"
-    0.0350; % 0.035"
-    0.0360; % 0.036"
-    0.0400; % 0.04"
-    0.0450; % 0.045"
-    0.0469; % 3/64"
-    0.0510; % 0.051"
-    0.0570; % 0.057"
-    0.0625; % 1/16"
-    0.0640; % 0.064"
-    0.0720; % 0.072"
-    0.0781; % 5/64"
-    0.0810; % 0.081"
-    0.0910; % 0.091"
-    0.0938; % 3/32"
-    0.1020; % 0.102"
-    0.1140; % 0.114"
-    0.1250  % 1/8"
-];
 
-% Bracket Chamber Width
-diffC = CW_Avail - ContChampion(7);
-idxC_L = find(diffC <= 0, 1, 'last');  
-if isempty(idxC_L)
-    idxC_L = 1; 
+if isMilled
+    FineTuneCWs = [ContChampion(7), ContChampion(8)];
+else
+    % Expanded standard slitting saw thicknesses (inches)
+    CW_Avail = [
+        0.0100; % 0.01" (10 thou)
+        0.0120; % 0.012"
+        0.0130; % 0.013"
+        0.0140; % 0.014"
+        0.0156; % 1/64"
+        0.0160; % 0.016"
+        0.0180; % 0.018"
+        0.0200; % 0.02"
+        0.0230; % 0.023"
+        0.0250; % 0.025"
+        0.0280; % 0.028"
+        0.0312; % 1/32"
+        0.0320; % 0.032"
+        0.0350; % 0.035"
+        0.0360; % 0.036"
+        0.0400; % 0.04"
+        0.0450; % 0.045"
+        0.0469; % 3/64"
+        0.0510; % 0.051"
+        0.0570; % 0.057"
+        0.0625; % 1/16"
+        0.0640; % 0.064"
+        0.0720; % 0.072"
+        0.0781; % 5/64"
+        0.0810; % 0.081"
+        0.0910; % 0.091"
+        0.0938; % 3/32"
+        0.1020; % 0.102"
+        0.1140; % 0.114"
+        0.1250  % 1/8"
+    ];
+    
+    % Bracket Chamber Width
+    diffC = CW_Avail - ContChampion(7);
+    idxC_L = find(diffC <= 0, 1, 'last');  
+    if isempty(idxC_L)
+        idxC_L = 1; 
+    end
+    idxC_H = find(diffC >= 0, 1, 'first'); 
+    if isempty(idxC_H)
+        idxC_H = length(CW_Avail);
+    end
+    C_Opts = unique([CW_Avail(idxC_L), CW_Avail(idxC_H)]);
+    
+    % Bracket Nozzle / Throat Width
+    diffN = CW_Avail - ContChampion(8);
+    idxN_L = find(diffN <= 0, 1, 'last');
+    if isempty(idxN_L)
+        idxN_L = 1;
+    end
+    idxN_H = find(diffN >= 0, 1, 'first'); 
+    if isempty(idxN_H)
+        idxN_H = length(CW_Avail);
+    end
+    N_Opts = unique([CW_Avail(idxN_L), CW_Avail(idxN_H)]);
+    
+    % Generate configurations
+    [C_Grid, N_Grid] = ndgrid(C_Opts, N_Opts);
+    FineTuneCWs = [C_Grid(:), N_Grid(:)];
 end
-idxC_H = find(diffC >= 0, 1, 'first'); 
-if isempty(idxC_H)
-    idxC_H = length(CW_Avail);
-end
-C_Opts = unique([CW_Avail(idxC_L), CW_Avail(idxC_H)]);
-
-% Bracket Nozzle / Throat Width
-diffN = CW_Avail - ContChampion(8);
-idxN_L = find(diffN <= 0, 1, 'last');
-if isempty(idxN_L)
-    idxN_L = 1;
-end
-idxN_H = find(diffN >= 0, 1, 'first'); 
-if isempty(idxN_H)
-    idxN_H = length(CW_Avail);
-end
-N_Opts = unique([CW_Avail(idxN_L), CW_Avail(idxN_H)]);
-
-% Generate configurations
-[C_Grid, N_Grid] = ndgrid(C_Opts, N_Opts);
-FineTuneCWs = [C_Grid(:), N_Grid(:)];
 
 % Restrict search space for fine-tuning
-SearchRadius = 0.50 * InputRange;
+SearchRadius = 0.60 * InputRange;
 FT_LB = max(LowerBounds, ContChampion - SearchRadius);
 FT_UB = min(UpperBounds, ContChampion + SearchRadius);
 
-NumPhase2_Init = 70;
-NumPhase2_Search = 70;
+NumPhase2_Init = 60;
+NumPhase2_Search = 80;
 FT_EndIndices = []; 
 CurrentTotalEvals = NumSamples + NumPhase1;
 
@@ -173,8 +212,8 @@ for k = 1:size(FineTuneCWs, 1)
 
         WT_loc = LocalGeom(i, 1:3);
         AR_loc = LocalGeom(i, 4:6);
-        CW_loc = LocalGeom(i, 7:8);
-        NC_loc = LocalGeom(i, 9);
+        CW_loc = LocalGeom(i, 7:9);
+        NC_loc = NumChannels;
         try
             [LocalLife(i), LocalPress(i), LocalTemp(i)] = SKRegen2_ElectricBoogalo(Data, NC_loc, WT_loc, AR_loc, CW_loc, 0);
         catch
@@ -182,12 +221,12 @@ for k = 1:size(FineTuneCWs, 1)
         end
     end
     fprintf('Done.\n');
-    
+
     % Cold-Start Local BO Search (FT bounds act as absolute normalization bounds)
     [OptGeom, OptLife, OptPress, OptTemp, ~, ~, ~] = BOSearch( ...
         NumPhase2_Search, LocalGeom, LocalLife, LocalPress, LocalTemp, ...
         FT_LB, FT_UB, FT_LB, FT_UB, ... 
-        Data, MaxDP, FixedCW, [], [], []);
+        Data, MaxDP, FixedCW, [], [], [], R_chamber, ODLimit, NumChannels);
         
     % Append to master array for final plotting
     Geometries = [Geometries; OptGeom];
@@ -207,8 +246,9 @@ Phase2Mask = false(TotalEvals, 1);
 Phase2Mask(Phase2Start:end) = true;
 
 % Define all valid indices for text output and plotting
-ValidMfgIdx = ~isnan(Lifespan) & (PressDrop <= MaxDP) & Phase2Mask;
-ValidGlobalIdx = ~isnan(Lifespan) & (PressDrop <= MaxDP);
+LinerODAll = LinerODCalc(Geometries, R_chamber);
+ValidMfgIdx = ~isnan(Lifespan) & (PressDrop <= MaxDP) & Phase2Mask & (LinerODAll <= ODLimit);
+ValidGlobalIdx = ~isnan(Lifespan) & (PressDrop <= MaxDP) & (LinerODAll <= ODLimit);
 
 if ~any(ValidMfgIdx)
     warning('No valid manufacturable geometries found in Phase 2.');
@@ -221,7 +261,10 @@ else
     
     BestPress    = PressDrop(AbsBestIdx);
     ChampionGeom = Geometries(AbsBestIdx, :);
-
+    
+    %% 
+    LinerOD = 2 * (Data.Contour(1,2) + ChampionGeom(1) + ChampionGeom(7) * ChampionGeom(4));
+    
     fprintf('\n======================================================\n');
     fprintf(' CHAMPION MANUFACTURABLE PERFORMANCE:\n');
     fprintf('  Lifespan:      %.2f Cycles\n', BestLife);
@@ -229,8 +272,9 @@ else
     fprintf(' OPTIMAL GEOMETRY [inches]:\n');
     fprintf('  Wall Thickness (C, T, N): [%.4f, %.4f, %.4f]\n', ChampionGeom(1:3));
     fprintf('  Aspect Ratio (C, T, N):   [%.4f, %.4f, %.4f]\n', ChampionGeom(4:6));
-    fprintf('  Channel Width (C, N):     [%.4f, %.4f]\n',       ChampionGeom(7:8));
-    fprintf('  Channel Count:            %i \n',                round(ChampionGeom(9)));
+    fprintf('  Channel Width (C, N):     [%.4f, %.4f, %.4f]\n', ChampionGeom(7:9));
+    fprintf('  Channel Count:            %i \n',                NumChannels);
+    fprintf('  Liner OD:                 %.2f \n',              LinerOD);
     fprintf('======================================================\n');
 end
 
@@ -300,7 +344,7 @@ ylabel('Pressure Drop [psi]');
 grid on; ylim([0, max(MaxDP + 50, prctile(PlotPress(~CrashIdx), 85))]);
 %SKRegen2_ElectricBoogalo(Data, ChampionGeom(9), ChampionGeom(1:3), ChampionGeom(4:6), ChampionGeom(7:8), 1);
 %% Local Functions
-function [Geometries, Lifespan, PressDrop, MaxChamberTemp, logT_L, logT_P, logT_T] = BOSearch(NumIter, Geometries, Lifespan, PressDrop, MaxChamberTemp, SearchLB, SearchUB, GlobalLB, GlobalUB, Data, MaxDP, FixedCW, logT_L, logT_P, logT_T) 
+function [Geometries, Lifespan, PressDrop, MaxChamberTemp, logT_L, logT_P, logT_T] = BOSearch(NumIter, Geometries, Lifespan, PressDrop, MaxChamberTemp, SearchLB, SearchUB, GlobalLB, GlobalUB, Data, MaxDP, FixedCW, logT_L, logT_P, logT_T, R_chamber, ODLimit, NumChannels) 
     NumDims = length(GlobalLB);
     GlobalRange = GlobalUB - GlobalLB;
 
@@ -319,7 +363,13 @@ function [Geometries, Lifespan, PressDrop, MaxChamberTemp, logT_L, logT_P, logT_
     end
 
     options_GP  = optimoptions('fminunc', 'Display', 'off', 'Algorithm', 'quasi-newton', 'MaxFunctionEvaluations', 1000);
-    options_ACQ = optimoptions('fmincon', 'Display', 'off', 'Algorithm', 'sqp', 'MaxFunctionEvaluations', 1000);
+    options_ACQ = optimoptions('fmincon', ...
+    'Display', 'off', ...
+    'Algorithm', 'sqp', ...
+    'StepTolerance', 1e-3, ...      
+    'OptimalityTolerance', 1e-3, ...
+    'MaxFunctionEvaluations', 200); 
+    ODNonlcon = @(x_norm) deal(LinerODCalc(GlobalLB + x_norm .* GlobalRange, R_chamber) - ODLimit, []);
 
     for iter = 1:NumIter
         % Output Scaling
@@ -357,10 +407,17 @@ function [Geometries, Lifespan, PressDrop, MaxChamberTemp, logT_L, logT_P, logT_
         end
 
         % GP Training
+        % Only retrain GP hyperparameters every 15 iterations
+        % if mod(iter, 10) == 1 || iter == 1
+        %     logT_L = fminunc(@(t) NLML(t, GeometriesNorm, LifespanSCALED), logT_L, options_GP);
+        %     logT_P = fminunc(@(t) NLML(t, GeometriesNorm_Valid, PressDropSCALED(ValidMask)), logT_P, options_GP);
+        %     logT_T = fminunc(@(t) NLML(t, GeometriesNorm_Valid, TempSCALED(ValidMask)), logT_T, options_GP);
+        % end
+
         logT_L = fminunc(@(t) NLML(t, GeometriesNorm, LifespanSCALED), logT_L, options_GP);
         logT_P = fminunc(@(t) NLML(t, GeometriesNorm_Valid, PressDropSCALED(ValidMask)), logT_P, options_GP);
         logT_T = fminunc(@(t) NLML(t, GeometriesNorm_Valid, TempSCALED(ValidMask)), logT_T, options_GP);
-        
+
         ThetaOpt_LIFE  = exp(logT_L);
         ThetaOpt_PRESS = exp(logT_P);
         ThetaOpt_TEMP  = exp(logT_T);
@@ -390,7 +447,7 @@ function [Geometries, Lifespan, PressDrop, MaxChamberTemp, logT_L, logT_P, logT_
         a_T   = L_T' \ (L_T \ TempSCALED(ValidMask));
 
         % Grid Search
-        NumGrid = 50000;
+        NumGrid = 25000;
         GridGeometriesNorm = LB_norm + rand(NumGrid, NumDims) .* (UB_norm - LB_norm);
 
         [muLIFE_g,  stdLIFE_g]  = PredictGP(GridGeometriesNorm, GeometriesNorm,       L_L, a_L, ThetaOpt_LIFE);
@@ -408,6 +465,8 @@ function [Geometries, Lifespan, PressDrop, MaxChamberTemp, logT_L, logT_P, logT_
         % Soft Penalty implementation for the Grid initialization
         WeightFactor = 0.015; % Adjust for temp importance
         GridScores = (-EI .* PoF_g) + (WeightFactor .* muTEMP_g);
+        GridGeomPhys = GlobalLB + GridGeometriesNorm .* GlobalRange;
+        GridScores(LinerODCalc(GridGeomPhys, R_chamber) > ODLimit) = Inf;
 
         [~, SortedIdx] = sort(GridScores);
 
@@ -424,8 +483,7 @@ function [Geometries, Lifespan, PressDrop, MaxChamberTemp, logT_L, logT_P, logT_
 
         for j = 1:NumStarts
             x0_norm = GridGeometriesNorm(SortedIdx(j), :);
-            [x_opt_norm, fval] = fmincon(AcqObj, x0_norm, [], [], [], [], LB_norm, UB_norm, [], options_ACQ);
-            BestCandidates(j, :) = x_opt_norm;
+            [x_opt_norm, fval] = fmincon(AcqObj, x0_norm, [], [], [], [], LB_norm, UB_norm, ODNonlcon, options_ACQ);            BestCandidates(j, :) = x_opt_norm;
             BestAcqVals(j)       = fval;
         end
 
@@ -433,15 +491,19 @@ function [Geometries, Lifespan, PressDrop, MaxChamberTemp, logT_L, logT_P, logT_
         x_next = GlobalLB + BestCandidates(trueBestIdx, :) .* GlobalRange;
 
         % Physical evaluation
-        WT = x_next(1:3); AR = x_next(4:6); CW = x_next(7:8); NC = x_next(9);
-        try
-            [Life_new, Drop_new, MaxT_new] = SKRegen2_ElectricBoogalo(Data, NC, WT, AR, CW, 0);
-            if ~isreal(Life_new) || ~isreal(Drop_new), error('Complex output.'); end
-        catch
+        WT = x_next(1:3); AR = x_next(4:6); CW = x_next(7:9); NC = NumChannels;
+        if LinerODCalc(x_next, R_chamber) > ODLimit
             Life_new = NaN; Drop_new = NaN; MaxT_new = NaN;
-        end
-        if ~isnan(Life_new)
-            fprintf('Eval Complete! %.2f Cycles & %.2f psi drop, %.2f K Chamber\n', Life_new, Drop_new, MaxT_new);
+        else
+            try
+                [Life_new, Drop_new, MaxT_new] = SKRegen2_ElectricBoogalo(Data, NC, WT, AR, CW, 0);
+                if ~isreal(Life_new) || ~isreal(Drop_new), error('Complex output.'); end
+            catch
+                Life_new = NaN; Drop_new = NaN; MaxT_new = NaN;
+            end
+            if ~isnan(Life_new)
+                fprintf('Eval Complete! %.2f Cycles & %.2f psi drop, %.2f K Chamber\n', Life_new, Drop_new, MaxT_new);
+            end
         end
 
         Geometries     = [Geometries; x_next];
@@ -449,4 +511,7 @@ function [Geometries, Lifespan, PressDrop, MaxChamberTemp, logT_L, logT_P, logT_
         PressDrop      = [PressDrop; Drop_new];
         MaxChamberTemp = [MaxChamberTemp; MaxT_new];
     end
+end
+function OD = LinerODCalc(X, R_chamber)
+    OD = 2 * (R_chamber + X(:, 1) + X(:, 7) .* X(:, 4));
 end

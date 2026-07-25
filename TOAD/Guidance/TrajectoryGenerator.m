@@ -107,8 +107,9 @@ end
 %% Boundaries
 
 MaxThrust_val = constantsTOAD.MaxThrust;
-max_gimbal_rate = deg2rad(20);   % deg/s, tune to lin act spec.
+max_gimbal_rate = deg2rad(40);   % deg/s, tune to lin act spec.
 max_thrust_rate = 5000;          % N/s
+max_torque_rate = 6;
 
 % Initial state (On the pad)
 q0 = [1; 0; 0; 0];               % Upright
@@ -119,7 +120,7 @@ m_lox0 = constantsTOAD.OxMass;
 m_ipa0 = constantsTOAD.FuMass;
 
 % Final state (On the landing zone)
-r_f = [5; 5; 0];                 
+r_f = [0; 0; 0];                 
 
 % Flip target attitude
 q_inverted = [0; 0; 1; 0];
@@ -137,10 +138,12 @@ opti.subject_to(-1 <= X(7, :) <= 200);
     opti.subject_to(X(8:10, end) == [0;0;0]);
     opti.subject_to(X(14:15, end) > 0);
 %% Control Bounds
-opti.subject_to(-pi/15 <= U(1,:) <= pi/15);
-opti.subject_to(-pi/15 <= U(2,:) <= pi/15);
-opti.subject_to(0.5 * MaxThrust_val <= U(3,:) <= MaxThrust_val);
-opti.subject_to(-10 <= U(4,:) <= 10);
+    thrust_margin  = 0.10;   
+    gimbal_margin  = 0.15;   
+    
+    opti.subject_to((0.25 + thrust_margin) * MaxThrust_val <= U(3,:) <= (1 - thrust_margin) * MaxThrust_val);
+    opti.subject_to(-(1 - gimbal_margin) * pi/15 <= U(1,:) <= (1 - gimbal_margin) * pi/15);
+    opti.subject_to(-(1 - gimbal_margin) * pi/15 <= U(2,:) <= (1 - gimbal_margin) * pi/15);
 
 %% Rate constraints (physical rate limits — keep on U, not Uhat)
 for k = 1:N-1
@@ -150,9 +153,9 @@ for k = 1:N-1
 end
 
 %% Trajectory 
-N_ascent   = round(0.2*N);
+N_ascent   = round(0.1*N);
 N_flip     = round(0.5*N);
-N_approach = round(0.85*N);
+N_approach = round(0.9*N);
 % Ascent
     for k = 1:N_ascent
         opti.subject_to(-1 <= X(5:6, k) <= 1);
@@ -163,10 +166,11 @@ N_approach = round(0.85*N);
 % Flip
     q_flip = X(1:4, N_flip);
     dot_prod = q_inverted' * q_flip;
-    opti.subject_to(dot_prod >= 0.95);
+    opti.subject_to(dot_prod >= 0.99);
     opti.subject_to(X(7, N_flip) >= 30);
 
 % Descent 
+    opti.subject_to(X(1:4, N_approach) == q0)
     pos_xy = X(5:6, N_approach:end);
     vel_xy = X(8:9, N_approach:end);
     opti.subject_to( (pos_xy(1,:) - r_f(1)).^2 + (pos_xy(2,:) - r_f(2)).^2 <= 1^2 );
@@ -188,29 +192,22 @@ opti.set_initial(Xhat(8:10,:), zeros(3, N+1));
 opti.set_initial(Xhat(11:13,:), zeros(3, N+1));
 opti.set_initial(Uhat(3, :), repmat(constantsTOAD.m_wet * constantsTOAD.g / F_c, 1, N));  
 
-%% Cost Function (needs lots of improvement)
-% --- Fixed cost function ---
-w_mag  = 3e-3 * ones(4,1);
-w_rate = 8e-2 * ones(4,1); 
-w_jerk = 1e-1 * ones(4,1); 
-w_omega = 2e-2;
-w_time = 2e-2;   
+%% Cost Function (needs improvement for robustness, right now full on G-FOLD mass optimality)
 
+w_jerk = 4e-3 * ones(4,1); 
+w_rate = 1e-3 * ones(4,1);
+w_roll = 1e-4;
 dU = Uhat(:, 2:end) - Uhat(:, 1:end-1);
 d2U = dU(:, 2:end) - dU(:, 1:end-1);
-
+jerk_cost  = sum(sum(w_jerk .* d2U.^2));   
 rate_cost  = sum(sum(w_rate .* dU.^2));
-jerk_cost  = sum(sum(w_jerk .* d2U.^2));          
-reg_cost   = sum(sum(w_mag .* Uhat.^2));
-omega_cost = w_omega * sum(sum(Xhat(11:13, :).^2));
-time_cost  = w_time * T_total.^2;
+roll_cost  = sum(sum(w_roll .* Xhat(13, :).^2));
 
-opti.minimize(-(Xhat(14,end) + Xhat(15,end)) + reg_cost + rate_cost + jerk_cost + ...
-    omega_cost + time_cost);
+opti.minimize(-(Xhat(14,end) + Xhat(15,end)) + jerk_cost + roll_cost);
 
 %% Solver Configuration
 p_opts = struct('expand', true);
-s_opts = struct('max_iter', 3000, 'tol', 1e-4, 'constr_viol_tol', 1e-4);
+s_opts = struct('max_iter', 5000, 'tol', 5e-5, 'constr_viol_tol', 1e-4);
 % s_opts.hessian_approximation = 'limited-memory';
 opti.solver('ipopt', p_opts, s_opts);
 
