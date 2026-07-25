@@ -1,4 +1,4 @@
-function [MatrixList, SanityCheck] = RicattiRecursion(Trajectory,Q, R, constantsTOAD)
+function MatrixList = RicattiRecursion(Trajectory,Q, R, constantsTOAD)
 % RICATTIRECURSION Find optimal gain matricies for sequence of waypoints
 %   Backwards pass for finding optimal gain matrix at each sequence
 %       Given trajectory (K, u, x, )
@@ -148,7 +148,6 @@ for n = size(Trajectory.x,2):-1:2
     MatrixList(n, :, :) = gain(A_d,B_d,R,P_t)';
     P_t = riccati(A_d,B_d, R , Q , P_t);
 end
-SanityCheck = lqrd(A_lin, B_lin, Q, R, dT);
 
 end
 

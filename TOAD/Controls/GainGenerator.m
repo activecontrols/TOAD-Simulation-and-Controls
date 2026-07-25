@@ -1,4 +1,4 @@
-function [K_List, SanityCheck] = GainGenerator(X_res, U_res, dT, constantsTOAD)
+function K_List = GainGenerator(X_res, U_res, dT, constantsTOAD)
 %GAINGENERATOR Generate Gains for a given trajectory
 %   Detailed explanation goes here
 % Hand tuning for Q for now
@@ -15,6 +15,6 @@ R = diag([3.5, 3.5, 1/2400^2, 5]);
 trajectory_gen.x = X_res;
 trajectory_gen.u = [U_res'; [0, 0, (X_res(end-1,14)+X_res(end-1,15))*constantsTOAD.g, 0]]';
 trajectory_gen.dT = dT;
-[K_List, SanityCheck] = RicattiRecursion(trajectory_gen, Q, R,constantsTOAD);
+K_List = RicattiRecursion(trajectory_gen, Q, R,constantsTOAD);
 
 end

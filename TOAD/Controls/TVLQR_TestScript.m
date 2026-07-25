@@ -15,7 +15,7 @@ List.States = repmat(x_0, [1, N]);
 List.Inputs = repmat(u_0, [1, N]);
 
 % Test Call
-[K_List, SanityCheck] = GainGenerator(List.States, List.Inputs, dT, constantsTOAD);
+K_List = GainGenerator(List.States, List.Inputs, dT, constantsTOAD);
 K_List(1, :, :) = K_List(2, :, :);
 
 %% Plots
