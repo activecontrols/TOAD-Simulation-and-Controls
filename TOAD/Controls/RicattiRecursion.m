@@ -1,4 +1,4 @@
-function MatrixList = RicattiRecursion(TrajectoryList,Q, R, constantsTOAD)
+function [MatrixList, SanityCheck] = RicattiRecursion(Trajectory,Q, R, constantsTOAD)
 % RICATTIRECURSION Find optimal gain matricies for sequence of waypoints
 %   Backwards pass for finding optimal gain matrix at each sequence
 %       Given trajectory (K, u, x, )
@@ -22,11 +22,7 @@ syms omega11 omega21 omega31
 syms m_lox1 m_ipa1
 
 P_t = Q;
-size(P_t)
-size(Q)
-size(TrajectoryList.x, 2)
-MatrixList = permute(repmat([zeros(12,4)],[1,1,size(TrajectoryList.x,2)]), [3,1,2]);
-size(MatrixList)
+MatrixList = permute(repmat([zeros(12,4)],[1,1,size(Trajectory.x,2)]), [3,1,2]);
 
 q = [q0;q1;q2;q3];
 r = [r1;r2;r3];
@@ -107,7 +103,6 @@ vdot = FI/m;
 mdot_lox = -thrust / constantsTOAD.MaxThrust * constantsTOAD.OF / (1 + constantsTOAD.OF) * (constantsTOAD.MaxMdot);
 mdot_ipa = -thrust / constantsTOAD.MaxThrust * 1 / (1 + constantsTOAD.OF) * (constantsTOAD.MaxMdot);
 
-
 xdot = [qdot;rdot;vdot; omegaBdot;mdot_lox;mdot_ipa];
 
 % Ignore the constrained state
@@ -120,25 +115,51 @@ B = jacobian(xdot, u);
 A = pinv(T) * A * T;
 B = pinv(T) * B;
 
-for n = size(TrajectoryList.x,2):-1:2
-    A_lin = double(subs(A, [xn; xn1; u], [TrajectoryList.x(:,n); TrajectoryList.x(:,n-1); TrajectoryList.u(:,n-1)]));
-    B_lin = double(subs(B, [xn; xn1; u],[TrajectoryList.x(:,n); TrajectoryList.x(:,n-1); TrajectoryList.u(:,n-1)]));
-    MatrixList(n, :, :) = gain(A_lin,B_lin,R,P_t)';
-    P_t = riccati(A_lin,B_lin,R,Q,P_t);
+% Turn the jacobians into matlab functions for evaluation speed
+A_fcn = matlabFunction(A, 'Vars', {xn, xn1, u});
+B_fcn = matlabFunction(B, 'Vars', {xn, xn1, u});
+dT = Trajectory.dT;
+
+for n = size(Trajectory.x,2):-1:2
+    % Extract states
+    x_n   = Trajectory.x(:, n);
+    x_n1  = Trajectory.x(:, n-1);
+    u_n1  = Trajectory.u(:, n-1);
+    
+    % Jacobian Eval
+    A_lin = A_fcn(x_n, x_n1, u_n1);
+    B_lin = B_fcn(x_n, x_n1, u_n1);
+    
+    %% Matrix discretization using ZOH
+    % Dimensions
+    nx = size(A_lin, 1); 
+    nu = size(B_lin, 2); 
+    
+    % Construct the continuous block matrix
+    M_c = [A_lin, B_lin; 
+           zeros(nu, nx), zeros(nu, nu)];
+    
+    % Discretize and extract A_d and B_d
+    M_d = expm(M_c * dT);
+    A_d = M_d(1:nx, 1:nx);
+    B_d = M_d(1:nx, (nx+1):end);
+
+    % Matrix Eval and Updating Ricatti Cost
+    MatrixList(n, :, :) = gain(A_d,B_d,R,P_t)';
+    P_t = riccati(A_d,B_d, R , Q , P_t);
 end
-SolveLQR(A_lin, B_lin, Q, R)
+SanityCheck = lqrd(A_lin, B_lin, Q, R, dT);
 
 end
 
 % Calculates P_(t-1)
 function P = riccati(A, B, R, Q, P_t)
-
-P=Q+A.'*P_t*A - (A.'*P_t*B)/(B.'*P_t*B+R)*B.'*P_t*A;
+    P = Q + A'*P_t*A - (A'*P_t*B) / (B'*P_t*B + R) * B'*P_t*A;
 end
 
+% Optimal Gain Matrix
 function K = gain(A, B, R, P_t)
-
- K = (B.'*P_t*B+R)\B.'*P_t*A;
+    K = (B.'*P_t*B+R) \ B.'*P_t*A;
 end
 
 % P = P_(t+1)
