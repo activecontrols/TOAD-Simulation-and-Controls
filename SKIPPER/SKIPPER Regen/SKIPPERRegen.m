@@ -23,7 +23,7 @@ dogleg = 0; % 1 = yes, 0 = no, supertadpole regen channel dogleg at injector
 traditional = 1;  % 1 = yes, 0 = no, changes how channel dimensions are interpolated for a traditonal vs. printed chamber
 peak_point_strain_input = 0.0; % 0 = disabled, peak point strain percent input from FEA - e.g. 0.015 = 1.5%, 0.005 = 0.5%
 
-throttle = 1; % throttle percent - e.g. 1 = 100%, 0.5 = 50%
+throttle = 0.5; % throttle percent - e.g. 1 = 100%, 0.5 = 50%
 num_channels = round(NumChannels); % number of regenerative cooling channels      
 coolant = "isopropyl alcohol"; % coolant definition ("isopropyl alcohol", "water", "methanol", "ethanol")
 fuel = {'C3H8O,2propanol'}; % fuel definition
