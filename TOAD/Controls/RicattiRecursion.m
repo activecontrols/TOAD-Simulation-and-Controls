@@ -118,13 +118,14 @@ B = pinv(T) * B;
 % Turn the jacobians into matlab functions for evaluation speed
 A_fcn = matlabFunction(A, 'Vars', {xn, xn1, u});
 B_fcn = matlabFunction(B, 'Vars', {xn, xn1, u});
-dT = Trajectory.dT;
+
 
 for n = size(Trajectory.x,2):-1:2
     % Extract states
     x_n   = Trajectory.x(:, n);
     x_n1  = Trajectory.x(:, n-1);
     u_n1  = Trajectory.u(:, n-1);
+    dT = Trajectory.t(n) - Trajectory.t(n-1);
     
     % Jacobian Eval
     A_lin = A_fcn(x_n, x_n1, u_n1);
