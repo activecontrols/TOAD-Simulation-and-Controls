@@ -49,7 +49,7 @@ debug = 0; % Debug tool (1 = on, 0 = off)
 % Channel Defintion
 t_w = WallThickness .* 0.0254; % channel wall thickness [1 min 2] [m]    
 w_c = ChannelWidth .* 0.0254; % channel width [1 min] [m] 
-h_c = w_c .* AspectRatio; % channel height [1 min 2] [m]
+h_c = [w_c(1) .* AspectRatio(1), w_c(2) .* AspectRatio(2:3)]; % channel height [1 min 2] [m]
 
 heatflux_factor = -0.10833 * throttle + 0.6433; % Scaling factor [0 to 1], Linear Fit to Tadpole Data 
 
@@ -146,11 +146,11 @@ if traditional
             h_c_x(i) = h_c(1);
         elseif x_interpolated(i) > -converging_length && x_interpolated(i) <= 0
             t_w_x(i) = (t_w(2) - t_w(1)) / converging_length * x_interpolated(i) + t_w(2);
-            w_c_x(i) = (w_c(2) - w_c(1)) / converging_length * x_interpolated(i) + w_c(2);
+            w_c_x(i) = w_c(2);
             h_c_x(i) = h_c(2);
         else
             t_w_x(i) = (t_w(3) - t_w(2)) / diverging_length * x_interpolated(i) + t_w(2);
-            w_c_x(i) = (w_c(3) - w_c(2)) / diverging_length * x_interpolated(i) + w_c(2);
+            w_c_x(i) = w_c(2);
             h_c_x(i) = (h_c(3) - h_c(2)) / diverging_length * x_interpolated(i) + h_c(2);
         end
     end
@@ -716,6 +716,7 @@ if DisplayMode == 1
     fprintf("\nMax Hotwall Temp: %.2f K", max(T_wg))
     fprintf("\nCoolant Exit Temp: %.2f K", max(T_coolant))
     fprintf("\nCoolant Temp Rise: %.2f K", max(T_coolant) - min(T_coolant))
+    fprintf("\nMinimum Fin Thickness: %.4f in.", min(fin_w) * 3.281 * 12)
     fprintf("\nChamber CdA: %.2f*10^-5 m^2", chamber_CDA * 10^5)
     
     %% FEA INPUTS

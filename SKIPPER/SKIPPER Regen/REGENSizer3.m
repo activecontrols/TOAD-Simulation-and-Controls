@@ -33,8 +33,8 @@ Data = LoadData();
 rng(41);
 
 %% Parameter bounds (inches, and channel count)
-Thickness = [0.05; 0.1];    AR = [0.5; 5];  Width = [0.02; 0.100];
-NC_Bounds = [50; 70]; 
+Thickness = [0.05; 0.1];    AR = [0.1; 5];  Width = [0.02; 0.125];
+NC_Bounds = [50; 65]; 
 
 LowerBounds = [ones(1, 3) * Thickness(1), ones(1, 3) * AR(1), ones(1, 3) * Width(1), NC_Bounds(1)];
 UpperBounds = [ones(1, 3) * Thickness(2), ones(1, 3) * AR(2), ones(1, 3) * Width(2), NC_Bounds(2)];
@@ -43,7 +43,7 @@ NumDims     = length(LowerBounds);     % 10
 IntDim      = NumDims;                 % index of the integer (channel count) dimension
 
 MaxDP = 50;     % psi, hard pressure-drop constraint (soft-penalized in cost)
-ODLimit = 3.98; % in, max allowable liner OD for manufacturability (hard constraint)
+ODLimit = 3.95; % in, max allowable liner OD for manufacturability (hard constraint)
 R_chamber = Data.Contour(1,2);
 
 %% Algorithm / budget settings
@@ -358,7 +358,7 @@ fprintf('\nTotal physics evaluations: %i\n', LogCount);
 % only were kept in the log; this one extra call is just for the
 % diagnostic plot below)
 [~, ~, ChampionTempProfile] = SKRegen2_ElectricBoogalo(Data, round(Champion(10)), ...
-    Champion(1:3), Champion(4:6), Champion(7:9), 0);
+    Champion(1:3), Champion(4:6), Champion(7:9), 1);
 
 % Run SKR2 in its own verbose/plotting mode (last arg = 1) on the champion
 % geometry to inspect whatever internal diagnostics it exposes. Commented
