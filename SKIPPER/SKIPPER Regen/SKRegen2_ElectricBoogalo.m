@@ -17,12 +17,12 @@ tic
 
 %% SIMULATION PARAMETERS
 steps = 100; % Number of steps along chamber (Change resolution of simulation)
-materialchoice = 4; % 0: 6061-RAM2, 1: Inconel718, 2: GrCop42, 3: Inconel625, 4: C101/OFHC Copper, 5: AlSi10Mg
+materialchoice = 0; % 0: 6061-RAM2, 1: Inconel718, 2: GrCop42, 3: Inconel625, 4: C101/OFHC Copper, 5: AlSi10Mg
 heat_correlation = 1; % 1 = Bartz, 2 = Heister Bartz
 coolant_direction = 0; % 0 = opposite flow, 1 = flow with hot gas 
-FEA_outputs = 0; % 1 = yes, 0 = no
-dogleg = 0; % 1 = yes, 0 = no, supertadpole regen channel dogleg at injector
-traditional = 1;  % 1 = yes, 0 = no, changes how channel dimensions are interpolated for a traditonal vs. printed chamber
+FEA_outputs = 1; % 1 = yes, 0 = no
+dogleg = 1; % 1 = yes, 0 = no, supertadpole regen channel dogleg at injector
+traditional = 0;  % 1 = yes, 0 = no, changes how channel dimensions are interpolated for a traditonal vs. printed chamber
 
 throttle = 0.5; % throttle percent - e.g. 1 = 100%, 0.5 = 50%
 num_channels = round(NumChannels); % number of regenerative cooling channels      
