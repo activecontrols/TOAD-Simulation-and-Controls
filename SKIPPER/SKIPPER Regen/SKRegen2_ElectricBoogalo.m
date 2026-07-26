@@ -40,7 +40,7 @@ Isp_min = 166.629; % Isp at Minimum Throttle (50%) [s]
 Isp_eff = Isp_min + 2 * (throttle - 0.5) * (Isp_max - Isp_min); % linear interpolated Isp (min throttle assumed 50%)
 P_c = throttle * 250; % chamber pressure [psi] 
 P_e = throttle * 17; % exit pressure [psi]
-P_inlet = 192.08 * throttle + 257.47; % Regen inlet pressure [psi]  
+P_inlet = 515.04 * throttle - 65.04; % Regen inlet pressure [psi]  
 total_OF = 1.2; % Total oxidizer/fuel ratio
 total_mdot = (throttle * Ft / Isp_eff) / 2.205; % Total chamber mass flow [kg/s]  
 mdot_coolant = total_mdot / (1 + total_OF); % Coolant/fuel mass flow [kg/s]
@@ -158,7 +158,6 @@ else
     % Channel Interior Surface Roughness
     roughness_table = readmatrix(pwd + "/Material Data/surface_roughness.xlsx",'Range','A20:B24'); % High-End Roughness
     roughness_abs = roughness_table(2,2) * 10^-6; % Surface roughness [m] [45, 90]
-    
     
     PressureLoss_factor = 5; % Scaling factor for coolant pressure loss (fit to tadpole data)
     P_minor_coefs = [4.5, 1, 2];  % Minor Loss Coefficients [Inlet Cv Manifold, Throat Bend, Injector Turnaround]
@@ -623,6 +622,11 @@ for i = 1:steps
     CTE_current(i) = interp1(CTE(:,1), CTE(:,2), T_wg(i), 'linear', 'extrap');
     CTE_liq_side(i) = interp1(CTE(:,1), CTE(:,2), T_wl(i), 'linear', 'extrap');
     elong(i) = interp1(elongation_break(:,1), elongation_break(:,2), T_wg(i),'linear','extrap');
+    
+    if ((elong(i) > 0.25) && (materialchoice == 0)) % cap elongation to break at 25% if running with AL6061-RAM2 (weird material property superplasticity shenanigans, somewhat arbitrary cap that tracked with LCF data in MSFC pre-print)
+        elong(i) = 0.25;
+    end
+    
     epsilon_emax(i) = ((yield(i)*1000000)/ E_current(i));
 
     deltaT1(i) = T_wg(i) - T_wl(i);
@@ -704,6 +708,7 @@ PressDrop = (max(P_coolant) - min(P_coolant)) / 6894.76;
 if DisplayMode == 1
     %% FORMATTED OUTPUT
     fprintf("\nEngine Throttle: %.1f", throttle * 100)
+    fprintf("\nMaterial Number: %.0f", materialchoice)
     fprintf("\n\nMargin of safety for engine life of %0.0f hot fires: %.02f", N/8, overall_MS)
     fprintf("\nEngine life (hot fires): %.02f", Engine_life)
     fprintf("\nLowcycle Margin of safety for engine life of %0.0f hot fires: %.02f", N/8, overall_MS_lowcycle)
