@@ -74,9 +74,6 @@ for n = 1:N
         continue % skip norm/eig computations on garbage data
     end
 
-    K_fro_norm(n) = norm(K_t, 'fro');
-    error_norm(n) = norm(K_t - SanityCheck, 'fro');
-
     if n == 1
         continue % no x_{n-1} available at the first sample, same gap as RicattiRecursion's loop bounds
     end
@@ -102,7 +99,7 @@ for n = 1:N
     A_d_local = M_d_local(1:nx, 1:nx);
     B_d_local = M_d_local(1:nx, (nx+1):end);
 
-    eig_cl = eig(A_d_local - B_d_local*K_t);
+    eig_cl = eig(A_d_local - B_d_local*K_t(:,1:12));
     closed_loop_rho(n) = max(abs(eig_cl));
 end
 
@@ -119,9 +116,6 @@ n_bad      = sum(has_bad_values);
 % notes below for why the on-figure text/DARE-norm panels were dropped)
 disp('--- LQR Recursion Diagnostics ---');
 disp(['Horizon Length (N): ', num2str(N), ' steps']);
-disp(['Terminal-step error vs single-pt DARE: ', num2str(error_norm(N))]);
-disp(['First-step error vs single-pt DARE: ', num2str(error_norm(1))]);
-disp(['Gain Frobenius norm range: [', num2str(min(K_fro_norm)), ', ', num2str(max(K_fro_norm)), ']']);
 disp(['Closed-loop spectral radius range: [', num2str(min(closed_loop_rho)), ', ', num2str(max(closed_loop_rho)), ']']);
 if n_unstable > 0
     fprintf(2, 'WARNING: %d of %d gains give spectral radius >= 1 against the reference linearization (possible instability)\n', n_unstable, N);

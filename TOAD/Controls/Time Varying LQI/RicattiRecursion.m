@@ -21,7 +21,7 @@ syms v11 v21 v31
 syms omega11 omega21 omega31
 syms m_lox1 m_ipa1
 
-MatrixList = permute(repmat([zeros(12,4)],[1,1,size(Trajectory.x,2)]), [3,1,2]);
+MatrixList = permute(repmat([zeros(15,4)],[1,1,size(Trajectory.x,2)]), [3,1,2]);
 
 q = [q0;q1;q2;q3];
 r = [r1;r2;r3];
@@ -131,14 +131,21 @@ for n = size(Trajectory.x,2):-1:2
     % Reduce jacobians
     A_lin = pinv(T) * A_lin * T;
     B_lin = pinv(T) * B_lin;
+
+    % Matrix augmentation for LQI
+    C_mat = zeros(3, 12);       C_mat(1:3, 4:6) = eye(3);
+    A_aug = [A_lin, zeros(12, 3); 
+             C_mat, zeros(3, 3)];         
+    B_aug = [B_lin; 
+             zeros(3, 4)];
     
     %% Matrix discretization using ZOH
     % Dimensions
-    nx = size(A_lin, 1); 
-    nu = size(B_lin, 2); 
+    nx = size(A_aug, 1); 
+    nu = size(B_aug, 2); 
     
     % Construct the continuous block matrix
-    M_c = [A_lin, B_lin; 
+    M_c = [A_aug, B_aug; 
            zeros(nu, nx), zeros(nu, nu)];
     
     % Discretize and extract A_d and B_d

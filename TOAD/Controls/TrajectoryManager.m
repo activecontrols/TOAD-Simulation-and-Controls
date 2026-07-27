@@ -15,20 +15,20 @@ function [X, U, K] = TrajectoryManager(t, constantsTOAD)
     % Pre-allocate outputs immediately to lock fixed sizes for Simulink
     X = zeros(15, 1);
     U = zeros(4, 1);
-    K = zeros(4, 12);
+    K = zeros(4, 15);
     
     %% Handle Boundary Conditions
     if t <= Time(1) || t == 0
         X(:) = States(1,:);
         U(:) = Inputs(1,:);
-        K_temp = zeros(12, 4);
+        K_temp = zeros(15, 4);
         K_temp(:) = Feedback(1, :, :); 
         K(:) = K_temp';
         return;
     elseif t >= Time(end)
         X(:) = States(end,:);
         U(:) = Inputs(end,:);
-        K_temp = zeros(12, 4);
+        K_temp = zeros(15, 4);
         K_temp(:) = Feedback(end, :, :);
         K(:) = K_temp';
         return;
@@ -48,11 +48,11 @@ function [X, U, K] = TrajectoryManager(t, constantsTOAD)
     
     %% Interpolation
     % Gains
-        K_low_temp = zeros(12, 4);
+        K_low_temp = zeros(15, 4);
         K_low_temp(:) = Feedback(n_low, :, :);
         K_low = K_low_temp';
 
-        K_up_temp = zeros(12, 4);
+        K_up_temp = zeros(15, 4);
         K_up_temp(:) = Feedback(n_high, :, :);
         K_up = K_up_temp';
         

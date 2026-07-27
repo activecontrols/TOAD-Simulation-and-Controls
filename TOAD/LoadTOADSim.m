@@ -76,7 +76,7 @@ constantsTOAD.Traj.Feedback = ReadGains("GainMatrix" + filename);
 clear slBus* 
 busInfo = Simulink.Bus.createObject(constantsTOAD);
 topLevelBusName = busInfo(end).busName;
-TOAD_Bus = eval(topLevelBusName);
+TOAD_Bus = evalin('base', topLevelBusName);
 
 Waypoints = TrajectoryBuilder;
 J_d = zeros(3);

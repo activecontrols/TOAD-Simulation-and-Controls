@@ -3,7 +3,15 @@
 % input and a feedback gain matrix, and generates a corresponding control
 % law using a TVLQI formualation. 
 
-function [U_trg, X_err] = TOAD_TVLQI(X_est, X_trg, U_ff, K_f, constantsTOAD)
+function [U_trg, X_err] = TOAD_TVLQI(X_est, X_trg, U_ff, K_f, t, constantsTOAD)
+
+    persistent PosErrorI t_last
+    if isempty(PosErrorI)
+        PosErrorI = zeros(3,1);
+        t_last = 0;
+    end
+    dT = t - t_last;
+    t_last = t;
 
     %% Build Mutiplicative Quaternion Error
     Q_Conj = [X_est(1); -X_est(2:4, :)];
@@ -16,6 +24,12 @@ function [U_trg, X_err] = TOAD_TVLQI(X_est, X_trg, U_ff, K_f, constantsTOAD)
     % Build the state error vector
     X_err = [2 * AttError(2:4); 
              X_trg(5:13) - X_est(5:13)];
+
+    % Integral augmentation
+    Clamp = [3; 3; 3];
+    PosErrorI = PosErrorI + X_err(4:6) * dT;
+    PosErrorI = max(min(PosErrorI, Clamp), -Clamp);
+    X_err = [X_err; PosErrorI];
 
     % Final control law
     U_trg = U_ff + K_f * X_err;
