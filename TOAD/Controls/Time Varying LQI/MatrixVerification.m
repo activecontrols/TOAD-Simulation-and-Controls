@@ -7,9 +7,9 @@ end
 % Hand tuning for Q for now
 a_weights = ones(12,1);
 a_weights = a_weights / norm(a_weights);
-max_x = [0.23, 0.23, 0.04, 4, 4, 4, 5, 5, 5, 0.72, 0.72, 1];
+max_x = [0.4, 0.4, 0.1, 0.6, 0.6, 0.6, 3, 3, 3, 0.8, 0.8, 0.5];
 Q = eye(12) .* a_weights ./ max_x.^2;
-R = diag([3.5, 3.5, 1/2400^2, 5]);
+R = diag([11, 11, 1/50^2, 5]);
 
 K_List=ReadGains("GainMatrixTrajectory1.csv");
 m = readmatrix(".\Guidance\Trajectories\Trajectory1.csv");

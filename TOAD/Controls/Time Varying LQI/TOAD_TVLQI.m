@@ -25,12 +25,6 @@ function [U_trg, X_err] = TOAD_TVLQI(X_est, X_trg, U_ff, K_f, t, constantsTOAD)
     X_err = [2 * AttError(2:4); 
              X_trg(5:13) - X_est(5:13)];
 
-    % Integral augmentation
-    Clamp = [3; 3; 3];
-    PosErrorI = PosErrorI + X_err(4:6) * dT;
-    PosErrorI = max(min(PosErrorI, Clamp), -Clamp);
-    X_err = [X_err; PosErrorI];
-
     % Final control law
     U_trg = U_ff + K_f * X_err;
 

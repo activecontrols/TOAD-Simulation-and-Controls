@@ -1,8 +1,4 @@
-function SaveGains(filename)
-if ~exist("constantsTOAD")
-    LoadTOADSim;
-end
-
+function SaveGains(filename, constantsTOAD)
 
 m = readmatrix("Guidance\Trajectories\"+filename);
 
@@ -19,8 +15,6 @@ for n = 1:size(K_List,1)
     
     % writecell({[K_List(n)]}, ".\Trajectories\GainMatrix"+filename, "WriteMode", "append")
 end
-
-disp(K_cells)
 
 % writecell(K_cells, ".\Trajectories\GainMatrix"+filename)
 
