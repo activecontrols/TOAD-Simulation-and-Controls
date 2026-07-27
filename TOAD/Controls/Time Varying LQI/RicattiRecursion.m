@@ -21,7 +21,6 @@ syms v11 v21 v31
 syms omega11 omega21 omega31
 syms m_lox1 m_ipa1
 
-P_t = Q;
 MatrixList = permute(repmat([zeros(12,4)],[1,1,size(Trajectory.x,2)]), [3,1,2]);
 
 q = [q0;q1;q2;q3];
@@ -103,22 +102,14 @@ vdot = FI/m;
 mdot_lox = -thrust / constantsTOAD.MaxThrust * constantsTOAD.OF / (1 + constantsTOAD.OF) * (constantsTOAD.MaxMdot);
 mdot_ipa = -thrust / constantsTOAD.MaxThrust * 1 / (1 + constantsTOAD.OF) * (constantsTOAD.MaxMdot);
 
+%% State vector derivative
 xdot = [qdot;rdot;vdot; omegaBdot;mdot_lox;mdot_ipa];
 
-% Ignore the constrained state
-T = [zeros(1,12); eye(12);zeros(2,12)];
-T(1:4,1:3) = [zeros(1,3); eye(3)];
-
+% Turn the jacobians into matlab functions for evaluation speed
 A = jacobian(xdot, xn);
 B = jacobian(xdot, u);
-
-A = pinv(T) * A * T;
-B = pinv(T) * B;
-
-% Turn the jacobians into matlab functions for evaluation speed
 A_fcn = matlabFunction(A, 'Vars', {xn, xn1, u});
 B_fcn = matlabFunction(B, 'Vars', {xn, xn1, u});
-
 
 for n = size(Trajectory.x,2):-1:2
     % Extract states
@@ -130,6 +121,16 @@ for n = size(Trajectory.x,2):-1:2
     % Jacobian Eval
     A_lin = A_fcn(x_n, x_n1, u_n1);
     B_lin = B_fcn(x_n, x_n1, u_n1);
+
+    % Kinematic mapping 
+    T = zeros(15, 12);
+    q_ref = x_n(1:4);
+    T(1:4, 1:3) = 0.5 * XiMat(q_ref);
+    T(5:13, 4:12) = eye(9);
+
+    % Reduce jacobians
+    A_lin = pinv(T) * A_lin * T;
+    B_lin = pinv(T) * B_lin;
     
     %% Matrix discretization using ZOH
     % Dimensions
@@ -145,10 +146,19 @@ for n = size(Trajectory.x,2):-1:2
     A_d = M_d(1:nx, 1:nx);
     B_d = M_d(1:nx, (nx+1):end);
 
+    % Initialize terminal cost as the result of the converged DARE for the
+    % terminal state. 
+    if n == size(Trajectory.x,2)
+        P_t = idare(A_d, B_d, Q, R);
+    end
+
     % Matrix Eval and Updating Ricatti Cost
     MatrixList(n, :, :) = gain(A_d,B_d,R,P_t)';
     P_t = riccati(A_d,B_d, R , Q , P_t);
 end
+
+% Copy over 2nd to last gain matrix to first spot
+MatrixList(1, :, :) = MatrixList(2, :, :);
 
 end
 
@@ -166,4 +176,6 @@ end
 function u_t = optimal(A, B, P, R, x_t)
     u_t = -inv(B'*P*B+R)*(B'*P*A)*x_t;
 end
+
+
 

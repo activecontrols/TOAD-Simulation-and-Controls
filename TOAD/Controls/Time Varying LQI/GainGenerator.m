@@ -5,9 +5,9 @@ function K_List = GainGenerator(X_res, U_res, t_list, constantsTOAD)
 % Hand tuning for Q for now
 a_weights = ones(12,1);
 a_weights = a_weights / norm(a_weights);
-max_x = [0.23, 0.23, 0.04, 4, 4, 4, 5, 5, 5, 0.72, 0.72, 1];
+max_x = [0.2, 0.2, 0.05, 2, 2, 2, 2, 2, 2, 0.5, 0.5, 0.5];
 Q = eye(12) .* a_weights ./ max_x.^2;
-R = diag([3.5, 3.5, 1/2400^2, 5]);
+R = diag([5, 5, 1/2400^2, 5]);
 
 % Augment Q with integral states
 % Qi = diag([0.3, 0.3, 6]);

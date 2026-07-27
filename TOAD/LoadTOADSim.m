@@ -64,6 +64,15 @@ Checkpoints =  [0, 5, 5,  5;
 HoldTimeReqs = [20, 10, 2, 3];
 dt_SIM = 1/1000;
 
+%% Trajectory Load
+% Pick a trajectory filename 
+filename = "Trajectory1.csv";
+Data = readmatrix("Guidance\Trajectories\"+filename);
+constantsTOAD.Traj.Time = Data(:, 1);
+constantsTOAD.Traj.States = Data(:, 2:16);
+constantsTOAD.Traj.Inputs = Data(:, 17:20);
+constantsTOAD.Traj.Feedback = ReadGains("GainMatrix" + filename);
+
 % Create slBus
 TOAD = Simulink.Bus.createObject(constantsTOAD);
 Waypoints = TrajectoryBuilder;
@@ -90,10 +99,3 @@ Wind_Gain = 1;
 Wind_Covar = 1;
 lowEnd = 50;
 highEnd = 800;
-
-% %% Load the data dictionary
-% dictObj = Simulink.data.dictionary.open('Model_Vars.sldd');
-% importFromBaseWorkspace(dictObj, 'varList', {'accelBias', 'constantsTOAD', 'distMode', 'dt', 'dt_SIM', 'gyroBias', ...
-%     'gyroNoisePower', 'IMU_Rate', 'J_d', 'magDistMatrix', 'MaxMdot_d', 'slBus1', 'TB_d', 'u0', 'x0', 'Waypoints', ...
-%     'windMerid', 'windZonal'}, 'existingVarsAction', 'overwrite');
-% saveChanges(dictObj);
