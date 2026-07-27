@@ -2,7 +2,6 @@ function K_List = GainGenerator(X_res, U_res, t_list, constantsTOAD)
 %GAINGENERATOR Generate Gains for a given trajectory
 %   Detailed explanation goes here
 
-
 % Hand tuning for Q for now
 a_weights = ones(12,1);
 a_weights = a_weights / norm(a_weights);
