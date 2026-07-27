@@ -3,7 +3,8 @@
 % input and a feedback gain matrix, and generates a corresponding control
 % law using a TVLQI formualation. 
 
-function [U_trg, X_err] = TOAD_TVLQI(X_est, X_trg, U_ff, K_f)
+function [U_trg, X_err] = TOAD_TVLQI(X_est, X_trg, U_ff, K_f, constantsTOAD)
+
     %% Build Mutiplicative Quaternion Error
     Q_Conj = [X_est(1); -X_est(2:4, :)];
     Q_Trg  = X_trg(1:4);
@@ -18,4 +19,16 @@ function [U_trg, X_err] = TOAD_TVLQI(X_est, X_trg, U_ff, K_f)
 
     % Final control law
     U_trg = U_ff + K_f * X_err;
+
+    % Clamping 
+    thrustMax = constantsTOAD.MaxThrust;   %N
+    gimbalMax = pi/12;
+    InputBounds = [-gimbalMax       gimbalMax;
+                   -gimbalMax       gimbalMax;
+                   .2 * thrustMax   thrustMax;
+                   -7               7];
+
+    uMax = InputBounds(:, 2);
+    uMin = InputBounds(:, 1);
+    U_trg = min(max(U_trg, uMin), uMax);
 end
