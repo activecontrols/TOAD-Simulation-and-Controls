@@ -3,7 +3,7 @@
 % input and a feedback gain matrix, and generates a corresponding control
 % law using a TVLQI formualation. 
 
-function [U_trg, X_err] = TOAD_TVLQI(X_est, X_trg, U_ff, P_t, t, constantsTOAD)
+function [U_trg, U_fb, X_err] = TOAD_TVLQI(X_est, X_trg, U_ff, P_t, t, constantsTOAD)
 
     persistent t_last U_last
     if isempty(t_last)
@@ -33,7 +33,7 @@ function [U_trg, X_err] = TOAD_TVLQI(X_est, X_trg, U_ff, P_t, t, constantsTOAD)
 
     % Kinematic mapping (evaluated at target quaternion)
     T = zeros(15, 12);
-    q_ref = X_est(1:4);
+    q_ref = X_trg(1:4);
     T(1:4, 1:3) = 0.5 * XiMat(q_ref);
     T(5:13, 4:12) = eye(9);
 
@@ -55,7 +55,8 @@ function [U_trg, X_err] = TOAD_TVLQI(X_est, X_trg, U_ff, P_t, t, constantsTOAD)
     % M_d = expm(M_c * dT); 
     % A_d = M_d(1:nx, 1:nx);
     % B_d = M_d(1:nx, (nx+1):end);
-
+    
+    dT = mean(diff(constantsTOAD.Traj.Time));
     A_d = eye(nx) + A_lin * dT;
     B_d = B_lin * dT;
     R = constantsTOAD.R_Control;
@@ -66,6 +67,7 @@ function [U_trg, X_err] = TOAD_TVLQI(X_est, X_trg, U_ff, P_t, t, constantsTOAD)
     % Final control law
     U_trg = U_ff + K_f * X_err;
     U_last = U_trg;
+    U_fb = K_f * X_err;
 
     % Clamping 
     thrustMax = constantsTOAD.MaxThrust;   %N

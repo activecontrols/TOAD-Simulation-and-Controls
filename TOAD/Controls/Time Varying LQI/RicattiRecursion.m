@@ -116,7 +116,7 @@ for n = size(Trajectory.x,2):-1:2
     % Extract states
     x_n   = Trajectory.x(:, n);
     u_n1  = Trajectory.u(:, n-1);
-    dT = Trajectory.t(n) - Trajectory.t(n-1);
+    dT    = Trajectory.t(n) - Trajectory.t(n-1);
     
     % Jacobian Eval
     A_lin = A_fcn(x_n, u_n1);

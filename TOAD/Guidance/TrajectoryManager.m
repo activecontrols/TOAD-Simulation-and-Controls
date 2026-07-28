@@ -27,7 +27,12 @@ function [X, U, P] = TrajectoryManager(t, constantsTOAD)
         return;
     elseif t >= Time(end)
         X(:) = States(end,:);
-        U(:) = Inputs(end,:);
+        m_lox_end = States(end, 14);
+        m_ipa_end = States(end, 15);
+        total_mass = constantsTOAD.m_dry + m_lox_end + m_ipa_end;
+        
+        U(:) = [0; 0; total_mass * constantsTOAD.g; 0];
+        
         P_temp = zeros(12, 12);
         P_temp(:) = Feedback(end, :, :);
         P(:) = P_temp';

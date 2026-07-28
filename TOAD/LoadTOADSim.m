@@ -7,15 +7,7 @@
 
 %% Initialize parameters and clear functions
 % Initial conditions for state
-clear ref_generator3;
-clear inputfcn3;
-clear GroundEstimator;
-clear FlightEstimator2;
-clear SensorSimulation;
-clear GPS_Sim;
-clear DigitalNF;
-clear MEKF;
-clear slBus1
+clear functions;
 MEKF_Constants;
 
 %% Create constants struct for TOAD (Approximate values, all metric)
@@ -76,9 +68,9 @@ constantsTOAD.Traj.Inputs = Data(:, 17:20);
 [constantsTOAD.Traj.FBGain, constantsTOAD.Traj.FBCost] = ReadGains(filename);
 
 % Controller gains
-max_x = [0.15, 0.15, 0.1, 0.3, 0.3, 0.6, 0.5, 0.5, 0.75, 0.1, 0.1, 0.2];
+max_x = [0.35, 0.35, 0.1, 2, 2, 2, 5, 5, 5, 5, 5, 0.2];
 constantsTOAD.Q_Control = eye(12) .* 1 ./ max_x.^2;
-constantsTOAD.R_Control = diag([5, 5, 1/250^2, 1/3^2]);
+constantsTOAD.R_Control = diag([15, 15, 1/200^2, 1/3^2]);
 
 clear slBus* 
 busInfo = Simulink.Bus.createObject(constantsTOAD);
