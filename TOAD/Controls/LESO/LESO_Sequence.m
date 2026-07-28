@@ -5,16 +5,30 @@
 % torque-equivalent disturbance, and a single channel scalar LESO
 % estimating the equivalent thrust disturbance.
 
-function [D_Att, D_Thrust, U_corr] = LESO_Sequence(X_est, X_trg, U_trg, L_Att, L_Thrust, constantsTOAD, t)
+function [D_Att, D_Thrust, U_corr] = LESO_Sequence(GND, X_est, X_trg, U_trg, L_Att, L_Thrust, constantsTOAD, t)
 
     persistent t_last
     persistent xhat_att   
     persistent xhat_thr  
+    persistent last_Ucorr
 
     if isempty(t_last)
         t_last = t;
         xhat_att = zeros(9,1);
         xhat_thr = zeros(2,1);
+        last_Ucorr = zeros(4,1);
+        D_Att = zeros(3,1);
+        D_Thrust = 0;
+        U_corr = zeros(4,1);
+        return
+    end
+
+    if GND == 1
+        t_last = t; 
+        xhat_att(:) = 0;
+        xhat_thr(:) = 0;
+        last_Ucorr(:) = 0;
+
         D_Att = zeros(3,1);
         D_Thrust = 0;
         U_corr = zeros(4,1);
@@ -72,7 +86,7 @@ function [D_Att, D_Thrust, U_corr] = LESO_Sequence(X_est, X_trg, U_trg, L_Att, L
         y_att = [dtheta_meas; domega_meas];
     
         % Predict + correct
-        U_att = U_trg;  
+        U_att = last_Ucorr;  
         xhat_att_pred = A_LESO_Att * xhat_att + B_LESO_Att * U_att;
         y_hat_att = C_LESO_Att * xhat_att_pred;
         xhat_att = xhat_att_pred + L_Att * (y_att - y_hat_att);
@@ -94,9 +108,9 @@ function [D_Att, D_Thrust, U_corr] = LESO_Sequence(X_est, X_trg, U_trg, L_Att, L
         C_LESO_Thr = [1, 0];           
     
         % Measurement velocity along the thrust axis
-        y_thr = e_thrust' * X_est(8:10);
+        y_thr = e_thrust' * (X_est(8:10) - X_trg(8:10));
     
-        U_thr = U_trg(3);   
+        U_thr = last_Ucorr(3);   
         xhat_thr_pred = A_LESO_Thr * xhat_thr + B_LESO_Thr * U_thr;
         y_hat_thr = C_LESO_Thr * xhat_thr_pred;
         xhat_thr = xhat_thr_pred + L_Thrust * (y_thr - y_hat_thr);
@@ -114,10 +128,11 @@ function [D_Att, D_Thrust, U_corr] = LESO_Sequence(X_est, X_trg, U_trg, L_Att, L
     else
         U_corr_th = 0;
     end
-    
+
     U_corr = zeros(4,1);
     U_corr([1, 2, 4]) = U_corr_att;
     U_corr(3) = U_corr_th;
+    last_Ucorr = U_corr;
 
 end
 
