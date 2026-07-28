@@ -10,11 +10,13 @@ CasADiDynamics;
 if ~exist("constantsTOAD")
     LoadTOADSim;
 end
+Filename = "Backflip_v1";
+SaveFile = true;
 import casadi.*
 opti = casadi.Opti();
 N = 120;              % Number of control intervals
 T_total = opti.variable();
-opti.subject_to(10 <= T_total <= 50);  
+opti.subject_to(15 <= T_total <= 50);  
 opti.set_initial(T_total, 35);         
 dt = T_total / N;     % Time step
 
@@ -144,6 +146,7 @@ opti.subject_to(-1 <= X(7, :) <= 200);
     opti.subject_to((0.25 + thrust_margin) * MaxThrust_val <= U(3,:) <= (1 - thrust_margin) * MaxThrust_val);
     opti.subject_to(-(1 - gimbal_margin) * pi/15 <= U(1,:) <= (1 - gimbal_margin) * pi/15);
     opti.subject_to(-(1 - gimbal_margin) * pi/15 <= U(2,:) <= (1 - gimbal_margin) * pi/15);
+    opti.subject_to(-(1 - thrust_margin) * 7 <= U(4,:) <= (1 - thrust_margin) * 7);
 
 %% Rate constraints (physical rate limits — keep on U, not Uhat)
 for k = 1:N-1
@@ -167,7 +170,7 @@ N_approach = round(0.9*N);
     q_flip = X(1:4, N_flip);
     dot_prod = q_inverted' * q_flip;
     opti.subject_to(dot_prod >= 0.99);
-    opti.subject_to(X(7, N_flip) >= 30);
+    opti.subject_to(X(7, N_flip) >= 40);
 
 % Descent 
     opti.subject_to(X(1:4, N_approach) == q0)
@@ -196,7 +199,7 @@ opti.set_initial(Uhat(3, :), repmat(constantsTOAD.m_wet * constantsTOAD.g / F_c,
 
 w_jerk = 4e-3 * ones(4,1); 
 w_rate = 1e-3 * ones(4,1);
-w_roll = 1e-4;
+w_roll = 1e-3;
 dU = Uhat(:, 2:end) - Uhat(:, 1:end-1);
 d2U = dU(:, 2:end) - dU(:, 1:end-1);
 jerk_cost  = sum(sum(w_jerk .* d2U.^2));   
@@ -207,7 +210,7 @@ opti.minimize(-(Xhat(14,end) + Xhat(15,end)) + jerk_cost + roll_cost);
 
 %% Solver Configuration
 p_opts = struct('expand', true);
-s_opts = struct('max_iter', 5000, 'tol', 5e-5, 'constr_viol_tol', 1e-4);
+s_opts = struct('max_iter', 5000, 'tol', 1e-4, 'constr_viol_tol', 1e-4);
 % s_opts.hessian_approximation = 'limited-memory';
 opti.solver('ipopt', p_opts, s_opts);
 
@@ -349,3 +352,43 @@ end
 
 % Link the X-axes for zooming across all 6 kinematic subplots[cite: 7]
 linkaxes(findobj(gcf, 'Type', 'axes'), 'x');
+
+%% Save Trajectory
+if SaveFile
+    % Define the target directory
+    save_dir = "Guidance\Trajectories\";
+    
+    % Extract additional variables from the results matrices
+    ang_rate = X_res(11:13, :);
+    m_lox  = X_res(14, :);
+    m_fuel = X_res(15, :);
+    roll_cmd = U_res(4, :);
+    
+    % Pad control arrays (length N) to match the length of state arrays (length N+1)
+    % by holding the final control command for the last time step.
+    theta_out  = [theta_cmd, theta_cmd(end)]';
+    phi_out    = [phi_cmd, phi_cmd(end)]';
+    thrust_out = [thrust, thrust(end)]';
+    roll_out   = [roll_cmd, roll_cmd(end)]';
+    
+    % Compile data into a table matching the newly specified order:
+    % quat, pos, vel, ang_rate, masslox, massfuel, gimbal theta, phi, thrust, roll
+    trajectory_data = table(t_state',...
+        quat(1,:)', quat(2,:)', quat(3,:)', quat(4,:)', ...
+        pos(1,:)', pos(2,:)', pos(3,:)', ...
+        vel(1,:)', vel(2,:)', vel(3,:)', ...
+        ang_rate(1,:)', ang_rate(2,:)', ang_rate(3,:)', ...
+        m_lox', m_fuel', ...
+        theta_out, phi_out, thrust_out, roll_out, ...
+        'VariableNames', {'Time', 'QuatW', 'QuatX', 'QuatY', 'QuatZ', ...
+                          'PosX', 'PosY', 'PosZ', ...
+                          'VelX', 'VelY', 'VelZ', ...
+                          'AngRateX', 'AngRateY', 'AngRateZ', ...
+                          'MassLox', 'MassFuel', ...
+                          'GimbalTheta', 'GimbalPhi', 'Thrust', 'RollCmd'});
+                          
+    % Define the full file path and write the table to a .csv file
+    full_path = save_dir + Filename + ".csv";
+    writetable(trajectory_data, full_path);
+    fprintf('Trajectory successfully saved to: %s\n', full_path);
+end

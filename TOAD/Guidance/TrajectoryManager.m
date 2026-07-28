@@ -5,32 +5,32 @@
 % and feedforward input. Outputs interpolated target state, feedforward
 % input, and feedback gain matrix. 
 
-function [X, U, K] = TrajectoryManager(t, constantsTOAD)
+function [X, U, P] = TrajectoryManager(t, constantsTOAD)
     %% Read the passed trajectory
     Time = constantsTOAD.Traj.Time;
     States = constantsTOAD.Traj.States;
     Inputs = constantsTOAD.Traj.Inputs;
-    Feedback = constantsTOAD.Traj.Feedback;
+    Feedback = constantsTOAD.Traj.FBCost;
 
     % Pre-allocate outputs immediately to lock fixed sizes for Simulink
     X = zeros(15, 1);
     U = zeros(4, 1);
-    K = zeros(4, 12);
+    P = zeros(12, 12);
     
     %% Handle Boundary Conditions
     if t <= Time(1) || t == 0
         X(:) = States(1,:);
         U(:) = Inputs(1,:);
-        K_temp = zeros(12, 4);
-        K_temp(:) = Feedback(1, :, :); 
-        K(:) = K_temp';
+        P_temp = zeros(12, 12);
+        P_temp(:) = Feedback(1, :, :); 
+        P(:) = P_temp';
         return;
     elseif t >= Time(end)
         X(:) = States(end,:);
         U(:) = Inputs(end,:);
-        K_temp = zeros(12, 4);
-        K_temp(:) = Feedback(end, :, :);
-        K(:) = K_temp';
+        P_temp = zeros(12, 12);
+        P_temp(:) = Feedback(end, :, :);
+        P(:) = P_temp';
         return;
     end
 
@@ -48,15 +48,15 @@ function [X, U, K] = TrajectoryManager(t, constantsTOAD)
     
     %% Interpolation
     % Gains
-        K_low_temp = zeros(12, 4);
+        K_low_temp = zeros(12, 12);
         K_low_temp(:) = Feedback(n_low, :, :);
         K_low = K_low_temp';
 
-        K_up_temp = zeros(12, 4);
+        K_up_temp = zeros(12, 12);
         K_up_temp(:) = Feedback(n_high, :, :);
         K_up = K_up_temp';
         
-        K(:) = K_low + (K_up - K_low) .* ((t - T_low) / dt);
+        P(:) = K_low + (K_up - K_low) .* ((t - T_low) / dt);
     
     % States
         X_low = States(n_low,:);

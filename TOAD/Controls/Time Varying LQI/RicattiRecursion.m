@@ -1,4 +1,4 @@
-function MatrixList = RicattiRecursion(Trajectory,Q, R, constantsTOAD)
+function [MatrixList, CostList] = RicattiRecursion(Trajectory,Q, R, constantsTOAD)
 % RICATTIRECURSION Find optimal gain matricies for sequence of waypoints
 %   Backwards pass for finding optimal gain matrix at each sequence
 %       Given trajectory (K, u, x, )
@@ -22,6 +22,7 @@ syms omega11 omega21 omega31
 syms m_lox1 m_ipa1
 
 MatrixList = permute(repmat([zeros(12,4)],[1,1,size(Trajectory.x,2)]), [3,1,2]);
+CostList = permute(repmat([zeros(size(Q))],[1,1,size(Trajectory.x,2)]), [3,1,2]);
 
 q = [q0;q1;q2;q3];
 r = [r1;r2;r3];
@@ -108,19 +109,18 @@ xdot = [qdot;rdot;vdot; omegaBdot;mdot_lox;mdot_ipa];
 % Turn the jacobians into matlab functions for evaluation speed
 A = jacobian(xdot, xn);
 B = jacobian(xdot, u);
-A_fcn = matlabFunction(A, 'Vars', {xn, xn1, u});
-B_fcn = matlabFunction(B, 'Vars', {xn, xn1, u});
+A_fcn = matlabFunction(A, 'Vars', {xn, u},'File', './Controls/Time Varying LQI/JacobianX');
+B_fcn = matlabFunction(B, 'Vars', {xn, u},'File', './Controls/Time Varying LQI/JacobianU');
 
 for n = size(Trajectory.x,2):-1:2
     % Extract states
     x_n   = Trajectory.x(:, n);
-    x_n1  = Trajectory.x(:, n-1);
     u_n1  = Trajectory.u(:, n-1);
     dT = Trajectory.t(n) - Trajectory.t(n-1);
     
     % Jacobian Eval
-    A_lin = A_fcn(x_n, x_n1, u_n1);
-    B_lin = B_fcn(x_n, x_n1, u_n1);
+    A_lin = A_fcn(x_n, u_n1);
+    B_lin = B_fcn(x_n, u_n1);
 
     % Kinematic mapping 
     T = zeros(15, 12);
@@ -154,11 +154,13 @@ for n = size(Trajectory.x,2):-1:2
 
     % Matrix Eval and Updating Ricatti Cost
     MatrixList(n, :, :) = gain(A_d,B_d,R,P_t)';
+    CostList(n, :, :)  = P_t;
     P_t = riccati(A_d,B_d, R , Q , P_t);
 end
 
 % Copy over 2nd to last gain matrix to first spot
 MatrixList(1, :, :) = MatrixList(2, :, :);
+CostList(1, :, :) = riccati(A_d,B_d, R , Q , P_t);
 
 end
 

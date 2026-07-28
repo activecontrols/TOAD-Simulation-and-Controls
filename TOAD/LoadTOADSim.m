@@ -9,10 +9,12 @@
 % Initial conditions for state
 clear ref_generator3;
 clear inputfcn3;
-clear EstimateStateFCN;
+clear GroundEstimator;
+clear FlightEstimator2;
 clear SensorSimulation;
 clear GPS_Sim;
 clear DigitalNF;
+clear MEKF;
 clear slBus1
 MEKF_Constants;
 
@@ -52,7 +54,7 @@ dM_xz = 0.010;      % 1.00% Coupling
 dM_xy = 0.005;      % 0.50% Coupling
 magDistMatrix = [dM_xx, dM_xy, dM_xz;
                  dM_xy, dM_xx, dM_xz;
-                 dM_xz, dM_xz, dM_zz] + eye(3);
+                 dM_xz, dM_xz, dM_zz] * 0.1 + eye(3);
 
 constantsTOAD.K_Att_Wet = K_Att_Wet;
 constantsTOAD.K_Att_Dry = K_Att_Dry;
@@ -66,12 +68,17 @@ dt_SIM = 1/1000;
 
 %% Trajectory Load
 % Pick a trajectory filename 
-filename = "Trajectory1.csv";
+filename = "Backflip_v1.csv";
 Data = readmatrix("Guidance\Trajectories\"+filename);
 constantsTOAD.Traj.Time = Data(:, 1);
 constantsTOAD.Traj.States = Data(:, 2:16);
 constantsTOAD.Traj.Inputs = Data(:, 17:20);
-constantsTOAD.Traj.Feedback = ReadGains("GainMatrix" + filename);
+[constantsTOAD.Traj.FBGain, constantsTOAD.Traj.FBCost] = ReadGains(filename);
+
+% Controller gains
+max_x = [0.4, 0.4, 0.1, 2, 2, 2, 3, 3, 3, 0.8, 0.8, 0.5];
+constantsTOAD.Q_Control = eye(12) .* 1 ./ max_x.^2;
+constantsTOAD.R_Control = diag([12, 12, 1/100^2, 5]);
 
 clear slBus* 
 busInfo = Simulink.Bus.createObject(constantsTOAD);
