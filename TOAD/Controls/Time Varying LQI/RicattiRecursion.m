@@ -1,4 +1,4 @@
-function [MatrixList, CostList] = RicattiRecursion(Trajectory,Q, R, constantsTOAD)
+function [MatrixList, CostList, L_List_Att, L_List_Thr] = RicattiRecursion(Trajectory,Q, R, constantsTOAD)
 % RICATTIRECURSION Find optimal gain matricies for sequence of waypoints
 %   Backwards pass for finding optimal gain matrix at each sequence
 %       Given trajectory (K, u, x, )
@@ -14,15 +14,14 @@ syms m_lox m_ipa
 % control for u
 syms theta phi thrust roll
 
-% state variables for x_n-1
-syms q01 q11 q21 q31
-syms r11 r21 r31
-syms v11 v21 v31
-syms omega11 omega21 omega31
-syms m_lox1 m_ipa1
+% LESO bandwidths
+omega_att = 2;
+omega_thr = 2;
 
 MatrixList = permute(repmat([zeros(12,4)],[1,1,size(Trajectory.x,2)]), [3,1,2]);
 CostList = permute(repmat([zeros(size(Q))],[1,1,size(Trajectory.x,2)]), [3,1,2]);
+L_List_Att = permute(repmat(zeros(9,6), [1,1,size(Trajectory.x,2)]), [3,1,2]);
+L_List_Thr = permute(repmat(zeros(2,1), [1,1,size(Trajectory.x,2)]), [3,1,2]);
 
 q = [q0;q1;q2;q3];
 r = [r1;r2;r3];
@@ -35,52 +34,13 @@ xn = [q;r;v; omegaB; m]; % x_n
 % U
 u = [theta;phi;thrust;roll];
 
-% X_n-1
-qn1 = [q01;q11;q21;q31];
-rn1 = [r11;r21;r31];
-vn1 = [v11;v21;v31];
-mn1 = [m_lox1; m_ipa1];
-omegaBn1 = [omega11;omega21;omega31];
-xn1 = [qn1;rn1;vn1;omegaBn1;mn1]; % x_n-1
-
 %% Dynamics
 TB = thrust * [cos(theta)*sin(phi); -sin(theta); cos(theta)*cos(phi)];
 m_dry = constantsTOAD.m_dry;
 m = m_dry + m_lox + m_ipa;
 
-% Propellant Fill height
-OxFluidHeight = (m_lox / constantsTOAD.OxMass) * constantsTOAD.OxHeight * 0.9;
-FuFluidHeight = (m_ipa / constantsTOAD.FuMass) * constantsTOAD.FuHeight * 0.9;
-
-% Propellant inertias
-J_xx = 1/12 * m_lox * (3 * constantsTOAD.OxRadius^2 + OxFluidHeight^2);
-J_zz = 1/2 * m_lox * constantsTOAD.OxRadius^2;
-J_lox = [J_xx, 0, 0;
-         0, J_xx, 0;
-         0,    0, J_zz];
-
-J_xx = 1/12 * m_ipa * (3 * constantsTOAD.FuRadius^2 + FuFluidHeight^2);
-J_zz = 1/2 * m_ipa * constantsTOAD.FuRadius^2;
-J_ipa = [J_xx, 0, 0;
-         0, J_xx, 0;
-         0,    0, J_zz];
-
-% Fluid fills & location of CoM
-OxFluidLocation = constantsTOAD.Ox_Z + OxFluidHeight / 2;
-FuFluidLocation = constantsTOAD.Fu_Z + FuFluidHeight / 2;
-CGz = (constantsTOAD.m_dry * constantsTOAD.rTB + m_lox * OxFluidLocation + m_ipa * FuFluidLocation) / m;
-
-% Distances to CG
-d_dry = constantsTOAD.rTB - CGz;
-d_lox = OxFluidLocation - CGz;
-d_ipa = FuFluidLocation - CGz;
-
-% Shifted Inertias
-J_dry = constantsTOAD.J + m_dry * diag([d_dry^2, d_dry^2, 0]);
-J_lox = J_lox + m_lox * diag([d_lox^2, d_lox^2, 0]);
-J_ipa = J_ipa + m_ipa * diag([d_ipa^2, d_ipa^2, 0]);
-% Bring everything to instantaneous CG (w.r.t Engine attachment frame)
-J_tot = J_dry + J_lox + J_ipa;
+% Compute inertia
+[J_tot, CGz] = ComputeJtot(m_lox, m_ipa, constantsTOAD);
 
 % Angular dynamics
 MB = zetaCross([0; 0; -CGz])*TB + (TB * roll)/thrust;
@@ -152,6 +112,44 @@ for n = size(Trajectory.x,2):-1:2
         P_t = idare(A_d, B_d, Q, R);
     end
 
+    % LESO scheduler
+    % Inertia at this waypoint's propellant mass (x_n(14), x_n(15))
+    J_tot_n = ComputeJtot(x_n(14), x_n(15), constantsTOAD);
+    idx_att = [1:3, 10:12];
+    A_d_att = A_d(idx_att, idx_att);   
+    B_d_att = B_d(idx_att, :);         
+
+    Bd_dist_att = [zeros(3,3); J_tot_n \ eye(3)] * dT;   
+    A_LESO_A = [A_d_att, Bd_dist_att;
+                    zeros(3,6),  eye(3)     ];           
+    C_LESO_A   = [eye(6), zeros(6,3)];                  
+ 
+    % Thrust subblock
+    idx_th = 7:9;   
+    C_BI_n = quatRot(x_n(1:4));
+    C_IB_n = C_BI_n.';
+    e_thrust_n = C_IB_n * [0;0;1];   
+ 
+    A_d_thr = e_thrust_n' * A_d(idx_th, idx_th) * e_thrust_n;
+    B_d_thr = e_thrust_n' * B_d(idx_th, 3);                    
+ 
+    A_LESO_T = [A_d_thr, dT;
+                   0,          1  ];   
+    C_LESO_T   = [1, 0];              
+ 
+    wo_att = omega_att;
+    wo_th  = omega_thr;
+ 
+    % Fully repeated poles error out
+    poles_att = -wo_att * (1 + (0:8)*0.01);
+    L_att_n = place(A_LESO_A', C_LESO_A', poles_att)';
+ 
+    poles_th = -wo_th * [1, 1.02];
+    L_th_n = place(A_LESO_T', C_LESO_T', poles_th)';
+ 
+    L_List_Att(n, :, :) = L_att_n;
+    L_List_Thr(n, :, :) = L_th_n;
+
     % Matrix Eval and Updating Ricatti Cost
     MatrixList(n, :, :) = gain(A_d,B_d,R,P_t)';
     CostList(n, :, :)  = P_t;
@@ -161,6 +159,8 @@ end
 % Copy over 2nd to last gain matrix to first spot
 MatrixList(1, :, :) = MatrixList(2, :, :);
 CostList(1, :, :) = riccati(A_d,B_d, R , Q , P_t);
+L_List_Att(1, :, :) = L_List_Att(2, :, :);
+L_List_Thr(1, :, :) = L_List_Thr(2, :, :);
 
 end
 

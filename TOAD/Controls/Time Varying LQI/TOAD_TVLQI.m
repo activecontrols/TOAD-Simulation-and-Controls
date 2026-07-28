@@ -3,7 +3,11 @@
 % input and a feedback gain matrix, and generates a corresponding control
 % law using a TVLQI formualation. 
 
-function [U_trg, U_fb, X_err] = TOAD_TVLQI(X_est, X_trg, U_ff, P_t, t, constantsTOAD)
+function [U_trg, U_fb, X_err] = TOAD_TVLQI(X_est, X_trg, U_ff, P_t, t, constantsTOAD, U_corr)
+    
+    if nargin < 7 || isempty(U_corr)
+        U_corr = zeros(4,1);
+    end
 
     persistent t_last U_last
     if isempty(t_last)
@@ -65,7 +69,7 @@ function [U_trg, U_fb, X_err] = TOAD_TVLQI(X_est, X_trg, U_ff, P_t, t, constants
     K_f = OptGain(A_d, B_d, R, P_t);
 
     % Final control law
-    U_trg = U_ff + K_f * X_err;
+    U_trg = U_ff + K_f * X_err + U_corr;
     U_last = U_trg;
     U_fb = K_f * X_err;
 

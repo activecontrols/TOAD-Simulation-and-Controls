@@ -5,17 +5,21 @@
 % and feedforward input. Outputs interpolated target state, feedforward
 % input, and feedback gain matrix. 
 
-function [X, U, P] = TrajectoryManager(t, constantsTOAD)
+function [X, U, P, LA, LT] = TrajectoryManager(t, constantsTOAD)
     %% Read the passed trajectory
     Time = constantsTOAD.Traj.Time;
     States = constantsTOAD.Traj.States;
     Inputs = constantsTOAD.Traj.Inputs;
     Feedback = constantsTOAD.Traj.FBCost;
+    LA_Gain = constantsTOAD.Traj.LAGain;
+    LT_Gain = constantsTOAD.Traj.LTGain;
 
     % Pre-allocate outputs immediately to lock fixed sizes for Simulink
     X = zeros(15, 1);
     U = zeros(4, 1);
     P = zeros(12, 12);
+    LA = zeros(9, 6);
+    LT = zeros(2, 1);
     
     %% Handle Boundary Conditions
     if t <= Time(1) || t == 0
@@ -24,6 +28,15 @@ function [X, U, P] = TrajectoryManager(t, constantsTOAD)
         P_temp = zeros(12, 12);
         P_temp(:) = Feedback(1, :, :); 
         P(:) = P_temp';
+
+        LA_temp = zeros(9, 6);
+        LA_temp(:) = LA_Gain(1, :, :);
+        LA(:) = LA_temp;
+
+        LT_temp = zeros(2, 1);
+        LT_temp(:) = LT_Gain(1, :, :);
+        LT(:) = LT_temp;
+
         return;
     elseif t >= Time(end)
         X(:) = States(end,:);
@@ -36,6 +49,15 @@ function [X, U, P] = TrajectoryManager(t, constantsTOAD)
         P_temp = zeros(12, 12);
         P_temp(:) = Feedback(end, :, :);
         P(:) = P_temp';
+
+        LA_temp = zeros(9, 6);
+        LA_temp(:) = LA_Gain(end, :, :);
+        LA(:) = LA_temp;
+
+        LT_temp = zeros(2, 1);
+        LT_temp(:) = LT_Gain(end, :, :);
+        LT(:) = LT_temp;
+
         return;
     end
 
@@ -52,6 +74,23 @@ function [X, U, P] = TrajectoryManager(t, constantsTOAD)
     dt = T_high - T_low;
     
     %% Interpolation
+    % LESO
+        LA_low_temp = zeros(9, 6);
+        LA_low_temp(:) = LA_Gain(n_low, :, :);
+
+        LA_up_temp = zeros(9, 6);
+        LA_up_temp(:) = LA_Gain(n_high, :, :);
+
+        LA(:) = LA_low_temp + (LA_up_temp - LA_low_temp) .* ((t - T_low) / dt);
+
+        LT_low_temp = zeros(2, 1);
+        LT_low_temp(:) = LT_Gain(n_low, :, :);
+
+        LT_up_temp = zeros(2, 1);
+        LT_up_temp(:) = LT_Gain(n_high, :, :);
+
+        LT(:) = LT_low_temp + (LT_up_temp - LT_low_temp) .* ((t - T_low) / dt);
+        
     % Gains
         K_low_temp = zeros(12, 12);
         K_low_temp(:) = Feedback(n_low, :, :);
