@@ -10,11 +10,11 @@ CasADiDynamics;
 if ~exist("constantsTOAD")
     LoadTOADSim;
 end
-Filename = "Backflip_v1";
+Filename = "Circle_v1";
 SaveFile = true;
 import casadi.*
 opti = casadi.Opti();
-N = 120;              % Number of control intervals
+N = 200;              % Number of control intervals
 T_total = opti.variable();
 opti.subject_to(15 <= T_total <= 50);  
 opti.set_initial(T_total, 35);         
@@ -156,22 +156,37 @@ for k = 1:N-1
 end
 
 %% Trajectory 
-N_ascent   = round(0.1*N);
-N_flip     = round(0.5*N);
+N_ascent   = round(0.05*N);
+N_c1       = round(0.3*N);   % Circle quadrant 1
+N_c2       = round(0.45*N);  % Circle quadrant 2
+N_c3       = round(0.6*N);   % Circle quadrant 3
+N_c4       = round(0.75*N);  % Circle quadrant 4
 N_approach = round(0.9*N);
+
 % Ascent
     for k = 1:N_ascent
         opti.subject_to(-1 <= X(5:6, k) <= 1);
         opti.subject_to(X(7, k) >= -1);
     end
     opti.subject_to(X(10, N_ascent) >= 3);
-
-% Flip
-    q_flip = X(1:4, N_flip);
-    dot_prod = q_inverted' * q_flip;
-    opti.subject_to(dot_prod >= 0.99);
-    opti.subject_to(X(7, N_flip) >= 40);
-
+    
+% Circle Maneuver (Replaces the Flip)
+    % Hit the four quadrants of the 5m circle
+    opti.subject_to(X(5:6, N_c1) == [ 5;  0]);
+    opti.subject_to(X(5:6, N_c2) == [ 0;  5]);
+    opti.subject_to(X(5:6, N_c3) == [-5;  0]);
+    opti.subject_to(X(5:6, N_c4) == [ 0; -5]);
+    
+    % Enforce altitude and path boundaries during the circle
+    for k = N_c1:N_c4
+        % Stay strictly above 20m
+        opti.subject_to(X(7, k) >= 20);
+        opti.subject_to(X(7, k) <= 25);
+        
+        % Loose cylinder constraint (radius between 4m and 6m) 
+        opti.subject_to(16 <= X(5, k)^2 + X(6, k)^2 <= 36);
+    end
+    
 % Descent 
     opti.subject_to(X(1:4, N_approach) == q0)
     pos_xy = X(5:6, N_approach:end);
@@ -197,20 +212,22 @@ opti.set_initial(Uhat(3, :), repmat(constantsTOAD.m_wet * constantsTOAD.g / F_c,
 
 %% Cost Function (needs improvement for robustness, right now full on G-FOLD mass optimality)
 
-w_jerk = 4e-3 * ones(4,1); 
+w_jerk = 1e-3 * ones(4,1); 
 w_rate = 1e-3 * ones(4,1);
-w_roll = 1e-3;
+w_mag  = 1e-3 .* ones(4,1); 
+w_path = 1e-1;
 dU = Uhat(:, 2:end) - Uhat(:, 1:end-1);
 d2U = dU(:, 2:end) - dU(:, 1:end-1);
 jerk_cost  = sum(sum(w_jerk .* d2U.^2));   
 rate_cost  = sum(sum(w_rate .* dU.^2));
-roll_cost  = sum(sum(w_roll .* Xhat(13, :).^2));
+mag_cost   = sum(sum(w_mag  .* Uhat.^2));
+path_cost  = sum(sum(w_path .* Xhat(8:10).^2));
 
-opti.minimize(-(Xhat(14,end) + Xhat(15,end)) + jerk_cost + roll_cost);
+opti.minimize(-(Xhat(14,end) + Xhat(15,end)) + jerk_cost + mag_cost + path_cost);
 
 %% Solver Configuration
 p_opts = struct('expand', true);
-s_opts = struct('max_iter', 5000, 'tol', 1e-4, 'constr_viol_tol', 1e-4);
+s_opts = struct('max_iter', 5000, 'tol', 1e-5, 'constr_viol_tol', 1e-4);
 % s_opts.hessian_approximation = 'limited-memory';
 opti.solver('ipopt', p_opts, s_opts);
 

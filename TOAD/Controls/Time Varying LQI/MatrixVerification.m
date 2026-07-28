@@ -11,8 +11,8 @@ max_x = [0.4, 0.4, 0.1, 0.6, 0.6, 0.6, 3, 3, 3, 0.8, 0.8, 0.5];
 Q = eye(12) .* a_weights ./ max_x.^2;
 R = constantsTOAD.R_Control;
 
-[K_List, ~] = ReadGains("Backflip_v1.csv");
-m = readmatrix(".\Guidance\Trajectories\Trajectory1.csv");
+[K_List, ~] = ReadGains("Circle_v1.csv");
+m = readmatrix(".\Guidance\Trajectories\Circle_v1.csv");
 dT = m(2,1)-m(1,1);
 x = m(:, 2:16)';
 u = m(:, 17:20)';

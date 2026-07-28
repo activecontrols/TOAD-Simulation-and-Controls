@@ -68,7 +68,7 @@ dt_SIM = 1/1000;
 
 %% Trajectory Load
 % Pick a trajectory filename 
-filename = "Backflip_v1.csv";
+filename = "Circle_v1.csv";
 Data = readmatrix("Guidance\Trajectories\"+filename);
 constantsTOAD.Traj.Time = Data(:, 1);
 constantsTOAD.Traj.States = Data(:, 2:16);
@@ -76,9 +76,9 @@ constantsTOAD.Traj.Inputs = Data(:, 17:20);
 [constantsTOAD.Traj.FBGain, constantsTOAD.Traj.FBCost] = ReadGains(filename);
 
 % Controller gains
-max_x = [0.4, 0.4, 0.1, 2, 2, 2, 3, 3, 3, 0.8, 0.8, 0.5];
+max_x = [0.15, 0.15, 0.1, 0.3, 0.3, 0.6, 0.5, 0.5, 0.75, 0.1, 0.1, 0.2];
 constantsTOAD.Q_Control = eye(12) .* 1 ./ max_x.^2;
-constantsTOAD.R_Control = diag([12, 12, 1/100^2, 5]);
+constantsTOAD.R_Control = diag([5, 5, 1/250^2, 1/3^2]);
 
 clear slBus* 
 busInfo = Simulink.Bus.createObject(constantsTOAD);
@@ -92,7 +92,7 @@ TB_d = zeros(3,1);
 
 % Constant vars (varied usage)
 [windMerid, windZonal] = atmoshwm(40.4258686, -86.9080655, 186 + 50);
-accelBias = 0.09 * ones(3,1);
+accelBias = 0.02 * ones(3,1);
 gyroBias = 0.0 * ones(3, 1);
 distMode = 0;
 
