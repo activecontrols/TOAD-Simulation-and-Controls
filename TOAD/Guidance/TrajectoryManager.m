@@ -18,7 +18,7 @@ function [X, U, P, LA, LT] = TrajectoryManager(t, constantsTOAD)
     X = zeros(15, 1);
     U = zeros(4, 1);
     P = zeros(12, 12);
-    LA = zeros(9, 6);
+    LA = zeros(6, 3);
     LT = zeros(2, 1);
     
     %% Handle Boundary Conditions
@@ -29,7 +29,7 @@ function [X, U, P, LA, LT] = TrajectoryManager(t, constantsTOAD)
         P_temp(:) = Feedback(1, :, :); 
         P(:) = P_temp';
 
-        LA_temp = zeros(9, 6);
+        LA_temp = zeros(6, 3);
         LA_temp(:) = LA_Gain(1, :, :);
         LA(:) = LA_temp;
 
@@ -50,7 +50,7 @@ function [X, U, P, LA, LT] = TrajectoryManager(t, constantsTOAD)
         P_temp(:) = Feedback(end, :, :);
         P(:) = P_temp';
 
-        LA_temp = zeros(9, 6);
+        LA_temp = zeros(6, 3);
         LA_temp(:) = LA_Gain(end, :, :);
         LA(:) = LA_temp;
 
@@ -75,10 +75,10 @@ function [X, U, P, LA, LT] = TrajectoryManager(t, constantsTOAD)
     
     %% Interpolation
     % LESO
-        LA_low_temp = zeros(9, 6);
+        LA_low_temp = zeros(6, 3);
         LA_low_temp(:) = LA_Gain(n_low, :, :);
 
-        LA_up_temp = zeros(9, 6);
+        LA_up_temp = zeros(6, 3);
         LA_up_temp(:) = LA_Gain(n_high, :, :);
 
         LA(:) = LA_low_temp + (LA_up_temp - LA_low_temp) .* ((t - T_low) / dt);

@@ -15,12 +15,12 @@ syms m_lox m_ipa
 syms theta phi thrust roll
 
 % LESO bandwidths
-omega_att = 2;
-omega_thr = 2;
+omega_att = 1;
+omega_thr = 1;
 
 MatrixList = permute(repmat([zeros(12,4)],[1,1,size(Trajectory.x,2)]), [3,1,2]);
 CostList = permute(repmat([zeros(size(Q))],[1,1,size(Trajectory.x,2)]), [3,1,2]);
-L_List_Att = permute(repmat(zeros(9,6), [1,1,size(Trajectory.x,2)]), [3,1,2]);
+L_List_Att = permute(repmat(zeros(6,3), [1,1,size(Trajectory.x,2)]), [3,1,2]);
 L_List_Thr = permute(repmat(zeros(2,1), [1,1,size(Trajectory.x,2)]), [3,1,2]);
 
 q = [q0;q1;q2;q3];
@@ -113,39 +113,28 @@ for n = size(Trajectory.x,2):-1:2
     end
 
     % LESO scheduler
-    % Inertia at this waypoint's propellant mass (x_n(14), x_n(15))
-    J_tot_n = ComputeJtot(x_n(14), x_n(15), constantsTOAD);
-    idx_att = [1:3, 10:12];
-    A_d_att = A_d(idx_att, idx_att);   
-    B_d_att = B_d(idx_att, :);         
+    dT_LESO = 1/1000;
 
-    Bd_dist_att = [zeros(3,3); J_tot_n \ eye(3)] * dT;   
-    A_LESO_A = [A_d_att, Bd_dist_att;
-                    zeros(3,6),  eye(3)     ];           
-    C_LESO_A   = [eye(6), zeros(6,3)];                  
+    %% Attitude LESO - Absolute Rates + Disturbance Acceleration
+    % A_LESO_A assumes simple integration from acceleration to rate
+    A_LESO_A = [eye(3),      eye(3) * dT_LESO;
+                zeros(3,3),  eye(3)     ];           
+    C_LESO_A = [eye(3), zeros(3,3)];                  
  
-    % Thrust subblock
-    idx_th = 7:9;   
-    C_BI_n = quatRot(x_n(1:4));
-    C_IB_n = C_BI_n.';
-    e_thrust_n = C_IB_n * [0;0;1];   
+    %% Thrust LESO - Absolute Velocity + Disturbance Velocity Rate
+    % A_LESO_T assumes simple integration from acceleration to velocity
+    A_LESO_T = [1, dT_LESO;
+                0, 1];   
+    C_LESO_T = [1, 0];              
  
-    A_d_thr = e_thrust_n' * A_d(idx_th, idx_th) * e_thrust_n;
-    B_d_thr = e_thrust_n' * B_d(idx_th, 3);                    
+    %% Pole Placement
+    s_poles_att = -omega_att * (1 + (0:5)*0.01);
+    z_poles_att = exp(s_poles_att * dT_LESO);
+    L_att_n = place(A_LESO_A', C_LESO_A', z_poles_att)';
  
-    A_LESO_T = [A_d_thr, dT;
-                   0,          1  ];   
-    C_LESO_T   = [1, 0];              
- 
-    wo_att = omega_att;
-    wo_th  = omega_thr;
- 
-    % Fully repeated poles error out
-    poles_att = -wo_att * (1 + (0:8)*0.01);
-    L_att_n = place(A_LESO_A', C_LESO_A', poles_att)';
- 
-    poles_th = -wo_th * [1, 1.02];
-    L_th_n = place(A_LESO_T', C_LESO_T', poles_th)';
+    s_poles_th = -omega_thr * [1, 1.02];
+    z_poles_th = exp(s_poles_th * dT_LESO);
+    L_th_n = place(A_LESO_T', C_LESO_T', z_poles_th)';
  
     L_List_Att(n, :, :) = L_att_n;
     L_List_Thr(n, :, :) = L_th_n;
