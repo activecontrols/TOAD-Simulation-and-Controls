@@ -5,7 +5,7 @@
 % Includes axial heat transfer via tracking mean wall temp and solving via
 % a tridiagonal matrix. Uses legacy regen code for initial guess 
 
-function [Lifespan, PressDrop, TempArray] = SKRegen2_ElectricBoogalo(Data, NumChannels, WallThickness, AspectRatio, ChannelWidth, DisplayMode)
+function [Lifespan, PressDrop, TempArray] = SKRegen2_ElectricBoogalo(Data, NumChannels, WallThickness, AspectRatio, ChannelWidth, DisplayMode, FitCoef)
 New_CEA = false;
 fclose all;
 close all;
@@ -51,7 +51,11 @@ t_w = WallThickness .* 0.0254; % channel wall thickness [1 min 2] [m]
 w_c = ChannelWidth .* 0.0254; % channel width [1 min] [m] 
 h_c = [w_c(1) .* AspectRatio(1), w_c(2) .* AspectRatio(2:3)]; % channel height [1 min 2] [m]
 
-heatflux_factor = -0.10833 * throttle + 0.6433; % Scaling factor [0 to 1], Linear Fit to Tadpole Data 
+if nargin() == 7
+    heatflux_factor = FitCoef;
+else
+    heatflux_factor = -0.10833 * throttle + 0.6433; % Scaling factor [0 to 1], Linear Fit to Tadpole Data 
+end
 
 %% CALCULATIONS
 %----------------------------------%
