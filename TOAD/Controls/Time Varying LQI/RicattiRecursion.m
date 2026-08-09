@@ -132,12 +132,12 @@ for n = size(Trajectory.x,2):-1:2
     z_poles_att = exp(s_poles_att * dT_LESO);
     L_att_n = place(A_LESO_A', C_LESO_A', z_poles_att)';
  
-    s_poles_th = -omega_thr * [1, 1.02];
+    s_poles_th = -omega_thr * [1, 1.01];
     z_poles_th = exp(s_poles_th * dT_LESO);
     L_th_n = place(A_LESO_T', C_LESO_T', z_poles_th)';
  
     L_List_Att(n, :, :) = L_att_n;
-    L_List_Thr(n, :, :) = L_th_n;
+    L_List_Thr(n, :, :) = L_th_n
 
     % Matrix Eval and Updating Ricatti Cost
     MatrixList(n, :, :) = gain(A_d,B_d,R,P_t)';

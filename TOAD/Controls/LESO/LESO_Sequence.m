@@ -64,6 +64,8 @@ function [D_Att, D_Thrust, U_corr] = LESO_Sequence(GND, X_est, X_trg, U_trg, L_A
     % Current inertia, evaluated at the *estimated* propellant state
     J_tot = ComputeJtot(X_est(14), X_est(15), constantsTOAD);
 
+    dT_LESO = 1/1000;
+
     %% Attitude LESO
         % idx_att = [1:3, 10:12];
         % A_d_Att = A_d(idx_att, idx_att);   
@@ -93,9 +95,9 @@ function [D_Att, D_Thrust, U_corr] = LESO_Sequence(GND, X_est, X_trg, U_trg, L_A
         % Absolute Rate Predictor & Corrector
         B_att_torque = B_lin(10:12, [1, 2, 4]); % 3x3 control effectiveness
         
-        A_LESO_Att = [eye(3), eye(3)*dT; 
+        A_LESO_Att = [eye(3), eye(3)*dT_LESO; 
                       zeros(3,3), eye(3)];
-        B_LESO_Att = [B_att_torque * dT; 
+        B_LESO_Att = [B_att_torque * dT_LESO; 
                       zeros(3,3)];
         
         y_att_abs = X_est(11:13);
@@ -104,6 +106,7 @@ function [D_Att, D_Thrust, U_corr] = LESO_Sequence(GND, X_est, X_trg, U_trg, L_A
         xhat_att_pred = A_LESO_Att * xhat_att + B_LESO_Att * U_att_abs;
         xhat_att = xhat_att_pred + L_Att * (y_att_abs - xhat_att_pred(1:3));
         D_Att = xhat_att(4:6);
+        D_Att = zeros(3,1);
 
     %% Thrust LESO
         % idx_th = 7:9; 
@@ -136,17 +139,28 @@ function [D_Att, D_Thrust, U_corr] = LESO_Sequence(GND, X_est, X_trg, U_trg, L_A
         e_thrust = C_IB_ref * [0;0;1];
 
         b0_thr = e_thrust' * B_lin(idx_th, 3);
-        A_LESO_Thr = [1, dT; 
+        A_LESO_Thr = [1, dT_LESO; 
                       0, 1];
-        B_LESO_Thr = [b0_thr * dT; 
+        B_LESO_Thr = [b0_thr * dT_LESO; 
                       0];
-        
+
         y_thr_abs = e_thrust' * X_est(8:10);
         U_thr_abs = U_trg(3);
+
+        C = [1 0];
+        Acl = A_LESO_Thr - L_Thrust*C;
+
+        eig(Acl)
         
+
+
         xhat_thr_pred = A_LESO_Thr * xhat_thr + B_LESO_Thr * U_thr_abs;
         xhat_thr = xhat_thr_pred + L_Thrust * (y_thr_abs - xhat_thr_pred(1));
+        
         D_Thrust = xhat_thr(2);
+        
+
+        
 
     %% Corrections 
     % B_att_torque = B_lin(10:12, [1, 2, 4]);   
@@ -165,11 +179,12 @@ function [D_Att, D_Thrust, U_corr] = LESO_Sequence(GND, X_est, X_trg, U_trg, L_A
     % U_corr(3) = U_corr_th;
 
     % Calculate corrections 
-    b0_min = 1e-2;
+    b0_min = 1e-4;
     U_corr_att = -pinv(B_att_torque) * D_Att; 
     
+    b0_thr
     if abs(b0_thr) > b0_min
-        U_corr_th = -D_Thrust / b0_thr;
+        U_corr_th = D_Thrust / b0_thr^2;
     else
         U_corr_th = 0;
     end
