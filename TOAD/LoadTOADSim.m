@@ -73,6 +73,7 @@ constantsTOAD.Traj.States = Data(:, 2:16);
 constantsTOAD.Traj.Inputs = Data(:, 17:20);
 [constantsTOAD.Traj.FBGain, constantsTOAD.Traj.FBCost, ...
  constantsTOAD.Traj.LAGain, constantsTOAD.Traj.LTGain] = ReadGains(filename);
+constantsTOAD.Traj.LTGain
 catch e
     disp("Failed to read trajectory filename")
 end

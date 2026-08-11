@@ -6,7 +6,7 @@
 % estimating the equivalent thrust disturbance.
 
 function [D_Att, D_Thrust, U_corr] = LESO_Sequence(GND, X_est, X_trg, U_trg, L_Att, L_Thrust, constantsTOAD, t)
-
+    
     persistent t_last
     persistent xhat_att   
     persistent xhat_thr  
@@ -150,13 +150,14 @@ function [D_Att, D_Thrust, U_corr] = LESO_Sequence(GND, X_est, X_trg, U_trg, L_A
         C = [1 0];
         Acl = A_LESO_Thr - L_Thrust*C;
 
-        eig(Acl)
+        % eig(Acl)
         
 
 
         xhat_thr_pred = A_LESO_Thr * xhat_thr + B_LESO_Thr * U_thr_abs;
         xhat_thr = xhat_thr_pred + L_Thrust * (y_thr_abs - xhat_thr_pred(1));
-        
+        g_BI = (C_BI_ref*([0;0;-constantsTOAD.m_wet*constantsTOAD.g*dT_LESO]));
+        xhat_thr = [g_BI(3); 0] + xhat_thr;
         D_Thrust = xhat_thr(2);
         
 
@@ -179,7 +180,7 @@ function [D_Att, D_Thrust, U_corr] = LESO_Sequence(GND, X_est, X_trg, U_trg, L_A
     % U_corr(3) = U_corr_th;
 
     % Calculate corrections 
-    b0_min = 1e-4;
+    b0_min = 1e-3;
     U_corr_att = -pinv(B_att_torque) * D_Att; 
     
     b0_thr
@@ -190,8 +191,11 @@ function [D_Att, D_Thrust, U_corr] = LESO_Sequence(GND, X_est, X_trg, U_trg, L_A
     end
     
     U_corr = zeros(4,1);
+
+
     U_corr([1, 2, 4]) = U_corr_att;
     U_corr(3) = U_corr_th;
+
 end
 
 % Multiplicative quaternion error computation

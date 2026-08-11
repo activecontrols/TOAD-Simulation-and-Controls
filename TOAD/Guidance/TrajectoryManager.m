@@ -19,7 +19,7 @@ function [X, U, P, LA, LT] = TrajectoryManager(t, constantsTOAD)
     U = zeros(4, 1);
     P = zeros(12, 12);
     LA = zeros(6, 3);
-    LT = zeros(2, 1);
+    LT = zeros(3, 1);
     
     %% Handle Boundary Conditions
     if t <= Time(1) || t == 0
