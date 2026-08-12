@@ -15,7 +15,7 @@ function [D_Att, D_Thrust, U_corr] = LESO_Thrust(GND, X_est, X_trg, U_trg, L_Att
     if isempty(t_last)
         t_last = t;
         xhat_att = zeros(6,1);
-        xhat_thr = zeros(2,1);
+        xhat_thr = zeros(6,1);
         D_Att = zeros(3,1);
         D_Thrust = 0;
         U_corr = zeros(4,1);
@@ -65,25 +65,37 @@ function [D_Att, D_Thrust, U_corr] = LESO_Thrust(GND, X_est, X_trg, U_trg, L_Att
     dT_LESO = 1/1000;
     
     %% Second Order thrust LESO
+    % tested with solely in the z direction
     idx_thr = [4:6, 7:9];
+    e_grav = [0 0 1; 0 0 1];
     % body to inertial
     % C_BI_ref = quatRot(X_trg(1:4));
 
     % A_d_thr = A_d(idx_thr, idx_thr);   
     b_0 = B_d(idx_thr, 3);
-
-    A_LESO_Thr = [1 dT_LESO dT_LESO^2/2;
-                  0   1         dT_LESO;
-                  0   0              1];
-    B_LESO_Thr = [b_0 * dT_LESO^2/2;
-                        b_0*dT_LESO;
-                                 0];
+    b_0_e = b_0(3,6);
+    % A_LESO_Thr = [1 dT_LESO dT_LESO^2/2;
+    %               0   1         dT_LESO;
+    %               0   0              1];
+    % B_LESO_Thr = [b_0 * dT_LESO^2/2;
+    %                     b_0*dT_LESO;
+    %                              0];
 
     y_thr_abs = X_est(idx_thr);
+    y_thr_abs_e = y_thr_abs(3,6);
 
     %xhat_thr_pred = A_LESO_Thr * xhat_thr + B_LESO_Thr * U_thr_abs;
+
+    % should end up as a 3x1
     xhat_thr_pred = X_trg(idx_thr);
-    xhat_thr = xhat_thr_pred + L_Thrust * (y_thr_abs - xhat_thr_pred)
+    xhat_thr_pred_e = xhat_thr_pred(3,6);
+
+    % should be a 3x2. need to talk w pablo as to how it isn't
+    L_Thrust_e = L_Thrust(7:9,5:6);
+    % should end up as a 3x1. currently very much not one
+    xhat_thr = xhat_thr_pred + L_Thrust_e * (y_thr_abs - xhat_thr_pred);
+
+    D_Thrust = xhat_thr(3);
     
 
     % Turn this disturbance error into a quaternion to modify attitude and

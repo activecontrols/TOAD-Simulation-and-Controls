@@ -21,7 +21,7 @@ omega_thr = 1;
 MatrixList = permute(repmat([zeros(12,4)],[1,1,size(Trajectory.x,2)]), [3,1,2]);
 CostList = permute(repmat([zeros(size(Q))],[1,1,size(Trajectory.x,2)]), [3,1,2]);
 L_List_Att = permute(repmat(zeros(6,3), [1,1,size(Trajectory.x,2)]), [3,1,2]);
-L_List_Thr = permute(repmat(zeros(3,1), [1,1,size(Trajectory.x,2)]), [3,1,2]);
+L_List_Thr = permute(repmat(zeros(9,3), [1,1,size(Trajectory.x,2)]), [3,1,2]);
 
 q = [q0;q1;q2;q3];
 r = [r1;r2;r3];
@@ -118,22 +118,22 @@ for n = size(Trajectory.x,2):-1:2
     %% Attitude LESO - Absolute Rates + Disturbance Acceleration
     % A_LESO_A assumes simple integration from acceleration to rate
     A_LESO_A = [eye(3),      eye(3) * dT_LESO;
-                zeros(3,3),  eye(3)     ];           
+                zeros(3,3),  eye(3)     ];         
     C_LESO_A = [eye(3), zeros(3,3)];                  
  
     %% Thrust LESO - Absolute Velocity + Disturbance Velocity Rate
     % A_LESO_T assumes simple integration from acceleration to velocity
-    A_LESO_T = [1 dT_LESO dT_LESO^2/2;
-                  0   1         dT_LESO;
-                  0   0              1];  
-    C_LESO_T = [1, 0, 0];              
+    A_LESO_T = [eye(3) eye(3)*dT_LESO eye(3)*dT_LESO^2/2;
+                  zeros(3,3)  eye(3), eye(3)*dT_LESO;
+                  zeros(3,3)  zeros(3,3)  eye(3)];  
+    C_LESO_T = [eye(3) zeros(3,3) zeros(3,3)];              
  
     %% Pole Placement
     s_poles_att = -omega_att * (1 + (0:5)*0.01);
     z_poles_att = exp(s_poles_att * dT_LESO);
     L_att_n = place(A_LESO_A', C_LESO_A', z_poles_att)';
  
-    s_poles_th = -omega_thr * [1, 1.01, 1.02];
+    s_poles_th = -omega_thr * (1 + (0:8)*0.01);
     z_poles_th = exp(s_poles_th * dT_LESO);
     L_th_n = place(A_LESO_T', C_LESO_T', z_poles_th)';
  

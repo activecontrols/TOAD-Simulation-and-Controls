@@ -147,10 +147,7 @@ function [D_Att, D_Thrust, U_corr] = LESO_Sequence(GND, X_est, X_trg, U_trg, L_A
         y_thr_abs = e_thrust' * X_est(8:10);
         U_thr_abs = U_trg(3);
 
-        C = [1 0];
-        Acl = A_LESO_Thr - L_Thrust*C;
-
-        % eig(Acl)
+        
         
 
 

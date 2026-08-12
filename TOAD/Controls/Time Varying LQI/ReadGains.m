@@ -11,5 +11,5 @@ function [K_List, C_List, LA_List, LT_List] = ReadGains(trajectoryName)
     m_LA = readcell(".\Guidance\Trajectories\Gains\LA_" + trajectoryName);
     m_LT = readcell(".\Guidance\Trajectories\Gains\LT_" + trajectoryName);
     LA_List = reshape(cell2mat(m_LA), [], 6, 3);
-    LT_List = reshape(cell2mat(m_LT), [], 3, 1);
+    LT_List = reshape(cell2mat(m_LT), [], 9, 3);
 end
