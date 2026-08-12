@@ -19,7 +19,7 @@ function [X, U, P, LA, LT] = TrajectoryManager(t, constantsTOAD)
     U = zeros(4, 1);
     P = zeros(12, 12);
     LA = zeros(6, 3);
-    LT = zeros(3, 1);
+    LT = zeros(9, 6);
     
     %% Handle Boundary Conditions
     if t <= Time(1) || t == 0
@@ -33,7 +33,7 @@ function [X, U, P, LA, LT] = TrajectoryManager(t, constantsTOAD)
         LA_temp(:) = LA_Gain(1, :, :);
         LA(:) = LA_temp;
 
-        LT_temp = zeros(2, 1);
+        LT_temp = zeros(9, 6);
         LT_temp(:) = LT_Gain(1, :, :);
         LT(:) = LT_temp;
 
@@ -54,7 +54,7 @@ function [X, U, P, LA, LT] = TrajectoryManager(t, constantsTOAD)
         LA_temp(:) = LA_Gain(end, :, :);
         LA(:) = LA_temp;
 
-        LT_temp = zeros(2, 1);
+        LT_temp = zeros(9, 6);
         LT_temp(:) = LT_Gain(end, :, :);
         LT(:) = LT_temp;
 
@@ -83,10 +83,10 @@ function [X, U, P, LA, LT] = TrajectoryManager(t, constantsTOAD)
 
         LA(:) = LA_low_temp + (LA_up_temp - LA_low_temp) .* ((t - T_low) / dt);
 
-        LT_low_temp = zeros(2, 1);
+        LT_low_temp = zeros(9, 6);
         LT_low_temp(:) = LT_Gain(n_low, :, :);
 
-        LT_up_temp = zeros(2, 1);
+        LT_up_temp = zeros(9, 6);
         LT_up_temp(:) = LT_Gain(n_high, :, :);
 
         LT(:) = LT_low_temp + (LT_up_temp - LT_low_temp) .* ((t - T_low) / dt);

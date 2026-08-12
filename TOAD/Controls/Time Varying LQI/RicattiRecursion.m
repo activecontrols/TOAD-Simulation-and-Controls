@@ -21,7 +21,7 @@ omega_thr = 1;
 MatrixList = permute(repmat([zeros(12,4)],[1,1,size(Trajectory.x,2)]), [3,1,2]);
 CostList = permute(repmat([zeros(size(Q))],[1,1,size(Trajectory.x,2)]), [3,1,2]);
 L_List_Att = permute(repmat(zeros(6,3), [1,1,size(Trajectory.x,2)]), [3,1,2]);
-L_List_Thr = permute(repmat(zeros(9,3), [1,1,size(Trajectory.x,2)]), [3,1,2]);
+L_List_Thr = permute(repmat(zeros(9,6), [1,1,size(Trajectory.x,2)]), [3,1,2]);
 
 q = [q0;q1;q2;q3];
 r = [r1;r2;r3];
@@ -126,7 +126,7 @@ for n = size(Trajectory.x,2):-1:2
     A_LESO_T = [eye(3) eye(3)*dT_LESO eye(3)*dT_LESO^2/2;
                   zeros(3,3)  eye(3), eye(3)*dT_LESO;
                   zeros(3,3)  zeros(3,3)  eye(3)];  
-    C_LESO_T = [eye(3) zeros(3,3) zeros(3,3)];              
+    C_LESO_T = [eye(6) zeros(6,3)];              
  
     %% Pole Placement
     s_poles_att = -omega_att * (1 + (0:5)*0.01);
