@@ -645,7 +645,7 @@ for i = points % 1 = injector, steps = exit
                 sigma_a(i) = E_current(i) * epsilon_tota(i);
                 sigma_t2(i) = E_current(i) * epsilon_tott(i);
 
-                % Calculate Pressure Strains (not a big deal at our scale)
+                % Calculate Plastic Strains
                 epsilon_pa(i) = epsilon_tota(i) - epsilon_emax(i);
                 epsilon_pt(i) = epsilon_tott(i) - epsilon_emax(i);
 
@@ -699,6 +699,7 @@ for i = points % 1 = injector, steps = exit
     end % Heat transfer convergence loop end
 end % Axial station loop end
 
+% Take the worst-case value (probably near the throat) from all the vectors for output
 overall_MS = min(MS);
 overall_MS_lowcycle = min(MS_lowcycle);
 overall_MS_spacex = min(MS_spacex);
