@@ -73,7 +73,7 @@ function [D_Att, D_Thrust, U_corr] = LESO_Thrust(GND, X_est, X_trg, U_trg, L_Att
     % C_BI_ref = quatRot(X_trg(1:4));
 
     % A_d_thr = A_d(idx_thr, idx_thr);   
-    b0_thr = B_d(idx_thr, 3)
+    b0_thr = B_d(idx_thr, 3);
     b0_e = b0_thr;
     % A_LESO_Thr = [1 dT_LESO dT_LESO^2/2;
     %               0   1         dT_LESO;
@@ -82,17 +82,15 @@ function [D_Att, D_Thrust, U_corr] = LESO_Thrust(GND, X_est, X_trg, U_trg, L_Att
     %                     b_0*dT_LESO;
     %                              0];
 
-    y_thr_abs = X_est(idx_thr);
-    y_thr_abs_e = y_thr_abs([3,6]);
+    y_thr_abs = X_est(idx_thr+1);
+   
 
     %xhat_thr_pred = A_LESO_Thr * xhat_thr + B_LESO_Thr * U_thr_abs;
 
     % should end up as a 3x1
-    xhat_thr_pred = X_trg(idx_thr);
-    xhat_thr_pred_e = xhat_thr_pred([3,6]);
-
-    % should be a 3x2. need to talk w pablo as to how it isn't
-    L_Thrust_e = L_Thrust(7:9,5:6);
+    
+    xhat_thr_pred = X_trg(idx_thr+1);
+    
     
     % forcing a 0 disturbance on the predicted because it's not generated
     % with a matrix and not 3x1
@@ -111,13 +109,13 @@ function [D_Att, D_Thrust, U_corr] = LESO_Thrust(GND, X_est, X_trg, U_trg, L_Att
     b0_min = 1e-6;
     
     if abs(b0_thr(6)) > b0_min
-        U_corr_th = (D_Thrust / b0_thr.^2)
+        U_corr_th = (D_Thrust / b0_thr);
     else
         U_corr_th = zeros(3,6);
     end
     U_corr_th = (C_IB_ref*U_corr_th(1:3,6));
     U_corr(3) = U_corr_th(3);
-    U_corr
+    U_corr;
 end
 
 
