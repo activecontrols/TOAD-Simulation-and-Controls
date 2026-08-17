@@ -16,7 +16,7 @@ syms theta phi thrust roll
 
 % LESO bandwidths
 omega_att = 1;
-omega_thr = 1*pi/2;
+omega_thr = 1;
 
 MatrixList = permute(repmat([zeros(12,4)],[1,1,size(Trajectory.x,2)]), [3,1,2]);
 CostList = permute(repmat([zeros(size(Q))],[1,1,size(Trajectory.x,2)]), [3,1,2]);
