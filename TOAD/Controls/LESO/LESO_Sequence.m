@@ -182,7 +182,7 @@ function [D_Att, D_Thrust, U_corr] = LESO_Sequence(GND, X_est, X_trg, U_trg, L_A
     
     b0_thr
     if abs(b0_thr) > b0_min
-        U_corr_th = D_Thrust / b0_thr;
+        U_corr_th = D_Thrust / b0_thr^2;
     else
         U_corr_th = 0;
     end
