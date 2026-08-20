@@ -60,7 +60,7 @@ dt_SIM = 1/1000;
 
 %% Trajectory Load
 % Controller gains
-max_x = [0.35, 0.35, 0.1, 2, 2, 0.5, 5, 5, 1, 5, 5, 0.2];
+max_x = [0.35, 0.35, 0.1, 2, 2, 1, 5, 5, 2, 5, 5, 0.2];
 constantsTOAD.Q_Control = eye(12) .* 1 ./ max_x.^2;
 constantsTOAD.R_Control = diag([15, 15, 1/500^2, 1/3^2]);
 

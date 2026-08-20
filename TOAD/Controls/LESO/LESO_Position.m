@@ -60,7 +60,7 @@ function [D_Att, D_Thrust, U_corr] = LESO_Position(GND, X_est, X_trg, U_trg, L_T
     
     % Body to inertial
     C_BI_ref = quatRot(X_est(1:4));
-    b_0 = C_BI_ref / constantsTOAD.m_wet;
+    b_0 = C_BI_ref / (constantsTOAD.m_dry + sum(X_est(14:15)));
 
     % Linearized matrices
     A_LESO_Thr = [eye(3,3) dT*eye(3,3) dT^2/2*eye(3,3);
