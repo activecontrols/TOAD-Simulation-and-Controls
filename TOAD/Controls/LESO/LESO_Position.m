@@ -35,25 +35,6 @@ function [D_Att, D_Thrust, U_corr] = LESO_Position(GND, X_est, X_trg, U_trg, L_T
         U_corr = zeros(4,1);
         return
     end
-
-    %% Jacobian Eval
-    X_lin = X_trg;
-    X_lin(14:15) = X_est(14:15);
-
-    Jx = JacobianX(X_lin, U_trg);
-    Ju = JacobianU(X_lin, U_trg);
-
-    % Kinematic mapping, evaluated at the reference quaternion
-    T = zeros(15, 12);
-    q_ref = X_trg(1:4);
-    T(1:4, 1:3) = 0.5 * XiMat(q_ref);
-    T(5:13, 4:12) = eye(9);
-
-    A_lin = pinv(T) * Jx * T;
-    B_lin = pinv(T) * Ju;
-
-    nx = size(A_lin, 1);
-    A_d = eye(nx) + A_lin * dT;
     
     %% Second Order thrust LESO
     idx_thr = [5:7, 8:10];
@@ -83,13 +64,13 @@ function [D_Att, D_Thrust, U_corr] = LESO_Position(GND, X_est, X_trg, U_trg, L_T
     % Update
     xhat = xhat_pred + L_Thrust * (y_abs - xhat_pred(1:6));
 
+    % Disturbance
     e = [0; 0; 1];
-    e_thr = C_BI_ref * e;
-    D_Thrust = e_thr' * xhat(7:9);
+    D_Thrust = (C_BI_ref' * xhat(7:9))' * e;
     D_Att = zeros(4,1);
 
     %% Correction
-    U_corr_th = -(C_BI_ref' * xhat(7:9))' * e * constantsTOAD.m_wet;
+    U_corr_th = -D_Thrust * constantsTOAD.m_wet;
 
     U_corr = zeros(4,1);
     U_corr(3) = min(max(U_corr_th, -500), 500);
