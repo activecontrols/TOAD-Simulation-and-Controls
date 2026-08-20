@@ -3,10 +3,10 @@
 % input and a feedback gain matrix, and generates a corresponding control
 % law using a TVLQI formualation. 
 
-function [U_trg, U_fb, X_err] = TOAD_TVLQI(X_est, X_trg, U_ff, P_t, t, constantsTOAD, U_corr)
+function [U_trg, U_fb, X_err] = TOAD_TVLQI(X_est, X_trg, U_ff, P_t, t, constantsTOAD, Corr)
     
-    if nargin < 7 || isempty(U_corr)
-        U_corr = zeros(4,1);
+    if nargin < 7 || isempty(Corr)
+        Corr = [0; 1; 0; 0; 0];
     end
 
     persistent t_last U_last
@@ -19,7 +19,7 @@ function [U_trg, U_fb, X_err] = TOAD_TVLQI(X_est, X_trg, U_ff, P_t, t, constants
 
     %% Build Mutiplicative Quaternion Error
     Q_Conj = [X_est(1); -X_est(2:4, :)];
-    Q_Trg  = X_trg(1:4);
+    Q_Trg  = HamiltonianProd(X_trg(1:4)) * Corr(2:end);
     AttError = HamiltonianProd(Q_Conj) * Q_Trg;
     if AttError(1) < 0
         AttError = -AttError;
@@ -69,7 +69,8 @@ function [U_trg, U_fb, X_err] = TOAD_TVLQI(X_est, X_trg, U_ff, P_t, t, constants
     K_f = OptGain(A_d, B_d, R, P_t);
 
     % Final control law
-    U_trg = U_ff + K_f * X_err + U_corr;
+    U_trg = U_ff + K_f * X_err;
+    U_trg(3) = U_trg(3) + Corr(1);
     U_last = U_trg;
     U_fb = K_f * X_err;
 
