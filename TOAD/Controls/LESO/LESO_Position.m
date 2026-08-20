@@ -69,10 +69,10 @@ function [Att_Corr, U_Corr] = LESO_Position(GND, X_est, X_trg, U_trg, L_Thrust, 
     D_Thrust = (C_BI_ref' * xhat(7:9))' * e;
 
     %% Corrections (with added integral trim for thrust)
-    Ki = 0.05;
+    Ki = 0.10;
     Clamp = 500;
     AltErr = X_trg(7) - X_est(7);
-    U_corr_th = -D_Thrust * Mass; % - Ki * AltErrInt;
+    U_corr_th = -D_Thrust * Mass + Ki * AltErrInt;
     
     % Anti-windup
     if abs(U_corr_th) < Clamp || sign(U_corr_th) ~= sign(AltErr)
@@ -85,7 +85,7 @@ function [Att_Corr, U_Corr] = LESO_Position(GND, X_est, X_trg, U_trg, L_Thrust, 
 end
 
 
-function [DelQ] = quatError(distVec, constantsTOAD, C_B2I, X_est, Thrust)
+function DelQ = quatError(distVec, constantsTOAD, C_B2I, X_est, Thrust)
     %%% 
     % Extract the quaternion and thrust for rotation to counter the
     % disturbances

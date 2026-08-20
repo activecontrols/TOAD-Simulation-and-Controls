@@ -19,6 +19,7 @@ function [U_trg, U_fb, X_err] = TOAD_TVLQI(X_est, X_trg, U_ff, P_t, t, constants
 
     %% Build Mutiplicative Quaternion Error
     Q_Conj = [X_est(1); -X_est(2:4, :)];
+    Corr(2:end) = [1;0;0;0];
     Q_Trg  = HamiltonianProd(X_trg(1:4)) * Corr(2:end);
     AttError = HamiltonianProd(Q_Conj) * Q_Trg;
     if AttError(1) < 0
