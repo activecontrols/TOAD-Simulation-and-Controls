@@ -60,20 +60,19 @@ dt_SIM = 1/1000;
 
 %% Trajectory Load
 % Controller gains
-max_x = [0.35, 0.35, 0.1, 2, 2, 2, 5, 5, 5, 5, 5, 0.2];
+max_x = [0.35, 0.35, 0.1, 2, 2, 0.5, 5, 5, 1, 5, 5, 0.2];
 constantsTOAD.Q_Control = eye(12) .* 1 ./ max_x.^2;
-constantsTOAD.R_Control = diag([15, 15, 1/200^2, 1/3^2]);
+constantsTOAD.R_Control = diag([15, 15, 1/500^2, 1/3^2]);
 
 % Pick a trajectory filename 
 try 
-filename = "Circle_v1.csv";
-Data = readmatrix("Guidance\Trajectories\"+filename);
-constantsTOAD.Traj.Time = Data(:, 1);
-constantsTOAD.Traj.States = Data(:, 2:16);
-constantsTOAD.Traj.Inputs = Data(:, 17:20);
-[constantsTOAD.Traj.FBGain, constantsTOAD.Traj.FBCost, ...
- constantsTOAD.Traj.LAGain, constantsTOAD.Traj.LTGain] = ReadGains(filename);
-constantsTOAD.Traj.LTGain
+    filename = "Circle_v1.csv";
+    Data = readmatrix("Guidance\Trajectories\"+filename);
+    constantsTOAD.Traj.Time = Data(:, 1);
+    constantsTOAD.Traj.States = Data(:, 2:16);
+    constantsTOAD.Traj.Inputs = Data(:, 17:20);
+    [constantsTOAD.Traj.FBGain, constantsTOAD.Traj.FBCost, ...
+     constantsTOAD.Traj.LAGain, constantsTOAD.Traj.LTGain] = ReadGains(filename);
 catch e
     disp("Failed to read trajectory filename")
 end
