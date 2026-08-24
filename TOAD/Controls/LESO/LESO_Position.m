@@ -1,114 +1,62 @@
-%% This file contains a sequence of two parallel Linear Extended State Observers
-% The main goal of LESO's is to estimate disturbances felt by the vehicle
-% online and correct for them quickly. A 3 channel scalar LESO
-% estimating the equivalent thrust disturbance.
+%% Translational Linear Extended State Observer (LESO)
+% Estimates vehicle position, velocity, and unmodeled acceleration disturbances
+% in the inertial frame (m/s^2).
 
-function [Att_Corr, U_Corr] = LESO_Position(GND, X_est, X_trg, U_trg, L_Thrust, constantsTOAD, t)
+function a_dist = LESO_Position(GND, X_est, X_trg, U_trg, L_Thrust, constantsTOAD, t)
 
     persistent t_last
     persistent xhat 
-    persistent AltErrInt
 
-    if isempty(t_last)
+    if isempty(t_last) || GND == 1
         t_last = t;
-        xhat = zeros(9,1);
-        AltErrInt = 0;
-        Att_Corr = [1; 0; 0; 0];
-        U_Corr = 0;
-        return
-    end
-
-    if GND == 1
-        t_last = t; 
-        xhat(:) = 0;
-        AltErrInt = 0;
-        Att_Corr = [1; 0; 0; 0];
-        U_Corr = 0;
-        return
+        xhat = zeros(9, 1);
+        a_dist = zeros(3, 1);
+        return;
     end
 
     dT = t - t_last;
     t_last = t;
     if dT <= 0
-        Att_Corr = zeros(4,1);
-        U_Corr = 0;
-        return
+        a_dist = xhat(7:9);
+        return;
     end
     
-    %% Second Order thrust LESO
-    idx_thr = [5:7, 8:10];
+    %% Setup Dynamics & State Propagation
+    idx_pos_vel = [5:7, 8:10];
+    y_meas = X_est(idx_pos_vel);
+    y_meas = y_meas(:);
     
-    % Body to inertial
-    C_BI_ref = quatRot(X_est(1:4));
-    Mass = (constantsTOAD.m_dry + sum(X_est(14:15)));
-    b_0 = C_BI_ref / Mass;
-
-    % Linearized matrices
-    A_LESO_Thr = [eye(3,3) dT*eye(3,3) dT^2/2*eye(3,3);
-                  zeros(3)   eye(3,3)         dT*eye(3,3);
-                  zeros(3)   zeros(3)              eye(3,3)];
-    B_LESO_Thr = [b_0 * dT.^2/2;
-                         b_0*dT;
-                         zeros(3,3)];
-
-    % Prediction
-    y_abs = X_est(idx_thr);
+    Mass = constantsTOAD.m_dry + sum(X_est(14:15));
+    C_BI = quatRot(X_est(1:4));
+    C_IB = C_BI';
+    
+    % Nominal thrust force vector in body frame
     theta = U_trg(1); 
-    phi = U_trg(2);
-    ThrustVec = [cos(theta)*sin(phi); -sin(theta); cos(theta)*cos(phi)];
-    U = U_trg(3) * ThrustVec;
+    phi   = U_trg(2);
+    thrust = U_trg(3);
+    ThrustVec_B = thrust * [cos(theta)*sin(phi); -sin(theta); cos(theta)*cos(phi)];
+    
+    % Nominal acceleration in inertial frame (inc. gravity correction)
     g_vec = [0; 0; -constantsTOAD.g];
-    xhat_pred = A_LESO_Thr * xhat + B_LESO_Thr * U + ...
-                [g_vec * dT^2/2; g_vec * dT; zeros(3,1)];
+    a_nominal_I = (C_IB * ThrustVec_B) / Mass + g_vec;
 
-    % Update
-    xhat = xhat_pred + L_Thrust * (y_abs - xhat_pred(1:6));
+    % Discrete STMs
+    A_LESO_Thr = [eye(3), eye(3)*dT, eye(3)*dT^2/2;
+                  zeros(3), eye(3),    eye(3)*dT;
+                  zeros(3), zeros(3),  eye(3)];
+                  
+    B_LESO_Thr = [eye(3)*dT^2/2;
+                  eye(3)*dT;
+                  zeros(3,3)];
 
-    % Disturbance
-    e = [0; 0; 1];
-    D_Thrust = (C_BI_ref' * xhat(7:9))' * e;
+    % State Prediction 
+    xhat_pred = A_LESO_Thr * xhat + B_LESO_Thr * a_nominal_I;
 
-    %% Corrections (with added integral trim for thrust)
-    Ki = 0.10;
-    Clamp = 500;
-    AltErr = X_trg(7) - X_est(7);
-    U_corr_th = -D_Thrust * Mass + Ki * AltErrInt;
-    
-    % Anti-windup
-    if abs(U_corr_th) < Clamp || sign(U_corr_th) ~= sign(AltErr)
-        AltErrInt = AltErrInt + AltErr * dT;
-    end
+    % State Update 
+    y_hat = xhat_pred(1:6);
+    y_hat = y_hat(:);
+    xhat = xhat_pred + L_Thrust * (y_meas - y_hat);
 
-    U_Corr = min(max(U_corr_th, -Clamp), Clamp);
-    Thrust = U_Corr + U_trg(3);
-    Att_Corr = quatError(xhat(7:9), constantsTOAD, C_BI_ref, X_est, Thrust);
-end
-
-
-function DelQ = quatError(distVec, constantsTOAD, C_B2I, X_est, Thrust)
-    %%% 
-    % Extract the quaternion and thrust for rotation to counter the
-    % disturbances
-    
-    % Disturbance transformations
-    bodyZ = [0;0;1];
-    DistBody = C_B2I' * distVec;
-    DistLat = DistBody(1:2);
-    eps_lat = 1e-4;
-    if norm(DistLat) < eps_lat
-        Tilt = 0;
-        Axis = [0;0;0];
-    else
-        % Required tilt angle 
-        MaxTilt = pi/24;
-        Mass = constantsTOAD.m_dry + sum(X_est(14:15));
-        Tilt = Mass * norm(DistLat) / Thrust;
-        Tilt = max(min(Tilt, MaxTilt), -MaxTilt);
-        
-        % Correction
-        Axis = cross(bodyZ, [-DistLat / norm(DistLat); 0]);
-    end
-    
-    DelQ = [cos(Tilt/2); sin(Tilt/2) * Axis];
-
+    % Disturbance Acceleration
+    a_dist = xhat(7:9);
 end

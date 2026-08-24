@@ -1,67 +1,47 @@
-%% This trajectory manager script shall take in the current time, and the
-% name of a trajectory file and the current MET. It shall then find the
-% corresponding gain matrix file and interpolate the gain matrices and
-% state targets correspondingly. If MET > MaxT, hold final state, matrix
-% and feedforward input. Outputs interpolated target state, feedforward
-% input, and feedback gain matrix. 
-
-function [X, U, P, LA, LT] = TrajectoryManager(t, constantsTOAD)
-    %% Read the passed trajectory
+function [X, U, K, LA, LT] = TrajectoryManager(t, constantsTOAD)
     Time = constantsTOAD.Traj.Time;
     States = constantsTOAD.Traj.States;
     Inputs = constantsTOAD.Traj.Inputs;
-    Feedback = constantsTOAD.Traj.FBCost;
+    
+    % FBGain maps to K_trans, FBCost maps to K_rot
+    K_trans_Gain = constantsTOAD.Traj.FBGain; 
+    K_rot_Gain = constantsTOAD.Traj.FBCost;   
     LA_Gain = constantsTOAD.Traj.LAGain;
     LT_Gain = constantsTOAD.Traj.LTGain;
 
-    % Pre-allocate outputs immediately to lock fixed sizes for Simulink
     X = zeros(15, 1);
     U = zeros(4, 1);
-    P = zeros(12, 12);
+    K = zeros(6, 6);
     LA = zeros(6, 3);
     LT = zeros(9, 6);
     
     %% Handle Boundary Conditions
     if t <= Time(1) || t == 0
+        
         X(:) = States(1,:);
         U(:) = Inputs(1,:);
-        P_temp = zeros(12, 12);
-        P_temp(:) = Feedback(1, :, :); 
-        P(:) = P_temp';
-
-        LA_temp = zeros(6, 3);
-        LA_temp(:) = LA_Gain(1, :, :);
-        LA(:) = LA_temp;
-
-        LT_temp = zeros(9, 6);
-        LT_temp(:) = LT_Gain(1, :, :);
-        LT(:) = LT_temp;
-
+        
+        % Merge matrices
+        K(1:3, 1:6) = K_trans_Gain(1, :, :);
+        K(4:6, 1:6) = K_rot_Gain(1, :, :);
+        
+        LA(:) = LA_Gain(1, :, :);
+        LT(:) = LT_Gain(1, :, :);
         return;
     elseif t >= Time(end)
-        X(:) = States(end,:);
-        m_lox_end = States(end, 14);
-        m_ipa_end = States(end, 15);
-        total_mass = constantsTOAD.m_dry + m_lox_end + m_ipa_end;
         
+        X(:) = States(end,:);
+        total_mass = constantsTOAD.m_dry + States(end, 14) + States(end, 15);
         U(:) = [0; 0; total_mass * constantsTOAD.g; 0];
         
-        P_temp = zeros(12, 12);
-        P_temp(:) = Feedback(end, :, :);
-        P(:) = P_temp';
-
-        LA_temp = zeros(6, 3);
-        LA_temp(:) = LA_Gain(end, :, :);
-        LA(:) = LA_temp;
-
-        LT_temp = zeros(9, 6);
-        LT_temp(:) = LT_Gain(end, :, :);
-        LT(:) = LT_temp;
-
+        K(1:3, 1:6) = K_trans_Gain(end, :, :);
+        K(4:6, 1:6) = K_rot_Gain(end, :, :);
+        
+        LA(:) = LA_Gain(end, :, :);
+        LT(:) = LT_Gain(end, :, :);
         return;
     end
-
-    % Indexes (avoid find bc Simulink sucks)
+    
     n_low = 1;
     for i = 1:(length(Time) - 1)
         if Time(i) <= t && Time(i+1) > t
@@ -69,48 +49,35 @@ function [X, U, P, LA, LT] = TrajectoryManager(t, constantsTOAD)
             break;
         end
     end    
+    
     n_high = n_low + 1;
-    T_low = Time(n_low);     T_high = Time(n_high);
+    T_low = Time(n_low);     
+    T_high = Time(n_high);
     dt = T_high - T_low;
+    ratio = (t - T_low) / dt;
     
     %% Interpolation
-    % LESO
-        LA_low_temp = zeros(6, 3);
-        LA_low_temp(:) = LA_Gain(n_low, :, :);
+    LA_low = zeros(6,3); LA_low(:) = LA_Gain(n_low,:,:);
+    LA_up  = zeros(6,3); LA_up(:)  = LA_Gain(n_high,:,:);
+    LA(:) = LA_low + (LA_up - LA_low) .* ratio;
 
-        LA_up_temp = zeros(6, 3);
-        LA_up_temp(:) = LA_Gain(n_high, :, :);
-
-        LA(:) = LA_low_temp + (LA_up_temp - LA_low_temp) .* ((t - T_low) / dt);
-
-        LT_low_temp = zeros(9, 6);
-        LT_low_temp(:) = LT_Gain(n_low, :, :);
-
-        LT_up_temp = zeros(9, 6);
-        LT_up_temp(:) = LT_Gain(n_high, :, :);
-
-        LT(:) = LT_low_temp + (LT_up_temp - LT_low_temp) .* ((t - T_low) / dt);
+    LT_low = zeros(9,6); LT_low(:) = LT_Gain(n_low,:,:);
+    LT_up  = zeros(9,6); LT_up(:)  = LT_Gain(n_high,:,:);
+    LT(:) = LT_low + (LT_up - LT_low) .* ratio;
         
-    % Gains
-        K_low_temp = zeros(12, 12);
-        K_low_temp(:) = Feedback(n_low, :, :);
-        K_low = K_low_temp';
+    K_trans_low = zeros(3,6); K_trans_low(:) = K_trans_Gain(n_low,:,:);
+    K_trans_up  = zeros(3,6); K_trans_up(:)  = K_trans_Gain(n_high,:,:);
+    K(1:3, 1:6) = K_trans_low + (K_trans_up - K_trans_low) .* ratio;
 
-        K_up_temp = zeros(12, 12);
-        K_up_temp(:) = Feedback(n_high, :, :);
-        K_up = K_up_temp';
-        
-        P(:) = K_low + (K_up - K_low) .* ((t - T_low) / dt);
+    K_rot_low = zeros(3,6); K_rot_low(:) = K_rot_Gain(n_low,:,:);
+    K_rot_up  = zeros(3,6); K_rot_up(:)  = K_rot_Gain(n_high,:,:);
+    K(4:6, 1:6) = K_rot_low + (K_rot_up - K_rot_low) .* ratio;
     
-    % States
-        X_low = States(n_low,:);
-        X_up  = States(n_high,:);
-        X(:) = X_low + (X_up - X_low) .* ((t - T_low) / dt);
+    X_low = States(n_low,:);
+    X_up  = States(n_high,:);
+    X(:) = X_low + (X_up - X_low) .* ratio;
     
-    % Inputs
-        U_low = Inputs(n_low,:);
-        U_up  = Inputs(n_high,:);
-        U(:) = U_low + (U_up - U_low) .* ((t - T_low) / dt);
+    U_low = Inputs(n_low,:);
+    U_up  = Inputs(n_high,:);
+    U(:) = U_low + (U_up - U_low) .* ratio;
 end
-
-

@@ -60,9 +60,16 @@ dt_SIM = 1/1000;
 
 %% Trajectory Load
 % Controller gains
-max_x = [0.25, 0.25, 0.1, 1, 1, 1, 2, 2, 2, 10, 10, 0.2];
-constantsTOAD.Q_Control = eye(12) .* 1 ./ max_x.^2;
-constantsTOAD.R_Control = diag([7, 7, 1/500^2, 1/3^2]);
+% Outer Loop
+max_x_trans = [2, 2, 2, 2, 2, 2]; 
+constantsTOAD.Q_trans = diag(1 ./ max_x_trans.^2);
+max_a_trans = 2; 
+constantsTOAD.R_trans = eye(3) .* (1 / max_a_trans^2);
+
+% Inner Loop
+max_x_rot = [0.30, 0.30, 0.1, 2, 2, 0.2];
+constantsTOAD.Q_rot = diag(1 ./ max_x_rot.^2);
+constantsTOAD.R_rot = diag([15, 15, 1/3^2]);
 
 % Pick a trajectory filename 
 try 
@@ -71,7 +78,7 @@ try
     constantsTOAD.Traj.Time = Data(:, 1);
     constantsTOAD.Traj.States = Data(:, 2:16);
     constantsTOAD.Traj.Inputs = Data(:, 17:20);
-    [constantsTOAD.Traj.FBGain, constantsTOAD.Traj.FBCost, ...
+    [constantsTOAD.Traj.KTGain, constantsTOAD.Traj.KRGain, ...
      constantsTOAD.Traj.LAGain, constantsTOAD.Traj.LTGain] = ReadGains(filename);
 catch e
     disp("Failed to read trajectory filename")

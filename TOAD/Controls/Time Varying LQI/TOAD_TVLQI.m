@@ -1,89 +1,106 @@
-%% First generation Time Varying Linear Quadratic Integral controller for TOAD.
-% This script receives an estimated state, a state target, feedforward
-% input and a feedback gain matrix, and generates a corresponding control
-% law using a TVLQI formualation. 
-
-function [U_trg, U_fb, X_err] = TOAD_TVLQI(X_est, X_trg, U_ff, P_t, t, constantsTOAD, Corr)
+function [U_cmd, U_fb, X_err] = TOAD_TVLQI(GND, X_est, X_trg, U_ff, K, t, constantsTOAD, Dist_LESO)
+    % TOAD_TVLQI Trim Controller
     
-    if nargin < 7 || isempty(Corr)
-        Corr = [0; 1; 0; 0; 0];
-    end
-
     persistent t_last U_last
-    if isempty(t_last)
-        t_last = 0;
+    
+    % Reset persistent variables if on the ground
+    if isempty(t_last) || GND == 1
+        t_last = t;
         U_last = [0; 0; constantsTOAD.m_wet * constantsTOAD.g; 0];
+        if GND == 1
+            U_cmd = U_last;
+            U_fb = zeros(4,1);
+            X_err = zeros(12,1);
+            return;
+        end
     end
-    dT = t - t_last;
+    dT = max(t - t_last, 0.001);
     t_last = t;
 
-    %% Build Mutiplicative Quaternion Error
-    Q_Conj = [X_est(1); -X_est(2:4, :)];
-    Corr(2:end) = [1;0;0;0];
-    Q_Trg  = HamiltonianProd(X_trg(1:4)) * Corr(2:end);
-    AttError = HamiltonianProd(Q_Conj) * Q_Trg;
+    % Safeguard for missing LESO connection
+    if nargin < 8 || isempty(Dist_LESO)
+        Dist_LESO = zeros(6,1);
+    end
+
+    % Unpack 6x6 Gain and 6x1 Disturbance Vectors
+    K_trans  = K(1:3, 1:6);
+    K_rot    = K(4:6, 1:6);
+    a_dist   = Dist_LESO(1:3);
+    U_dist = Dist_LESO(4:6);
+
+    Mass = constantsTOAD.m_dry + sum(X_est(14:15));
+    g_vec = [0; 0; -constantsTOAD.g];
+
+    %% Translational Trim (Outer Loop)
+    X_err_trans = [X_est(5:7) - X_trg(5:7);
+                   X_est(8:10) - X_trg(8:10)];
+    MaxAccelCorr = 0.01;
+    Delta_A = -K_trans * X_err_trans;
+    Delta_A = min(max(Delta_A, MaxAccelCorr), -MaxAccelCorr);
+
+    % Nominal NLP Acceleration
+    Q_ref = X_trg(1:4);
+    C_B2I_ref = quatRot(Q_ref)'; 
+    T_B_ff = U_ff(3) * [cos(U_ff(1))*sin(U_ff(2)); -sin(U_ff(1)); cos(U_ff(1))*cos(U_ff(2))];
+    a_ff = (C_B2I_ref * T_B_ff) / Mass + g_vec; 
+
+    % NOTE: Delta_A (quaternion correction from outer loop) not yet working.
+    % Possible bandwith sep issue.
+    a_cmd = a_ff - a_dist; % + Delta_A; % + Delta_a - a_dist;
+
+    %% Triad Generation & Roll Tracking
+    f_req = a_cmd - g_vec; 
+    norm_f = norm(f_req);
+    
+    if norm_f > 1e-6
+        Z_b = f_req / norm_f;
+    else
+        Z_b = [0; 0; 1];
+    end
+
+    X_b_ref = C_B2I_ref(:, 1);
+    Y_b_unnorm = cross(Z_b, X_b_ref);
+    if norm(Y_b_unnorm) > 1e-6
+        Y_b = Y_b_unnorm / norm(Y_b_unnorm);
+    else
+        Y_b = [0; 1; 0];
+    end
+    X_b = cross(Y_b, Z_b);
+
+    C_IB_cmd = [X_b, Y_b, Z_b];
+    
+    Q_cmd = DCM_Quat_Conversion(C_IB_cmd);
+    Q_cmd = Q_cmd / norm(Q_cmd);
+
+    %% Rotational Trim
+    Q_cmd_Conj = [Q_cmd(1); -Q_cmd(2:4)];
+    AttError = HamiltonianProd(Q_cmd_Conj) * X_est(1:4);
+    
     if AttError(1) < 0
         AttError = -AttError;
     end
-    
-    % Build the state error vector
-    X_err = [2 * AttError(2:4); 
-             X_trg(5:13) - X_est(5:13)];
 
-    %% Gain Matrix Computation
-    % Evaluate the Jacobians at the current estimated state and previous
-    % input
-    A_lin = JacobianX(X_est, U_last);
-    B_lin = JacobianU(X_est, U_last);
+    X_err_rot = [2 * AttError(2:4);
+                 X_est(11:13) - X_trg(11:13)];
 
-    % Kinematic mapping (evaluated at target quaternion)
-    T = zeros(15, 12);
-    q_ref = X_trg(1:4);
-    T(1:4, 1:3) = 0.5 * XiMat(q_ref);
-    T(5:13, 4:12) = eye(9);
+    Delta_u = -K_rot * X_err_rot;
 
-    % Reduce jacobians
-    A_lin = pinv(T) * A_lin * T;
-    B_lin = pinv(T) * B_lin;
-    
-    % Matrix discretization using ZOH
-    nx = size(A_lin, 1); 
+    %% Trim Integration & clamping
+    U_cmd = zeros(4,1);
+    U_cmd(1) = U_ff(1) + Delta_u(1) - U_dist(1); 
+    U_cmd(2) = U_ff(2) + Delta_u(2) - U_dist(2); 
+    U_cmd(3) = norm_f * Mass;                      
+    U_cmd(4) = U_ff(4) + Delta_u(3) - U_dist(3); 
 
-    %% Exact Matrix exponential computation, as loop >250Hz, not needed for now
-    % nu = size(B_lin, 2); 
-    % 
-    % % Construct the continuous block matrix
-    % M_c = [A_lin, B_lin; 
-    %        zeros(nu, nx), zeros(nu, nu)];
-    % 
-    % % Discretize using the dT
-    % M_d = expm(M_c * dT); 
-    % A_d = M_d(1:nx, 1:nx);
-    % B_d = M_d(1:nx, (nx+1):end);
-    
-    dT = mean(diff(constantsTOAD.Traj.Time));
-    A_d = eye(nx) + A_lin * dT;
-    B_d = B_lin * dT;
-    R = constantsTOAD.R_Control;
+    U_fb = [Delta_u(1); Delta_u(2); U_cmd(3) - U_ff(3); Delta_u(3)];
+    X_err = [X_err_rot; X_err_trans]; 
 
-    % Optimal gain matrix using the interpolated P_t passed into the function
-    K_f = OptGain(A_d, B_d, R, P_t);
-
-    % Final control law
-    U_trg = U_ff + K_f * X_err;
-    U_trg(3) = U_trg(3) + Corr(1);
-    U_last = U_trg;
-    U_fb = K_f * X_err;
-
-    % Clamping 
-    thrustMax = constantsTOAD.MaxThrust;   %N
+    thrustMax = constantsTOAD.MaxThrust;
     gimbalMax = pi/12;
     InputBounds = [-gimbalMax       gimbalMax;
                    -gimbalMax       gimbalMax;
                    .2 * thrustMax   thrustMax;
                    -7               7];
-
-    uMax = InputBounds(:, 2);
-    uMin = InputBounds(:, 1);
-    U_trg = min(max(U_trg, uMin), uMax);
+    U_cmd = min(max(U_cmd, InputBounds(:, 1)), InputBounds(:, 2));
+    U_last = U_cmd;
 end

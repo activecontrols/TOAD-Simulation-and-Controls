@@ -1,13 +1,10 @@
-function [K_List, C_List, LA_List, LT_List] = ReadGains(trajectoryName)
-    % Read Gains
-    m_K = readcell(".\Guidance\Trajectories\Gains\GainMatrix" + trajectoryName);
-    K_List = reshape(cell2mat(m_K), [], 12, 4);
-
-    % Read Costs
-    m_C = readcell(".\Guidance\Trajectories\Gains\CostMatrix" + trajectoryName);
-    C_List = reshape(cell2mat(m_C), [], 12, 12);
-
-    % Read LESO Gains
+function [K_trans_List, K_rot_List, LA_List, LT_List] = ReadGains(trajectoryName)
+    m_K_trans = readcell(".\Guidance\Trajectories\Gains\K_trans_" + trajectoryName);
+    K_trans_List = reshape(cell2mat(m_K_trans), [], 3, 6);
+    
+    m_K_rot = readcell(".\Guidance\Trajectories\Gains\K_rot_" + trajectoryName);
+    K_rot_List = reshape(cell2mat(m_K_rot), [], 3, 6);
+    
     m_LA = readcell(".\Guidance\Trajectories\Gains\LA_" + trajectoryName);
     m_LT = readcell(".\Guidance\Trajectories\Gains\LT_" + trajectoryName);
     LA_List = reshape(cell2mat(m_LA), [], 6, 3);
