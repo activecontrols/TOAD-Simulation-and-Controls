@@ -1,12 +1,13 @@
 function [U_cmd, U_fb, X_err] = TOAD_TVLQI(GND, X_est, X_trg, U_ff, K, t, constantsTOAD, Dist_LESO)
     % TOAD_TVLQI Trim Controller
     
-    persistent t_last U_last
+    persistent t_last U_last Z_err_int
     
     % Reset persistent variables if on the ground
     if isempty(t_last) || GND == 1
         t_last = t;
         U_last = [0; 0; constantsTOAD.m_wet * constantsTOAD.g; 0];
+        Z_err_int = 0;
         if GND == 1
             U_cmd = U_last;
             U_fb = zeros(4,1);
@@ -34,9 +35,10 @@ function [U_cmd, U_fb, X_err] = TOAD_TVLQI(GND, X_est, X_trg, U_ff, K, t, consta
     %% Translational Trim (Outer Loop)
     X_err_trans = [X_est(5:7) - X_trg(5:7);
                    X_est(8:10) - X_trg(8:10)];
-    MaxAccelCorr = 0.01;
+
     Delta_A = -K_trans * X_err_trans;
-    Delta_A = min(max(Delta_A, MaxAccelCorr), -MaxAccelCorr);
+    MaxAccelCorr = 2;
+    Delta_A = max(min(Delta_A, MaxAccelCorr), -MaxAccelCorr);
 
     % Nominal NLP Acceleration
     Q_ref = X_trg(1:4);
@@ -44,9 +46,12 @@ function [U_cmd, U_fb, X_err] = TOAD_TVLQI(GND, X_est, X_trg, U_ff, K, t, consta
     T_B_ff = U_ff(3) * [cos(U_ff(1))*sin(U_ff(2)); -sin(U_ff(1)); cos(U_ff(1))*cos(U_ff(2))];
     a_ff = (C_B2I_ref * T_B_ff) / Mass + g_vec; 
 
-    % NOTE: Delta_A (quaternion correction from outer loop) not yet working.
-    % Possible bandwith sep issue.
-    a_cmd = a_ff - a_dist; % + Delta_A; % + Delta_a - a_dist;
+    % Thrust trim
+    K_i = 40;
+    Z_err_int = Z_err_int + (X_trg(7) - X_est(7)) * dT;
+    ThrustTrim = K_i * Z_err_int;
+
+    a_cmd = a_ff - a_dist + Delta_A; % + Delta_a - a_dist;
 
     %% Triad Generation & Roll Tracking
     f_req = a_cmd - g_vec; 
@@ -89,7 +94,7 @@ function [U_cmd, U_fb, X_err] = TOAD_TVLQI(GND, X_est, X_trg, U_ff, K, t, consta
     U_cmd = zeros(4,1);
     U_cmd(1) = U_ff(1) + Delta_u(1) - U_dist(1); 
     U_cmd(2) = U_ff(2) + Delta_u(2) - U_dist(2); 
-    U_cmd(3) = norm_f * Mass;                      
+    U_cmd(3) = (norm_f * Mass) + ThrustTrim;                 
     U_cmd(4) = U_ff(4) + Delta_u(3) - U_dist(3); 
 
     U_fb = [Delta_u(1); Delta_u(2); U_cmd(3) - U_ff(3); Delta_u(3)];

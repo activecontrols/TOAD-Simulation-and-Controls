@@ -4,8 +4,8 @@ function [K_trans_List, K_rot_List, L_List_Att, L_List_Thr] = RicattiRecursion(T
 %   and a 3x6 angular dynamics model.
 
 % LESO bandwidths
-omega_att = 1;
-omega_thr = 1;
+omega_att = 10;
+omega_thr = 2;
 
 N = size(Trajectory.x, 2);
 K_trans_List = zeros(N, 3, 6);
@@ -30,7 +30,7 @@ B_trans_c = [zeros(3,3); eye(3,3)];
 for n = N:-1:2
     x_n   = Trajectory.x(:, n);
     u_n1  = Trajectory.u(:, n-1);
-    dT    = Trajectory.t(n) - Trajectory.t(n-1);
+    dT    = 1/1000; %Trajectory.t(n) - Trajectory.t(n-1);
     
     A_lin = A_fcn(x_n, u_n1);
     B_lin = B_fcn(x_n, u_n1);

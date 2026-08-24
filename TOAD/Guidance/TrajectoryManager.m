@@ -4,8 +4,8 @@ function [X, U, K, LA, LT] = TrajectoryManager(t, constantsTOAD)
     Inputs = constantsTOAD.Traj.Inputs;
     
     % FBGain maps to K_trans, FBCost maps to K_rot
-    K_trans_Gain = constantsTOAD.Traj.FBGain; 
-    K_rot_Gain = constantsTOAD.Traj.FBCost;   
+    K_trans_Gain = constantsTOAD.Traj.KTGain;
+    K_rot_Gain = constantsTOAD.Traj.KRGain; 
     LA_Gain = constantsTOAD.Traj.LAGain;
     LT_Gain = constantsTOAD.Traj.LTGain;
 
