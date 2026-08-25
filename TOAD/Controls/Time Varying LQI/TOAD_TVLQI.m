@@ -47,7 +47,7 @@ function [U_cmd, U_fb, X_err] = TOAD_TVLQI(GND, X_est, X_trg, U_ff, K, t, consta
     a_ff = (C_B2I_ref * T_B_ff) / Mass + g_vec; 
 
     % Thrust trim
-    K_i = 40;
+    K_i = 30;
     Z_err_int = Z_err_int + (X_trg(7) - X_est(7)) * dT;
     ThrustTrim = K_i * Z_err_int;
 
