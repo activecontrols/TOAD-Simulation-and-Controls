@@ -27,7 +27,9 @@ function [U_cmd, U_fb, X_err] = TOAD_TVLQI(GND, X_est, X_trg, U_ff, K, t, consta
     K_trans  = K(1:3, 1:6);
     K_rot    = K(4:6, 1:6);
     a_dist   = Dist_LESO(1:3);
-    U_dist = Dist_LESO(4:6);
+    ang_accel_dist = Dist_LESO(4:6);
+    
+
 
     Mass = constantsTOAD.m_dry + sum(X_est(14:15));
     g_vec = [0; 0; -constantsTOAD.g];
@@ -78,6 +80,7 @@ function [U_cmd, U_fb, X_err] = TOAD_TVLQI(GND, X_est, X_trg, U_ff, K, t, consta
     Q_cmd = Q_cmd / norm(Q_cmd);
 
     %% Rotational Trim
+
     Q_cmd_Conj = [Q_cmd(1); -Q_cmd(2:4)];
     AttError = HamiltonianProd(Q_cmd_Conj) * X_est(1:4);
     
@@ -90,11 +93,24 @@ function [U_cmd, U_fb, X_err] = TOAD_TVLQI(GND, X_est, X_trg, U_ff, K, t, consta
 
     Delta_u = -K_rot * X_err_rot;
 
-    %% Trim Integration & clamping
+    %% Thrust for use in angular disturbances
     U_cmd = zeros(4,1);
+    U_cmd(3) = (norm_f * Mass) + ThrustTrim;
+
+    %% Disturbance tracking
+    U_dist = zeros(4,1);
+    U_dist(3) = ang_accel_dist(3);
+    [J_tot,lever_arm] = ComputeJtot(X_est(14), X_est(15), constantsTOAD);
+    torque = ang_accel_dist'*J_tot;
+    U_dist(1)= -torque(1)/(lever_arm*U_cmd(3));
+    U_dist(2) = -torque(2)/(lever_arm*(1-U_cmd(1)^2/2)*U_cmd(3));
+    
+
+    %% Trim Integration & clamping
+    
     U_cmd(1) = U_ff(1) + Delta_u(1) - U_dist(1); 
     U_cmd(2) = U_ff(2) + Delta_u(2) - U_dist(2); 
-    U_cmd(3) = (norm_f * Mass) + ThrustTrim;                 
+                    
     U_cmd(4) = U_ff(4) + Delta_u(3) - U_dist(3); 
 
     U_fb = [Delta_u(1); Delta_u(2); U_cmd(3) - U_ff(3); Delta_u(3)];
