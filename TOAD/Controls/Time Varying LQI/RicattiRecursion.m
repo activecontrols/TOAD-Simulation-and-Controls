@@ -4,7 +4,7 @@ function [K_trans_List, K_rot_List, L_List_Att, L_List_Thr] = RicattiRecursion(T
 %   and a 3x6 angular dynamics model.
 
 % LESO bandwidths
-omega_att = 10;
+omega_att = 6;
 omega_thr = 2;
 
 N = size(Trajectory.x, 2);
