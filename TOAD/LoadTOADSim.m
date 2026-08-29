@@ -56,20 +56,22 @@ Checkpoints =  [0, 5, 5,  5;
                 0, 5, 10, 10;
                 0, 50, 0, 0];
 HoldTimeReqs = [20, 10, 2, 3];
-dt_SIM = 1/1000;
+dt_SIM = 1/500;
 
 %% Trajectory Load
 % Controller gains
 % Outer Loop
-max_x_trans = [2, 2, 2, 8, 8, 8]; 
+max_x_trans = [2, 2, 2, 9, 9, 5]; 
 constantsTOAD.Q_trans = diag(1 ./ max_x_trans.^2);
 max_a_trans = 1; 
 constantsTOAD.R_trans = eye(3) .* (1 / max_a_trans^2);
+constantsTOAD.OmegaThr = 2;
 
 % Inner Loop
-max_x_rot = [0.30, 0.30, 0.1, 2, 2, 0.2];
+max_x_rot = [0.25, 0.25, 0.1, 2, 2, 0.2];
 constantsTOAD.Q_rot = diag(1 ./ max_x_rot.^2);
-constantsTOAD.R_rot = diag([8, 8, 1/3^2]);
+constantsTOAD.R_rot = diag([7, 7, 1/3^2]);
+constantsTOAD.OmegaAtt = 10;
 
 % Pick a trajectory filename 
 try 

@@ -1,4 +1,4 @@
-function [PropMass, FlightTime] = SKIPPER_3DoF(MaxThrustINPUT, WetMass)
+function [PropMass, FlightTime] = SKIPPER_3DoF(MaxThrustINPUT, WetMass, Isp_MIN, Isp_MAX, AscentVEL)
 
 %Variable set-up
 syms r_1 r_2 v_1 v_2 theta theta_dot m m_dot thrust alpha_ang
@@ -50,8 +50,11 @@ r_dot = v;
 v_dot = IF/m;
 
 %Derivative of mass
-Isp_MAX = 193.16; % (s)
-Isp_MIN = 166.53; % (s)
+if nargin() <= 2
+    Isp_MAX = 193.16; % (s)
+    Isp_MIN = 166.53; % (s)
+end
+
 Isp = Isp_MIN + 2 * (thrust / max_thrust - 0.5) * (Isp_MAX - Isp_MIN);
 m_dot = -thrust / (Isp * g);
 
@@ -68,7 +71,9 @@ theta_ddot = tau/I;
 x_dot = [r_dot; v_dot; theta_dot; theta_ddot; m_dot];
 
 %Create numerical functions
-matlabFunction(x_dot, 'File', './odefcn2.m', 'Vars', {t, x, u, consts});
+% matlabFunction(x_dot, 'File', './odefcn2.m', 'Vars', {t, x, u, consts});
+odefcn2 = matlabFunction(x_dot, 'Vars', {t, x, u, consts});
+
 %%
 %Define constants and initial conditions
 
@@ -115,10 +120,10 @@ R = eye(size(u,1)) .* b_weights ./ max_u.^2;
 % Simulation
 clear ref_generator;
 clear inputfcn;
-tspan = [0 60];
+tspan = [0 40];
 
 % Solve using ODE113 and nonlinear dynamics
-[tsim, xsim] = ode45(@(tsim, xsim) odefcn2(tsim, xsim, inputfcn(K, xsim, tsim, MaxThrustINPUT), constants), tspan, x_0);
+[tsim, xsim] = ode113(@(tsim, xsim) odefcn2(tsim, xsim, inputfcn(K, xsim, tsim, MaxThrustINPUT, AscentVEL), constants), tspan, x_0);
 
 % Solve for inputs
 u = zeros(size(xsim,1 ), 2);
@@ -127,7 +132,7 @@ clear inputfcn;
 for i = 1:1:size(xsim, 1)
     x_i = xsim(i,1:7).';
     t_i = tsim(i);
-    u(i,1:2) = inputfcn(K, x_i, t_i, MaxThrustINPUT);
+    u(i,1:2) = inputfcn(K, x_i, t_i, MaxThrustINPUT, AscentVEL);
 end
 %% OUTPUTS
 EndIndex = find(xsim(100:end,2) < 0.1 & abs(xsim(100:end,4)) < 10);
@@ -136,7 +141,7 @@ if isempty(EndIndex)
     FlightTime = 0;
     ThrustDev = 0;
 else
-    EndIndex = EndIndex(1) + 100;
+    EndIndex = EndIndex(1) + 99;
     PropMass = WetMass - xsim(EndIndex, 7);
     FlightTime = tsim(EndIndex);
     AccelVert = (xsim(2:end,2) - xsim(1:end-1,2)) ./ (tsim(2:end) - tsim(1:end-1));
@@ -145,7 +150,6 @@ else
 
     ThrustDev = u(1:EndIndex,1) - 0.7 * MaxThrustINPUT;
     ThrustDev = sum(ThrustDev.^2);
-    disp(FlightTime)
 end
 
 
