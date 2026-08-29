@@ -1,13 +1,13 @@
 function [U_cmd, U_fb, X_err] = TOAD_TVLQI(GND, X_est, X_trg, U_ff, K, t, constantsTOAD, Dist_LESO)
     % TOAD_TVLQI Trim Controller
     
-    persistent t_last U_last Z_err_int
+    persistent t_last U_last VZ_ErrInt
     
     % Reset persistent variables if on the ground
     if isempty(t_last) || GND == 1
         t_last = t;
         U_last = [0; 0; constantsTOAD.m_wet * constantsTOAD.g; 0];
-        Z_err_int = 0;
+        VZ_ErrInt = 0;
         if GND == 1
             U_cmd = U_last;
             U_fb = zeros(4,1);
@@ -35,6 +35,15 @@ function [U_cmd, U_fb, X_err] = TOAD_TVLQI(GND, X_est, X_trg, U_ff, K, t, consta
     g_vec = [0; 0; -constantsTOAD.g];
 
     %% Translational Trim (Outer Loop)
+    % Thrust trim
+    Kp = 0.5;
+    Ki = 10;
+    PosErrZ = X_est(7) - X_trg(7);
+    VelTrimZ = -Kp * PosErrZ;
+    VZ_trg = X_trg(10) + VelTrimZ;
+    VZ_ErrInt = VZ_ErrInt - (X_est(10) - VZ_trg) * dT;
+    ThrustTrim = VZ_ErrInt * Ki;
+
     X_err_trans = [X_est(5:7) - X_trg(5:7);
                    X_est(8:10) - X_trg(8:10)];
 
@@ -48,11 +57,7 @@ function [U_cmd, U_fb, X_err] = TOAD_TVLQI(GND, X_est, X_trg, U_ff, K, t, consta
     T_B_ff = U_ff(3) * [cos(U_ff(1))*sin(U_ff(2)); -sin(U_ff(1)); cos(U_ff(1))*cos(U_ff(2))];
     a_ff = (C_B2I_ref * T_B_ff) / Mass + g_vec; 
 
-    % Thrust trim
-    K_i = 30;
-    Z_err_int = Z_err_int + (X_trg(7) - X_est(7)) * dT;
-    ThrustTrim = K_i * Z_err_int;
-
+    % Total accel command 
     a_cmd = a_ff - a_dist + Delta_A; % + Delta_a - a_dist;
 
     %% Triad Generation & Roll Tracking

@@ -3,6 +3,63 @@ function [K_trans_List, K_rot_List, L_List_Att, L_List_Thr] = RicattiRecursion(T
 %   Separates the LQR formulation into a 3x6 translational point-mass model
 %   and a 3x6 angular dynamics model.
 
+% state variables, x
+syms q0 q1 q2 q3
+syms r1 r2 r3
+syms v1 v2 v3
+syms omega1 omega2 omega3
+syms m_lox m_ipa
+syms theta phi thrust roll
+
+q = [q0;q1;q2;q3];
+r = [r1;r2;r3];
+v = [v1;v2;v3];
+m = [m_lox; m_ipa];
+omegaB = [omega1; omega2; omega3];
+
+xn = [q;r;v; omegaB; m]; % x_n
+
+% U
+u = [theta;phi;thrust;roll];
+
+%% Dynamics
+TB = thrust * [cos(theta)*sin(phi); -sin(theta); cos(theta)*cos(phi)];
+m_dry = constantsTOAD.m_dry;
+m = m_dry + m_lox + m_ipa;
+
+% Compute inertia
+[J_tot, CGz] = ComputeJtot(m_lox, m_ipa, constantsTOAD);
+
+% Angular dynamics
+MB = zetaCross([0; 0; -CGz])*TB + [0; 0; roll];
+M = [q(1) -q(2) -q(3) -q(4);
+     q(2)  q(1) -q(4)  q(3);
+     q(3)  q(4)  q(1) -q(2);
+     q(4) -q(3)  q(2)  q(1)];
+qdot = 0.5 * M * [0; omegaB];
+omegaBdot = J_tot \ (MB - zetaCross(omegaB) * J_tot * omegaB);
+
+% Linear Dynamics
+C_BI = quatRot(q);
+C_IB = C_BI.';
+FI = C_IB * TB + [0; 0;-m*constantsTOAD.g];
+
+rdot = [v1;v2;v3];
+vdot = FI/m;
+
+% Mass Dynamics
+mdot_lox = -thrust / constantsTOAD.MaxThrust * constantsTOAD.OF / (1 + constantsTOAD.OF) * (constantsTOAD.MaxMdot);
+mdot_ipa = -thrust / constantsTOAD.MaxThrust * 1 / (1 + constantsTOAD.OF) * (constantsTOAD.MaxMdot);
+
+%% State vector derivative
+xdot = [qdot;rdot;vdot; omegaBdot;mdot_lox;mdot_ipa];
+
+% Turn the jacobians into matlab functions for evaluation speed
+A = jacobian(xdot, xn);
+B = jacobian(xdot, u);
+matlabFunction(A, 'Vars', {xn, u},'File', './Controls/Time Varying LQI/JacobianX');
+matlabFunction(B, 'Vars', {xn, u},'File', './Controls/Time Varying LQI/JacobianU');
+
 % LESO bandwidths
 omega_att = constantsTOAD.OmegaAtt;
 omega_thr = constantsTOAD.OmegaThr;

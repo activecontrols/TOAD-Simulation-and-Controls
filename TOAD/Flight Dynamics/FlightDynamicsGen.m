@@ -92,7 +92,7 @@ J_tot = J_dry + J_lox + J_ipa + J_d;
 % Body frame moment (Roll torque along the thrust vector axis due to contra
 % EDF) (TODO: UPDATE for use with RCS)
 % Off center moments for Simulation
-MB = zetaCross([0; 0; -CGz] + TB_d)*TB + (TB * roll) / thrust;
+MB = zetaCross([0; 0; -CGz] + TB_d)*TB + [0; 0; roll];
 
 % Dynamics
 qdot = 0.5 * HamiltonianProd(q) * [0; omegaB];

@@ -61,17 +61,17 @@ dt_SIM = 1/500;
 %% Trajectory Load
 % Controller gains
 % Outer Loop
-max_x_trans = [2, 2, 2, 9, 9, 5]; 
+max_x_trans = [2, 2, 2, 20, 20, 200]; 
 constantsTOAD.Q_trans = diag(1 ./ max_x_trans.^2);
-max_a_trans = 1; 
+max_a_trans = 1.0; 
 constantsTOAD.R_trans = eye(3) .* (1 / max_a_trans^2);
-constantsTOAD.OmegaThr = 2;
+constantsTOAD.OmegaThr = 2.5;
 
 % Inner Loop
-max_x_rot = [0.25, 0.25, 0.1, 2, 2, 0.2];
+max_x_rot = [0.25, 0.25, 0.07, 1, 1, 20];
 constantsTOAD.Q_rot = diag(1 ./ max_x_rot.^2);
 constantsTOAD.R_rot = diag([7, 7, 1/3^2]);
-constantsTOAD.OmegaAtt = 10;
+constantsTOAD.OmegaAtt = 14;
 
 % Pick a trajectory filename 
 try 

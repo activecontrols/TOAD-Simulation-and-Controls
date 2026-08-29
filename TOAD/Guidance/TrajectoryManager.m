@@ -31,6 +31,8 @@ function [X, U, K, LA, LT] = TrajectoryManager(t, constantsTOAD)
     elseif t >= Time(end)
         
         X(:) = States(end,:);
+        X(1:4) = [1; 0; 0; 0];
+        X(8:end) = zeros(3,1);
         total_mass = constantsTOAD.m_dry + States(end, 14) + States(end, 15);
         U(:) = [0; 0; total_mass * constantsTOAD.g; 0];
         

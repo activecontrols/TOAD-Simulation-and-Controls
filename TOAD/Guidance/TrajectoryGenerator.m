@@ -58,7 +58,7 @@ Mlox_c = constantsTOAD.OxMass;                % oxidizer mass scale
 Mipa_c = constantsTOAD.FuMass;                % fuel mass scale
 
 % State scale vector
-Sx = [1;1;1;1; L_c;L_c;L_c; V_c;V_c;V_c; W_c;W_c;W_c; Mlox_c; Mipa_c];
+Sx = [1; 1; 1; 1; L_c; L_c; L_c; V_c; V_c; V_c; W_c; W_c; W_c; Mlox_c; Mipa_c];
 
 % Input scale vector
 Su = [G_c; G_c; F_c; Roll_c];
@@ -98,19 +98,13 @@ dt_row = repmat(dt, 1, N);
 Xhat_next_all = F_map(Xhat(:, 1:N), Uhat, dt_row);   % single vectorized call, shape 15 x N
 
 % Replace the entire for-loop with one vectorized constraint
-opti.subject_to(Xhat(:, 2:end) == Xhat_next_all);
-
-%% Path Constraints
-for k = 1:N+1
-    q_k = X(1:4, k);
-    opti.subject_to(sum(q_k.^2) == 1);
-end
-
+opti.subject_to(Xhat(:, 2:end) == Xhat_next_all); 
+opti.subject_to(sum(X(1:4, :).^2, 1) == 1);
 %% Boundaries
 
 MaxThrust_val = constantsTOAD.MaxThrust;
-max_gimbal_rate = deg2rad(40);   % deg/s, tune to lin act spec.
-max_thrust_rate = 5000;          % N/s
+max_gimbal_rate = deg2rad(30);   % deg/s, tune to lin act spec.
+max_thrust_rate = 2500;          % N/s
 max_torque_rate = 6;
 
 % Initial state (On the pad)
@@ -129,7 +123,7 @@ q_inverted = [0; 0; 1; 0];
 
 % Sandbox constraint
 opti.subject_to(-20 <= X(5:6, :) <= 20);
-opti.subject_to(-1 <= X(7, :) <= 200);
+opti.subject_to(-1 <= X(7, :) <= 50);
 
 % Initial state
     opti.subject_to(X(:, 1) == [q0; r0; v0; w0; m_lox0; m_ipa0]);
@@ -141,7 +135,7 @@ opti.subject_to(-1 <= X(7, :) <= 200);
     opti.subject_to(X(14:15, end) > 0);
 %% Control Bounds
     thrust_margin  = 0.10;   
-    gimbal_margin  = 0.15;   
+    gimbal_margin  = 0.40;   
     
     opti.subject_to((0.25 + thrust_margin) * MaxThrust_val <= U(3,:) <= (1 - thrust_margin) * MaxThrust_val);
     opti.subject_to(-(1 - gimbal_margin) * pi/15 <= U(1,:) <= (1 - gimbal_margin) * pi/15);
@@ -149,51 +143,60 @@ opti.subject_to(-1 <= X(7, :) <= 200);
     opti.subject_to(-(1 - thrust_margin) * 7 <= U(4,:) <= (1 - thrust_margin) * 7);
 
 %% Rate constraints (physical rate limits — keep on U, not Uhat)
-for k = 1:N-1
-    opti.subject_to(-max_gimbal_rate*dt <= U(1,k+1)-U(1,k) <= max_gimbal_rate*dt);
-    opti.subject_to(-max_gimbal_rate*dt <= U(2,k+1)-U(2,k) <= max_gimbal_rate*dt);
-    opti.subject_to(-max_thrust_rate*dt <= U(3,k+1)-U(3,k) <= max_thrust_rate*dt);
-end
+dU_phys = U(:, 2:end) - U(:, 1:end-1);
+opti.subject_to(-max_gimbal_rate*dt <= dU_phys(1,:) <= max_gimbal_rate*dt);
+opti.subject_to(-max_gimbal_rate*dt <= dU_phys(2,:) <= max_gimbal_rate*dt);
+opti.subject_to(-max_thrust_rate*dt <= dU_phys(3,:) <= max_thrust_rate*dt);
+opti.subject_to(-max_torque_rate*dt <= dU_phys(4,:) <= max_torque_rate*dt);
 
 %% Trajectory 
 N_ascent   = round(0.05*N);
-N_c1       = round(0.3*N);   % Circle quadrant 1
-N_c2       = round(0.45*N);  % Circle quadrant 2
+N_c1       = round(0.4*N);   % Circle quadrant 1
+N_c2       = round(0.5*N);  % Circle quadrant 2
 N_c3       = round(0.6*N);   % Circle quadrant 3
-N_c4       = round(0.75*N);  % Circle quadrant 4
-N_approach = round(0.9*N);
+N_c4       = round(0.7*N);  % Circle quadrant 4
+N_approach = round(0.95*N);
 
 % Ascent
-    for k = 1:N_ascent
-        opti.subject_to(-1 <= X(5:6, k) <= 1);
-        opti.subject_to(X(7, k) >= -1);
-    end
-    opti.subject_to(X(10, N_ascent) >= 3);
+    opti.subject_to(X(1:4, N_ascent) == q0)
+    pos_desc = X(5:6, 1:N_ascent);
+    vel_desc = X(8:9, 1:N_ascent);
+    opti.subject_to(pos_desc(1,:).^2 + pos_desc(2,:).^2 <= 1^2);
+    opti.subject_to(vel_desc(1,:).^2 + vel_desc(2,:).^2 <= 1^2);
     
 % Circle Maneuver (Replaces the Flip)
-    % Hit the four quadrants of the 5m circle
-    opti.subject_to(X(5:6, N_c1) == [ 5;  0]);
-    opti.subject_to(X(5:6, N_c2) == [ 0;  5]);
-    opti.subject_to(X(5:6, N_c3) == [-5;  0]);
-    opti.subject_to(X(5:6, N_c4) == [ 0; -5]);
+    % AFTER
+    wp_tol = 0.5;   % meters of slack 
+    circle_waypoints = [ 5,  0;
+                         0,  5;
+                        -5,  0;
+                         0, -5];
+                         
+    circle_nodes = [N_c1, N_c2, N_c3, N_c4];
+    for i = 1:4
+        k = circle_nodes(i);
+        target = circle_waypoints(i, :)';
+        opti.subject_to( (X(5,k)-target(1))^2 + (X(6,k)-target(2))^2 <= wp_tol^2 );
+    end
     
     % Enforce altitude and path boundaries during the circle
     for k = N_c1:N_c4
         % Stay strictly above 20m
         opti.subject_to(X(7, k) >= 20);
-        opti.subject_to(X(7, k) <= 25);
+        opti.subject_to(X(7, k) <= 21);
         
         % Loose cylinder constraint (radius between 4m and 6m) 
-        opti.subject_to(16 <= X(5, k)^2 + X(6, k)^2 <= 36);
+        opti.subject_to(23 <= X(5, k)^2 + X(6, k)^2 <= 28);
     end
     
 % Descent 
     opti.subject_to(X(1:4, N_approach) == q0)
-    pos_xy = X(5:6, N_approach:end);
-    vel_xy = X(8:9, N_approach:end);
-    opti.subject_to( (pos_xy(1,:) - r_f(1)).^2 + (pos_xy(2,:) - r_f(2)).^2 <= 1^2 );
-    opti.subject_to( vel_xy(1,:).^2 + vel_xy(2,:).^2 <= 1^2 );
-    
+    pos_desc = X(5:7, N_approach:end);
+    vel_desc = X(8:10, N_approach:end);
+    opti.subject_to( (pos_desc(1,:) - r_f(1)).^2 + (pos_desc(2,:) - r_f(2)).^2 <= 1^2 );
+    opti.subject_to( vel_desc(1,:).^2 + vel_desc(2,:).^2 <= 1^2 );
+    opti.subject_to(-2 <= vel_desc(3,:) <= 2)
+        
 %% Initial Guess
 % Linearly interpolate positions from start to end
 r_guess = [linspace(r0(1), r_f(1), N+1);
@@ -212,24 +215,37 @@ opti.set_initial(Uhat(3, :), repmat(constantsTOAD.m_wet * constantsTOAD.g / F_c,
 
 %% Cost Function (needs improvement for robustness, right now full on G-FOLD mass optimality)
 
-w_jerk = 1e-3 * ones(4,1); 
-w_rate = 1e-3 * ones(4,1);
-w_mag  = 1e-3 .* ones(4,1); 
-w_path = 1e-1;
-dU = Uhat(:, 2:end) - Uhat(:, 1:end-1);
-d2U = dU(:, 2:end) - dU(:, 1:end-1);
-jerk_cost  = sum(sum(w_jerk .* d2U.^2));   
-rate_cost  = sum(sum(w_rate .* dU.^2));
-mag_cost   = sum(sum(w_mag  .* Uhat.^2));
-path_cost  = sum(sum(w_path .* Xhat(8:10).^2));
+% Constraint
+w_path = 1e-3;
+path_cost = sum(sum(w_path .* Xhat(8:10, :).^2));
 
-opti.minimize(-(Xhat(14,end) + Xhat(15,end)) + jerk_cost + mag_cost + path_cost);
+opti.minimize(-(Xhat(14,end) + Xhat(15,end)) + path_cost);
 
-%% Solver Configuration
+%% Solver Configuration & Warm start 
+fprintf('Starting Coarse Solve!\n');
+p_opts_coarse = struct('expand', true);
+s_opts_coarse = struct('max_iter', 800, 'tol', 1e-3, 'constr_viol_tol', 1e-2);
+opti.solver('ipopt', p_opts_coarse, s_opts_coarse);
+
+coarse_ok = true;
+try
+    sol_coarse = opti.solve();
+catch
+    coarse_ok = false;
+end
+
+if coarse_ok
+    fprintf('Coarse stage status: %s\n', sol_coarse.stats().return_status);
+    opti.set_initial(opti.x, sol_coarse.value(opti.x));
+    opti.set_initial(opti.lam_g, sol_coarse.value(opti.lam_g));
+end
+
+% Stage B: full-precision solve, warm-started
 p_opts = struct('expand', true);
-s_opts = struct('max_iter', 5000, 'tol', 1e-5, 'constr_viol_tol', 1e-4);
-% s_opts.hessian_approximation = 'limited-memory';
+s_opts = struct('max_iter', 3000, 'tol', 1e-5, 'constr_viol_tol', 1e-4, ...
+                 'warm_start_init_point', 'yes', 'mu_strategy', 'adaptive');
 opti.solver('ipopt', p_opts, s_opts);
+fprintf('Starting Full Solve!\n');
 
 %% Solve
 try
