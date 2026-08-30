@@ -104,7 +104,7 @@ opti.subject_to(sum(X(1:4, :).^2, 1) == 1);
 
 MaxThrust_val = constantsTOAD.MaxThrust;
 max_gimbal_rate = deg2rad(30);   % deg/s, tune to lin act spec.
-max_thrust_rate = 2500;          % N/s
+max_thrust_rate = 1000;          % N/s
 max_torque_rate = 6;
 
 % Initial state (On the pad)
@@ -150,12 +150,12 @@ opti.subject_to(-max_thrust_rate*dt <= dU_phys(3,:) <= max_thrust_rate*dt);
 opti.subject_to(-max_torque_rate*dt <= dU_phys(4,:) <= max_torque_rate*dt);
 
 %% Trajectory 
-N_ascent   = round(0.05*N);
+N_ascent   = round(0.1*N);
 N_c1       = round(0.4*N);   % Circle quadrant 1
 N_c2       = round(0.5*N);  % Circle quadrant 2
 N_c3       = round(0.6*N);   % Circle quadrant 3
 N_c4       = round(0.7*N);  % Circle quadrant 4
-N_approach = round(0.95*N);
+N_approach = round(0.9*N);
 
 % Ascent
     opti.subject_to(X(1:4, N_ascent) == q0)
@@ -217,9 +217,17 @@ opti.set_initial(Uhat(3, :), repmat(constantsTOAD.m_wet * constantsTOAD.g / F_c,
 
 % Constraint
 w_path = 1e-3;
-path_cost = sum(sum(w_path .* Xhat(8:10, :).^2));
+w_gimbal = 1e-4;
+w_thrust_rate = 1e-2;
+w_roll = 1e-2;
+J_gimbal = sum(sum(Uhat(1:2, :).^2));
+J_path = sum(sum(w_path .* Xhat(8:10, :).^2));
+dU_thrust = Uhat(3, 2:end) - Uhat(3, 1:end-1);
+J_thrust = sum(dU_thrust.^2);
+J_roll = sum(Uhat(4, :).^2);
 
-opti.minimize(-(Xhat(14,end) + Xhat(15,end)) + path_cost);
+opti.minimize(-(Xhat(14,end) + Xhat(15,end)) + J_path + J_gimbal + J_thrust +...
+    J_roll);
 
 %% Solver Configuration & Warm start 
 fprintf('Starting Coarse Solve!\n');

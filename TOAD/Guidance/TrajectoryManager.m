@@ -1,4 +1,4 @@
-function [X, U, K, LA, LT] = TrajectoryManager(t, constantsTOAD)
+function [X, U, K, LA, LT] = TrajectoryManager(t, X_est, constantsTOAD)
     Time = constantsTOAD.Traj.Time;
     States = constantsTOAD.Traj.States;
     Inputs = constantsTOAD.Traj.Inputs;
@@ -32,8 +32,8 @@ function [X, U, K, LA, LT] = TrajectoryManager(t, constantsTOAD)
         
         X(:) = States(end,:);
         X(1:4) = [1; 0; 0; 0];
-        X(8:end) = zeros(3,1);
-        total_mass = constantsTOAD.m_dry + States(end, 14) + States(end, 15);
+        X(8:end) = 0;
+        total_mass = constantsTOAD.m_dry + X_est(14,1) + X_est(15,1);
         U(:) = [0; 0; total_mass * constantsTOAD.g; 0];
         
         K(1:3, 1:6) = K_trans_Gain(end, :, :);

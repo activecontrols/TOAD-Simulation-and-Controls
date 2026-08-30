@@ -1,13 +1,12 @@
 function [U_cmd, U_fb, X_err] = TOAD_TVLQI(GND, X_est, X_trg, U_ff, K, t, constantsTOAD, Dist_LESO)
     % TOAD_TVLQI Trim Controller
     
-    persistent t_last U_last VZ_ErrInt
+    persistent t_last U_last
     
     % Reset persistent variables if on the ground
     if isempty(t_last) || GND == 1
         t_last = t;
         U_last = [0; 0; constantsTOAD.m_wet * constantsTOAD.g; 0];
-        VZ_ErrInt = 0;
         if GND == 1
             U_cmd = U_last;
             U_fb = zeros(4,1);
@@ -29,26 +28,15 @@ function [U_cmd, U_fb, X_err] = TOAD_TVLQI(GND, X_est, X_trg, U_ff, K, t, consta
     a_dist   = Dist_LESO(1:3);
     ang_accel_dist = Dist_LESO(4:6);
     
-
-
     Mass = constantsTOAD.m_dry + sum(X_est(14:15));
     g_vec = [0; 0; -constantsTOAD.g];
 
     %% Translational Trim (Outer Loop)
-    % Thrust trim
-    Kp = 0.5;
-    Ki = 10;
-    PosErrZ = X_est(7) - X_trg(7);
-    VelTrimZ = -Kp * PosErrZ;
-    VZ_trg = X_trg(10) + VelTrimZ;
-    VZ_ErrInt = VZ_ErrInt - (X_est(10) - VZ_trg) * dT;
-    ThrustTrim = VZ_ErrInt * Ki;
-
     X_err_trans = [X_est(5:7) - X_trg(5:7);
                    X_est(8:10) - X_trg(8:10)];
 
     Delta_A = -K_trans * X_err_trans;
-    MaxAccelCorr = 2;
+    MaxAccelCorr = [3;3;5];
     Delta_A = max(min(Delta_A, MaxAccelCorr), -MaxAccelCorr);
 
     % Nominal NLP Acceleration
@@ -95,12 +83,11 @@ function [U_cmd, U_fb, X_err] = TOAD_TVLQI(GND, X_est, X_trg, U_ff, K, t, consta
 
     X_err_rot = [2 * AttError(2:4);
                  X_est(11:13) - X_trg(11:13)];
-
     Delta_u = -K_rot * X_err_rot;
 
     %% Thrust for use in angular disturbances
     U_cmd = zeros(4,1);
-    U_cmd(3) = (norm_f * Mass) + ThrustTrim;
+    U_cmd(3) = (norm_f * Mass);
 
     %% Disturbance tracking
     U_dist = zeros(4,1);
@@ -110,12 +97,9 @@ function [U_cmd, U_fb, X_err] = TOAD_TVLQI(GND, X_est, X_trg, U_ff, K, t, consta
     U_dist(1)= -torque(1)/(lever_arm*U_cmd(3));
     U_dist(2) = -torque(2)/(lever_arm*(1-U_cmd(1)^2/2)*U_cmd(3));
     
-
-    %% Trim Integration & clamping
-    
+    %% Trim Integration & clamping   
     U_cmd(1) = U_ff(1) + Delta_u(1) - U_dist(1); 
-    U_cmd(2) = U_ff(2) + Delta_u(2) - U_dist(2); 
-                    
+    U_cmd(2) = U_ff(2) + Delta_u(2) - U_dist(2);               
     U_cmd(4) = U_ff(4) + Delta_u(3) - U_dist(3); 
 
     U_fb = [Delta_u(1); Delta_u(2); U_cmd(3) - U_ff(3); Delta_u(3)];
