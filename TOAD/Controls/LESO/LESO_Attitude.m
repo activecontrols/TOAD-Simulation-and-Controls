@@ -23,7 +23,6 @@ function U_dist = LESO_Attitude(GND, X_est, X_trg, U_trg, L_Att, constantsTOAD, 
     %% Setup Dynamics & State Propagation
     y_meas = X_est(11:13);
     y_meas = y_meas(:);
-    
     C_BI = quatRot(X_est(1:4));
     
     % Nominal thrust force vector in body frame
@@ -55,14 +54,4 @@ function U_dist = LESO_Attitude(GND, X_est, X_trg, U_trg, L_Att, constantsTOAD, 
 
     % Disturbance Acceleration
     U_dist = xhat(4:6);
-end
-
-% Multiplicative quaternion error computation
-function dtheta = QuatError(q_est, q_ref)
-    Q_Ref_Conj = [q_ref(1); -q_ref(2:4)];
-    q_err = HamiltonianProd(Q_Ref_Conj) * q_est;
-    if q_err(1) < 0
-        q_err = -q_err; 
-    end
-    dtheta = 2 * q_err(2:4);
 end

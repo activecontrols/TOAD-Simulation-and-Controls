@@ -1,12 +1,13 @@
 function [U_cmd, U_fb, X_err] = TOAD_TVLQI(GND, X_est, X_trg, U_ff, K, t, constantsTOAD, Dist_LESO)
     % TOAD_TVLQI Trim Controller
     
-    persistent t_last U_last
+    persistent t_last U_last U_dist_filt
     
     % Reset persistent variables if on the ground
     if isempty(t_last) || GND == 1
         t_last = t;
         U_last = [0; 0; constantsTOAD.m_wet * constantsTOAD.g; 0];
+        U_dist_filt = zeros(4,1);
         if GND == 1
             U_cmd = U_last;
             U_fb = zeros(4,1);
@@ -14,7 +15,7 @@ function [U_cmd, U_fb, X_err] = TOAD_TVLQI(GND, X_est, X_trg, U_ff, K, t, consta
             return;
         end
     end
-    dT = max(t - t_last, 0.001);
+    dT = t - t_last;
     t_last = t;
 
     % Safeguard for missing LESO connection
@@ -45,35 +46,65 @@ function [U_cmd, U_fb, X_err] = TOAD_TVLQI(GND, X_est, X_trg, U_ff, K, t, consta
     T_B_ff = U_ff(3) * [cos(U_ff(1))*sin(U_ff(2)); -sin(U_ff(1)); cos(U_ff(1))*cos(U_ff(2))];
     a_ff = (C_B2I_ref * T_B_ff) / Mass + g_vec; 
 
-    % Total accel command 
-    a_cmd = a_ff - a_dist + Delta_A; % + Delta_a - a_dist;
+    % Torque from LESO estimate — already available, no dependency on a_cmd
+    [J_tot,lever_arm] = ComputeJtot(X_est(14), X_est(15), constantsTOAD);
+    torque = ang_accel_dist' * J_tot;
+    a_cmd = a_ff - a_dist + Delta_A;
 
     %% Triad Generation & Roll Tracking
+    % Section needs to be modified to align the THRUST vector with the
+    % desired accel, not the Z axis. We now build an intermediate frame and
+    % convert between. This is done so we can properly account for CoM
+    % shifts.
     f_req = a_cmd - g_vec; 
     norm_f = norm(f_req);
+
+    % Thrust for use in angular disturbances
+    U_cmd = zeros(4,1);
+    U_cmd(3) = (norm_f * Mass);
+
+    %% Disturbance tracking
+    U_dist = zeros(4,1);
+    U_dist(3) = ang_accel_dist(3);
+    U_dist(1) = 1 * torque(1)/(lever_arm*U_cmd(3));
+    U_dist(2) = 1 * torque(2)/(lever_arm*(1-U_cmd(1)^2/2)*U_cmd(3));
     
+    % Construct the Thrust-to-Inertial Frame (C_T2I_cmd)
     if norm_f > 1e-6
-        Z_b = f_req / norm_f;
+        Z_t = f_req / norm_f;
     else
-        Z_b = [0; 0; 1];
+        Z_t = [0; 0; 1];
     end
-
     X_b_ref = C_B2I_ref(:, 1);
-    Y_b_unnorm = cross(Z_b, X_b_ref);
-    if norm(Y_b_unnorm) > 1e-6
-        Y_b = Y_b_unnorm / norm(Y_b_unnorm);
+    Y_t_unnorm = cross(Z_t, X_b_ref);
+    if norm(Y_t_unnorm) > 1e-6
+        Y_t = Y_t_unnorm / norm(Y_t_unnorm);
     else
-        Y_b = [0; 1; 0];
+        Y_t = [0; 1; 0];
     end
-    X_b = cross(Y_b, Z_b);
-
-    C_IB_cmd = [X_b, Y_b, Z_b];
+    X_t = cross(Y_t, Z_t);
+    C_T2I_cmd = [X_t, Y_t, Z_t]; 
     
-    Q_cmd = DCM_Quat_Conversion(C_IB_cmd);
+    % Construct the Thrust-to-Body Rotation Matrix (C_T2B)
+    theta_eff = U_ff(1) - U_dist(1); 
+    phi_eff   = U_ff(2) - U_dist(2);
+   
+    R_x = [1, 0, 0; 
+           0, cos(theta_eff), -sin(theta_eff); 
+           0, sin(theta_eff), cos(theta_eff)];
+           
+    R_y = [cos(phi_eff), 0, sin(phi_eff); 
+           0, 1, 0; 
+           -sin(phi_eff), 0, cos(phi_eff)];
+           
+    C_T2B = R_y * R_x; 
+    
+    % Apply Inverse Mapping to determine Commanded Body Attitude
+    C_B2I_cmd = C_T2I_cmd * C_T2B'; 
+    Q_cmd = DCM_Quat_Conversion(C_B2I_cmd);
     Q_cmd = Q_cmd / norm(Q_cmd);
 
     %% Rotational Trim
-
     Q_cmd_Conj = [Q_cmd(1); -Q_cmd(2:4)];
     AttError = HamiltonianProd(Q_cmd_Conj) * X_est(1:4);
     
@@ -85,17 +116,6 @@ function [U_cmd, U_fb, X_err] = TOAD_TVLQI(GND, X_est, X_trg, U_ff, K, t, consta
                  X_est(11:13) - X_trg(11:13)];
     Delta_u = -K_rot * X_err_rot;
 
-    %% Thrust for use in angular disturbances
-    U_cmd = zeros(4,1);
-    U_cmd(3) = (norm_f * Mass);
-
-    %% Disturbance tracking
-    U_dist = zeros(4,1);
-    U_dist(3) = ang_accel_dist(3);
-    [J_tot,lever_arm] = ComputeJtot(X_est(14), X_est(15), constantsTOAD);
-    torque = ang_accel_dist'*J_tot;
-    U_dist(1) = -torque(1)/(lever_arm*U_cmd(3));
-    U_dist(2) = -torque(2)/(lever_arm*(1-U_cmd(1)^2/2)*U_cmd(3));
     
     %% Trim Integration & clamping   
     U_cmd(1) = U_ff(1) + Delta_u(1) - U_dist(1); 

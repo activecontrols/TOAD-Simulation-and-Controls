@@ -148,7 +148,7 @@ for n = N:-1:2
     C_LESO_T = [eye(6), zeros(6,3)];
     
     % Pole Placement
-    s_poles_att = -omega_att * (1 + (0:5)*0.01);
+    s_poles_att = -omega_att * (1 - (0:5)*0.05);
     z_poles_att = exp(s_poles_att * dT_LESO);
     L_att_n = place(A_LESO_A', C_LESO_A', z_poles_att)';
     

@@ -35,6 +35,8 @@ function a_dist = LESO_Position(GND, X_est, X_trg, U_trg, L_Thrust, constantsTOA
     phi   = U_trg(2);
     thrust = U_trg(3);
     ThrustVec_B = thrust * [cos(theta)*sin(phi); -sin(theta); cos(theta)*cos(phi)];
+    % * [0; 0; 1];
+    % * [cos(theta)*sin(phi); -sin(theta); cos(theta)*cos(phi)];
     
     % Nominal acceleration in inertial frame (inc. gravity correction)
     g_vec = [0; 0; -constantsTOAD.g];

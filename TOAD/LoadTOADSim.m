@@ -61,17 +61,17 @@ dt_SIM = 1/500;
 %% Trajectory Load
 % Controller gains
 % Outer Loop
-max_x_trans = [2, 2, 2, 2, 2, 2]; 
+max_x_trans = [1.7, 1.7, 1.7, 1.7, 1.7, 1.7]; 
 constantsTOAD.Q_trans = diag(1 ./ max_x_trans.^2);
 max_a_trans = 1.0; 
 constantsTOAD.R_trans = eye(3) .* (1 / max_a_trans^2);
-constantsTOAD.OmegaThr = 2.0;
+constantsTOAD.OmegaThr = 3.0;
 
 % Inner Loop
-max_x_rot = [0.25, 0.25, 0.07, 0.7, 0.7, 20];
+max_x_rot = [0.27, 0.27, 0.07, 2, 2, 20];
 constantsTOAD.Q_rot = diag(1 ./ max_x_rot.^2);
-constantsTOAD.R_rot = diag([7, 7, 1/3^2]);
-constantsTOAD.OmegaAtt = 10;
+constantsTOAD.R_rot = diag([8, 8, 1/3^2]);
+constantsTOAD.OmegaAtt = 1.0;
 
 % Pick a trajectory filename 
 try 
@@ -94,6 +94,7 @@ Waypoints = TrajectoryBuilder;
 J_d = zeros(3);
 MaxMdot_d = 0;
 TB_d = zeros(3,1);
+TB_d = [0.01, 0.01, 0]';
 
 % Constant vars (varied usage)
 [windMerid, windZonal] = atmoshwm(40.4258686, -86.9080655, 186 + 50);
