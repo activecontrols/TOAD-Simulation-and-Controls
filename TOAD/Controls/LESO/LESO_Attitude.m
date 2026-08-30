@@ -21,22 +21,18 @@ function U_dist = LESO_Attitude(GND, X_est, X_trg, U_trg, L_Att, constantsTOAD, 
     end
     
     %% Setup Dynamics & State Propagation
-    y_meas = X_est(1:3);
+    y_meas = X_est(11:13);
     y_meas = y_meas(:);
     
-   
     C_BI = quatRot(X_est(1:4));
-    C_IB = C_BI';
     
     % Nominal thrust force vector in body frame
     theta = U_trg(1); 
     phi   = U_trg(2);
     thrust = U_trg(3);
-
     ThrustVec_B = thrust * [cos(theta)*sin(phi); -sin(theta); cos(theta)*cos(phi)];
 
-        
-
+    % Compute inertia
     [J_tot,lever_arm]  = ComputeJtot(X_est(14), X_est(15), constantsTOAD);
     lever_arm_vec = [0;0;lever_arm];
 

@@ -51,7 +51,7 @@ magDistMatrix = [dM_xx, dM_xy, dM_xz;
 constantsTOAD.K_Att_Wet = K_Att_Wet;
 constantsTOAD.K_Att_Dry = K_Att_Dry;
 covar_vec = [accel_proc_cov; gyro_cov; mag_proc_cov];
-IMU_Rate = 1000;
+IMU_Rate = 500;
 Checkpoints =  [0, 5, 5,  5;
                 0, 5, 10, 10;
                 0, 50, 0, 0];
@@ -68,10 +68,10 @@ constantsTOAD.R_trans = eye(3) .* (1 / max_a_trans^2);
 constantsTOAD.OmegaThr = 2.0;
 
 % Inner Loop
-max_x_rot = [0.25, 0.25, 0.07, 1, 1, 20];
+max_x_rot = [0.25, 0.25, 0.07, 0.7, 0.7, 20];
 constantsTOAD.Q_rot = diag(1 ./ max_x_rot.^2);
-constantsTOAD.R_rot = diag([6, 6, 1/3^2]);
-constantsTOAD.OmegaAtt = 12;
+constantsTOAD.R_rot = diag([7, 7, 1/3^2]);
+constantsTOAD.OmegaAtt = 10;
 
 % Pick a trajectory filename 
 try 

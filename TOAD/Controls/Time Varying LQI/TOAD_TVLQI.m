@@ -94,7 +94,7 @@ function [U_cmd, U_fb, X_err] = TOAD_TVLQI(GND, X_est, X_trg, U_ff, K, t, consta
     U_dist(3) = ang_accel_dist(3);
     [J_tot,lever_arm] = ComputeJtot(X_est(14), X_est(15), constantsTOAD);
     torque = ang_accel_dist'*J_tot;
-    U_dist(1)= -torque(1)/(lever_arm*U_cmd(3));
+    U_dist(1) = -torque(1)/(lever_arm*U_cmd(3));
     U_dist(2) = -torque(2)/(lever_arm*(1-U_cmd(1)^2/2)*U_cmd(3));
     
     %% Trim Integration & clamping   
