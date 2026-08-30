@@ -57,18 +57,36 @@ Pos_RMSE_total = sqrt(sum(pos_error_rmse.^2, 2));
 Vel_RMSE_total = sqrt(sum(vel_error_rmse.^2, 2));
 target_pos_ref = squeeze(target_interp(firstValid,:,pos_idx));
 
-%% 4. Kinematic Trajectory Overlay (3D)
+%% 4. Kinematic Trajectory Overlay (3D + Projections)
 figure('Name', 'MC 3D Trajectories', 'Color', bkgColor, 'WindowStyle', 'docked');
-hold on; grid on; axis equal; view(3);
-xlabel('Pitch / X [m]'); ylabel('Yaw / Y [m]'); zlabel('Roll / Z [m]');
-title(sprintf('MC Trajectories vs Full-State Target (%d Runs)', num_sims));
+tl = tiledlayout(3, 4, 'TileSpacing', 'compact', 'Padding', 'compact');
+
+% Main 3D Plot
+axMain = nexttile(tl, 1, [3 3]); 
+hold(axMain, 'on'); grid(axMain, 'on'); axis(axMain, 'equal'); view(axMain, 3);
+xlabel(axMain, 'Pitch / X [m]'); ylabel(axMain, 'Yaw / Y [m]'); zlabel(axMain, 'Roll / Z [m]');
+title(axMain, sprintf('MC Trajectories vs Full-State Target (%d Runs)', num_sims));
+
 for i = 1:num_sims
     xyz = squeeze(actual_interp(i,:,pos_idx));
     if isempty(xyz), continue; end
     valid = all(isfinite(xyz),2);
-    plot3(xyz(valid,1), xyz(valid,2), xyz(valid,3), 'Color', [0.25 0.25 0.25 alphaVal], 'LineWidth', 0.5, 'HandleVisibility', 'off');
+    plot3(axMain, xyz(valid,1), xyz(valid,2), xyz(valid,3), 'Color', [0.25 0.25 0.25 alphaVal], 'LineWidth', 0.5, 'HandleVisibility', 'off');
 end
-plot3(target_pos_ref(:,1), target_pos_ref(:,2), target_pos_ref(:,3), 'b--', 'LineWidth', 2.5, 'DisplayName', 'Target');
+plot3(axMain, target_pos_ref(:,1), target_pos_ref(:,2), target_pos_ref(:,3), 'b--', 'LineWidth', 2.5, 'DisplayName', 'Target');
+
+% Orthographic Projections
+axTop = nexttile(tl, 4); 
+drawMCTraj_v4(axTop, actual_interp(:,:,pos_idx), target_pos_ref, 1, 2, 'Pitch / X [m]', 'Yaw / Y [m]', alphaVal); 
+title(axTop, 'Top View');
+
+axSide = nexttile(tl, 8); 
+drawMCTraj_v4(axSide, actual_interp(:,:,pos_idx), target_pos_ref, 1, 3, 'Pitch / X [m]', 'Roll / Z [m]', alphaVal); 
+title(axSide, 'Side View');
+
+axFront = nexttile(tl, 12); 
+drawMCTraj_v4(axFront, actual_interp(:,:,pos_idx), target_pos_ref, 2, 3, 'Yaw / Y [m]', 'Roll / Z [m]', alphaVal); 
+title(axFront, 'Front View');
 
 %% 5. Kinematic Plot (3-Sigma State Distributions)
 figure('Name', 'State Distributions (3-Sigma)', 'Color', bkgColor, 'WindowStyle', 'docked');
@@ -224,4 +242,20 @@ function plotSmartHistogram(ax, data, clr, name)
             ylim(ax, [0, sorted_counts(2) * 1.3]);
         end
     end
+end
+
+function drawMCTraj_v4(ax, pos_all, target_pos, x_idx, y_idx, x_lbl, y_lbl, alphaVal)
+    hold(ax, 'on'); grid(ax, 'on'); axis(ax, 'equal');
+    
+    % Draw run trajectories
+    for i = 1:size(pos_all, 1)
+        xy = squeeze(pos_all(i, :, [x_idx, y_idx]));
+        if isempty(xy), continue; end
+        valid = all(isfinite(xy), 2);
+        plot(ax, xy(valid, 1), xy(valid, 2), 'Color', [0.25 0.25 0.25 alphaVal], 'LineWidth', 0.5, 'HandleVisibility', 'off');
+    end
+    
+    % Draw target reference
+    plot(ax, target_pos(:, x_idx), target_pos(:, y_idx), 'b--', 'LineWidth', 2);
+    xlabel(ax, x_lbl); ylabel(ax, y_lbl);
 end
