@@ -34,8 +34,10 @@ function U_dist = LESO_Attitude(GND, X_est, X_trg, U_trg, L_Att, constantsTOAD, 
     % Compute inertia
     [J_tot,lever_arm]  = ComputeJtot(X_est(14), X_est(15), constantsTOAD);
     lever_arm_vec = [0;0;lever_arm];
-
     anglAccel = cross(lever_arm_vec, ThrustVec_B)' / J_tot;
+
+    % Substract gyroscopic coupling
+    gyroCoupling = J_tot^(-1) * cross(y_meas, J_tot * y_meas);
 
     % Discrete STMs
     A_LESO_Thr = [eye(3), eye(3)*dT;
@@ -45,7 +47,7 @@ function U_dist = LESO_Attitude(GND, X_est, X_trg, U_trg, L_Att, constantsTOAD, 
                   zeros(3)];
 
     % State Prediction 
-    xhat_pred = A_LESO_Thr * xhat + B_LESO_Thr * anglAccel';
+    xhat_pred = A_LESO_Thr * xhat + B_LESO_Thr * (anglAccel' - gyroCoupling);
 
     % State Update 
     y_hat = xhat_pred(1:3);
