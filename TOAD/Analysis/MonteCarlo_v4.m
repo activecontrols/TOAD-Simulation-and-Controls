@@ -14,6 +14,8 @@
 %% Configuration
 model_name = 'TOAD_Simulation';
 num_sims = 100;
+seed = 1788146097;%int64(seconds(datetime('now','Timezone','UTC')-datetime('1970-01-01','Timezone','UTC')));
+
 clear simIn out
 
 %% Nominal parameters
@@ -64,10 +66,11 @@ quat_all = nan(num_sims, length(t_common), 4);
 % parsim from the actual target logger rather than assuming a legacy
 % waypoint/position-only target format.
 target_state_all = [];
-
-disp(['Generating focused disturbances for ', num2str(num_sims), ' runs...']);
+disp(seed)
+disp(['Generating focused disturbances for ', num2str(num_sims), ' runs with seed ', seed]);
 
 %% Generate Monte Carlo disturbances
+rng(seed)
 for i = 1:num_sims
 
     %% 1. Moment of Inertia Disturbances
