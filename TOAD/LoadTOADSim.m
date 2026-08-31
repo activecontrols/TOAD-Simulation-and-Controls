@@ -75,7 +75,7 @@ constantsTOAD.OmegaAtt = 1.0;
 
 % Pick a trajectory filename 
 try 
-    filename = "Circle_v1.csv";
+    filename = "Backflip_v1.csv";
     Data = readmatrix("Guidance\Trajectories\"+filename);
     constantsTOAD.Traj.Time = Data(:, 1);
     constantsTOAD.Traj.States = Data(:, 2:16);

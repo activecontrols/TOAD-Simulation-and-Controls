@@ -10,7 +10,7 @@ CasADiDynamics;
 if ~exist("constantsTOAD")
     LoadTOADSim;
 end
-Filename = "Circle_v1";
+Filename = "Backflip_v1";
 SaveFile = true;
 import casadi.*
 opti = casadi.Opti();
@@ -99,7 +99,7 @@ Xhat_next_all = F_map(Xhat(:, 1:N), Uhat, dt_row);   % single vectorized call, s
 
 % Replace the entire for-loop with one vectorized constraint
 opti.subject_to(Xhat(:, 2:end) == Xhat_next_all); 
-opti.subject_to(sum(X(1:4, :).^2, 1) == 1);
+opti.subject_to(sum(X(1:4, :).^2, 1) == 1.00);
 %% Boundaries
 
 MaxThrust_val = constantsTOAD.MaxThrust;
@@ -118,12 +118,9 @@ m_ipa0 = constantsTOAD.FuMass;
 % Final state (On the landing zone)
 r_f = [0; 0; 0];                 
 
-% Flip target attitude
-q_inverted = [0; 0; 1; 0];
-
 % Sandbox constraint
-opti.subject_to(-20 <= X(5:6, :) <= 20);
-opti.subject_to(-1 <= X(7, :) <= 50);
+opti.subject_to(-30 <= X(5:6, :) <= 30);
+opti.subject_to(-1 <= X(7, :) <= 150);
 
 % Initial state
     opti.subject_to(X(:, 1) == [q0; r0; v0; w0; m_lox0; m_ipa0]);
@@ -131,11 +128,13 @@ opti.subject_to(-1 <= X(7, :) <= 50);
 % Final state
     opti.subject_to(X(1:4, end) == q0);
     opti.subject_to(X(5:7, end) == r_f);
-    opti.subject_to(X(8:10, end) == [0;0;0]);
-    opti.subject_to(X(14:15, end) > 0);
+    opti.subject_to(sum(X(8:10, end).^2) <= 0.1^2);
+    prop_margin_frac = 0.10;   % require >=10% of loaded propellant as reserve
+    opti.subject_to(X(14, end) >= prop_margin_frac * m_lox0);
+    opti.subject_to(X(15, end) >= prop_margin_frac * m_ipa0);
 %% Control Bounds
-    thrust_margin  = 0.10;   
-    gimbal_margin  = 0.40;   
+    thrust_margin  = 0.15;   
+    gimbal_margin  = 0.15;   
     
     opti.subject_to((0.25 + thrust_margin) * MaxThrust_val <= U(3,:) <= (1 - thrust_margin) * MaxThrust_val);
     opti.subject_to(-(1 - gimbal_margin) * pi/15 <= U(1,:) <= (1 - gimbal_margin) * pi/15);
@@ -150,12 +149,9 @@ opti.subject_to(-max_thrust_rate*dt <= dU_phys(3,:) <= max_thrust_rate*dt);
 opti.subject_to(-max_torque_rate*dt <= dU_phys(4,:) <= max_torque_rate*dt);
 
 %% Trajectory 
-N_ascent   = round(0.1*N);
-N_c1       = round(0.4*N);   % Circle quadrant 1
-N_c2       = round(0.5*N);  % Circle quadrant 2
-N_c3       = round(0.6*N);   % Circle quadrant 3
-N_c4       = round(0.7*N);  % Circle quadrant 4
-N_approach = round(0.9*N);
+N_ascent   = round(0.05*N);
+N_flip     = round(0.5*N);
+N_approach = round(0.95*N);
 
 % Ascent
     opti.subject_to(X(1:4, N_ascent) == q0)
@@ -164,30 +160,17 @@ N_approach = round(0.9*N);
     opti.subject_to(pos_desc(1,:).^2 + pos_desc(2,:).^2 <= 1^2);
     opti.subject_to(vel_desc(1,:).^2 + vel_desc(2,:).^2 <= 1^2);
     
-% Circle Maneuver (Replaces the Flip)
-    % AFTER
-    wp_tol = 0.5;   % meters of slack 
-    circle_waypoints = [ 5,  0;
-                         0,  5;
-                        -5,  0;
-                         0, -5];
-                         
-    circle_nodes = [N_c1, N_c2, N_c3, N_c4];
-    for i = 1:4
-        k = circle_nodes(i);
-        target = circle_waypoints(i, :)';
-        opti.subject_to( (X(5,k)-target(1))^2 + (X(6,k)-target(2))^2 <= wp_tol^2 );
-    end
+% Flip Maneuver
+    theta_tol = deg2rad(25); % allow 15 degrees of rotational slack
+    att_tol = cos(theta_tol/2); 
     
-    % Enforce altitude and path boundaries during the circle
-    for k = N_c1:N_c4
-        % Stay strictly above 20m
-        opti.subject_to(X(7, k) >= 20);
-        opti.subject_to(X(7, k) <= 21);
-        
-        % Loose cylinder constraint (radius between 4m and 6m) 
-        opti.subject_to(23 <= X(5, k)^2 + X(6, k)^2 <= 28);
-    end
+    % Flip target attitude
+    q_inverted = [0; 0; 1; 0];
+    q_flip = X(1:4, N_flip);
+    
+    % Attitude Slack (Quaternion Inner Product)
+    opti.subject_to( (q_inverted' * q_flip)^2 >= att_tol^2 );
+    opti.subject_to(X(7, N_flip) >= 40);
     
 % Descent 
     opti.subject_to(X(1:4, N_approach) == q0)
@@ -213,44 +196,74 @@ opti.set_initial(Xhat(8:10,:), zeros(3, N+1));
 opti.set_initial(Xhat(11:13,:), zeros(3, N+1));
 opti.set_initial(Uhat(3, :), repmat(constantsTOAD.m_wet * constantsTOAD.g / F_c, 1, N));  
 
-%% Cost Function (needs improvement for robustness, right now full on G-FOLD mass optimality)
+%% Cost Function — Controllability & Survivability Weighted. Backflip specific.
+% Time in critical region
+% R33 = cos(tilt angle from vertical): +1 upright, -1 fully inverted.
+R33 = X(1,:).^2 - X(2,:).^2 - X(3,:).^2 + X(4,:).^2;
 
-% Constraint
-w_path = 1e-3;
-w_gimbal = 1e-4;
-w_thrust_rate = 1e-2;
-w_roll = 1e-2;
-J_gimbal = sum(sum(Uhat(1:2, :).^2));
-J_path = sum(sum(w_path .* Xhat(8:10, :).^2));
-dU_thrust = Uhat(3, 2:end) - Uhat(3, 1:end-1);
-J_thrust = sum(dU_thrust.^2);
-J_roll = sum(Uhat(4, :).^2);
+k_risk      = 6;    % logistic steepness; higher = sharper on/off transition
+tilt_thresh = 0;    % R33 = 0 <-> 90 deg tilt. Shift to redefine "critical".
+risk = 1 ./ (1 + exp(k_risk .* (R33 - tilt_thresh)));   
+dt_frac = dt / T_total;                                  
+J_critical = N * sum(risk(1:end-1) .* dt_frac);           
 
-opti.minimize(-(Xhat(14,end) + Xhat(15,end)) + J_path + J_gimbal + J_thrust +...
-    J_roll);
+% Penalize body rates while inside the critical band
+J_rate_flip = sum(risk(1:end-1) .* sum(Xhat(11:13, 1:end-1).^2, 1));
 
-%% Solver Configuration & Warm start 
+% Margin 
+gimbal_bound   = (1 - gimbal_margin);                     
+J_marginGimbal = sum(sum((Uhat(1:2, :) / gimbal_bound).^2));
+Tmin_hat  = (0.25 + thrust_margin) * MaxThrust_val / F_c;
+Tmax_hat  = (1 - thrust_margin)    * MaxThrust_val / F_c;
+Tmid_hat  = (Tmin_hat + Tmax_hat) / 2;
+Thalf_hat = (Tmax_hat - Tmin_hat) / 2;
+J_marginThrust = sum(((Uhat(3, :) - Tmid_hat) / Thalf_hat).^2);
+
+roll_bound   = (1 - thrust_margin) * 7 / Roll_c;
+J_marginRoll = sum((Uhat(4, :) / roll_bound).^2);
+
+%% Main costs
+w_crit         = 1;
+w_rate_flip    = 1e-2;
+w_marginGimbal = 1e-2;
+w_marginThrust = 1e-2;
+w_marginRoll   = 1e-2;
+
+opti.minimize( ...
+      w_crit         * J_critical      ...
+    + w_rate_flip    * J_rate_flip     ...
+    + w_marginGimbal * J_marginGimbal  ...
+    + w_marginThrust * J_marginThrust  ...
+    + w_marginRoll   * J_marginRoll);
+
 fprintf('Starting Coarse Solve!\n');
 p_opts_coarse = struct('expand', true);
-s_opts_coarse = struct('max_iter', 800, 'tol', 1e-3, 'constr_viol_tol', 1e-2);
+s_opts_coarse = struct('max_iter', 1500, 'tol', 5e-3, 'constr_viol_tol', 1e-2);
 opti.solver('ipopt', p_opts_coarse, s_opts_coarse);
 
-coarse_ok = true;
 try
     sol_coarse = opti.solve();
+    fprintf('Coarse solve successful!\n');
+    
+    % Extract values from successful solve
+    x_warm   = sol_coarse.value(opti.x);
+    lam_warm = sol_coarse.value(opti.lam_g);
+    
 catch
-    coarse_ok = false;
+    fprintf('Coarse solve failed to converge. Extracting debug values...\n');
+    
+    % Extract values from the last solver iteration using opti.debug
+    x_warm   = opti.debug.value(opti.x);
+    lam_warm = opti.debug.value(opti.lam_g);
 end
 
-if coarse_ok
-    fprintf('Coarse stage status: %s\n', sol_coarse.stats().return_status);
-    opti.set_initial(opti.x, sol_coarse.value(opti.x));
-    opti.set_initial(opti.lam_g, sol_coarse.value(opti.lam_g));
-end
+% Set the initial guess for the next (fine) solve
+opti.set_initial(opti.x, x_warm);
+opti.set_initial(opti.lam_g, lam_warm);
 
 % Stage B: full-precision solve, warm-started
 p_opts = struct('expand', true);
-s_opts = struct('max_iter', 3000, 'tol', 1e-5, 'constr_viol_tol', 1e-4, ...
+s_opts = struct('max_iter', 5000, 'tol', 1e-4, 'constr_viol_tol', 1e-3, ...
                  'warm_start_init_point', 'yes', 'mu_strategy', 'adaptive');
 opti.solver('ipopt', p_opts, s_opts);
 fprintf('Starting Full Solve!\n');

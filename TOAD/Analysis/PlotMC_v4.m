@@ -44,7 +44,7 @@ for i = 1:num_sims
     target_interp(i,:,:) = interpolateLoggedState(out(i).target_pos_log, t_common, nTarget);
 end
 
-pos_idx = 5:7; vel_idx = 8:10; rate_idx = 11:13;
+quat_idx = 1:4; pos_idx = 5:7; vel_idx = 8:10; rate_idx = 11:13;
 
 %% 3. Target-Relative Errors
 pos_error_all = actual_interp(:,:,pos_idx) - target_interp(:,:,pos_idx);
@@ -114,6 +114,45 @@ for r = 1:2
         xlabel('Time (s)'); ylabel(sprintf('%s (%s)', ylbls{r}, units{r}));
         if r == 1 && c == 1, legend('Location', 'best'); end
     end
+end
+
+%% 5b. Rotational Kinematics: Tilt Angle & Angular Rates (3-Sigma)
+% Tilt angle (not Euler) is used for the attitude envelope since the
+% flip maneuver passes through/near singular Euler configurations.
+R33_actual = actual_interp(:,:,1).^2 - actual_interp(:,:,2).^2 - ...
+             actual_interp(:,:,3).^2 + actual_interp(:,:,4).^2;
+tilt_actual = acosd(max(min(R33_actual, 1), -1));
+
+R33_target = target_interp(firstValid,:,1).^2 - target_interp(firstValid,:,2).^2 - ...
+             target_interp(firstValid,:,3).^2 + target_interp(firstValid,:,4).^2;
+tilt_target = acosd(max(min(R33_target, 1), -1));
+
+figure('Name', 'Attitude & Angular Rates', 'Color', bkgColor, 'WindowStyle', 'docked');
+tl_att = tiledlayout(2, 3, 'TileSpacing', 'compact', 'Padding', 'compact');
+
+axTilt = nexttile(tl_att, 1, [1 3]); hold(axTilt, 'on'); grid(axTilt, 'on');
+plot(axTilt, t_common, tilt_actual', 'Color', [0.45 0.68 0.88 alphaVal*2], 'HandleVisibility', 'off');
+mu_tilt = mean(tilt_actual, 1, 'omitnan');
+sig_tilt = std(tilt_actual, 0, 1, 'omitnan');
+plot(axTilt, t_common, mu_tilt + 3*sig_tilt, 'r--', 'LineWidth', 1.5, 'DisplayName', '+3\sigma');
+plot(axTilt, t_common, mu_tilt - 3*sig_tilt, 'r--', 'LineWidth', 1.5, 'DisplayName', '-3\sigma');
+plot(axTilt, t_common, tilt_target, 'k', 'LineWidth', 2, 'DisplayName', 'Target');
+title(axTilt, 'Tilt Angle from Vertical'); xlabel(axTilt, 'Time (s)'); ylabel(axTilt, 'Tilt (deg)');
+legend(axTilt, 'Location', 'best');
+
+rate_titles = {'Pitch Rate (X)', 'Yaw Rate (Y)', 'Roll Rate (Z)'};
+for c = 1:3
+    ax = nexttile(tl_att); hold(ax, 'on'); grid(ax, 'on');
+    data_block   = squeeze(actual_interp(:,:,rate_idx(c))) * (180/pi);
+    target_block = squeeze(target_interp(firstValid,:,rate_idx(c))) * (180/pi);
+    mu_val  = mean(data_block, 1, 'omitnan');
+    sig_val = std(data_block, 0, 1, 'omitnan');
+
+    plot(ax, t_common, data_block', 'Color', [0.45 0.68 0.88 alphaVal*2], 'HandleVisibility', 'off');
+    plot(ax, t_common, mu_val + 3*sig_val, 'r--', 'LineWidth', 1.5, 'DisplayName', '+3\sigma');
+    plot(ax, t_common, mu_val - 3*sig_val, 'r--', 'LineWidth', 1.5, 'DisplayName', '-3\sigma');
+    plot(ax, t_common, target_block, 'k', 'LineWidth', 2, 'DisplayName', 'Target');
+    title(ax, rate_titles{c}); xlabel(ax, 'Time (s)'); ylabel(ax, 'Rate (deg/s)');
 end
 
 %% 6. Landing Angular-Rate Distribution
@@ -191,6 +230,29 @@ nexttile; plotSensitivityScatter(Wind_Gain_all, RMSE_Wind_all, 'Wind Gain', 'Win
 nexttile; plotSensitivityScatter(RMSE_Wind_all, Pos_RMSE_total, 'Wind RMSE', 'Total Pos RMSE [m]', 'Position Error vs Wind RMSE');
 nexttile; plotSensitivityScatter(RMSE_Wind_all, Vel_RMSE_total, 'Wind RMSE', 'Total Vel RMSE [m/s]', 'Velocity Error vs Wind RMSE');
 
+%% 10. Inertia Diagnostics
+Attitude_RMSE_total = sqrt(sum(real(RMSE_Controls_all(1:3,:)).^2, 1))' * (180/pi);
+inertiaColor = [0.65 0.55 0.75];
+
+figure('Name', 'Inertia Diagnostics', 'Color', bkgColor, 'WindowStyle', 'docked');
+tiledlayout(2, 4, 'TileSpacing', 'compact', 'Padding', 'compact');
+
+inertia_vals = {J_Trans_Scale, J_Axial_Scale, J_Wobble_Coup, J_Trans_Coup};
+inertia_lbls = {'J Trans Scale', 'J Axial Scale', 'J Wobble Coup', 'J Trans Coup'};
+
+for k = 1:4
+    ax = nexttile;
+    plotSmartHistogram(ax, inertia_vals{k}, inertiaColor, inertia_lbls{k});
+    title(ax, inertia_lbls{k}); xlabel(ax, sprintf('%s (kg\\cdotm^2)', inertia_lbls{k}));
+    grid(ax, 'on'); legend(ax, 'show');
+end
+
+for k = 1:4
+    nexttile;
+    plotSensitivityScatter(inertia_vals{k}, Attitude_RMSE_total, inertia_lbls{k}, ...
+        'Attitude RMSE [deg]', sprintf('Attitude Error vs %s', inertia_lbls{k}));
+end
+
 end
 
 %% Local Helpers
@@ -219,28 +281,45 @@ end
 function plotSmartHistogram(ax, data, clr, name)
     data = data(isfinite(data));
     if isempty(data), return; end
-    
-    p98 = prctile(data, 98); 
-    p02 = prctile(data, 2);
-    iqr_val = iqr(data);
-    
-    % Clamp outliers into terminal bins
-    if iqr_val > 0
-        upper_bound = max(p98, median(data) + 2*iqr_val);
-        lower_bound = min(p02, median(data) - 2*iqr_val);
-        data(data > upper_bound) = upper_bound;
-        data(data < lower_bound) = lower_bound;
+    hold(ax, 'on');
+
+    % Bin the 2nd-98th percentile core at full resolution; collapse the
+    % tails into single labeled overflow/underflow bins instead of
+    % stretching the axis to fit a handful of outlier runs.
+    loB = prctile(data, 2);
+    hiB = prctile(data, 98);
+    if hiB - loB < eps
+        hiB = loB + max(abs(loB)*0.05, eps);
     end
-    
-    h = histogram(ax, data, 40, 'FaceColor', clr, 'FaceAlpha', 0.8, 'EdgeColor', 'k', 'DisplayName', name);
-    
-    % Dynamic Y-Axis scaling to counteract massive zero-error clusters
-    counts = h.Values;
-    if numel(counts) > 2
-        sorted_counts = sort(counts, 'descend');
-        if sorted_counts(1) > 3 * sorted_counts(2) && sorted_counts(2) > 0
-            ylim(ax, [0, sorted_counts(2) * 1.3]);
-        end
+
+    nBins = max(10, min(40, round(sqrt(numel(data)))));
+    edges = linspace(loB, hiB, nBins+1);
+    binW  = edges(2) - edges(1);
+    centers = edges(1:end-1) + binW/2;
+
+    counts    = histcounts(data, edges);
+    underflow = sum(data < loB);
+    overflow  = sum(data > hiB);
+
+    bar(ax, centers, counts, 1, 'FaceColor', clr, 'FaceAlpha', 0.85, 'EdgeColor', 'k', 'DisplayName', name);
+
+    if underflow > 0
+        bar(ax, loB - binW, underflow, binW, 'FaceColor', [0.4 0.4 0.4], 'FaceAlpha', 0.6, 'EdgeColor', 'k', 'HandleVisibility', 'off');
+        text(ax, loB - binW, underflow, num2str(underflow), 'HorizontalAlignment', 'center', 'VerticalAlignment', 'bottom', 'FontSize', 7);
+    end
+    if overflow > 0
+        bar(ax, hiB + binW, overflow, binW, 'FaceColor', [0.4 0.4 0.4], 'FaceAlpha', 0.6, 'EdgeColor', 'k', 'HandleVisibility', 'off');
+        text(ax, hiB + binW, overflow, num2str(overflow), 'HorizontalAlignment', 'center', 'VerticalAlignment', 'bottom', 'FontSize', 7);
+    end
+
+    % Log-scale the y-axis when one bin dwarfs the rest, so smaller bars
+    % stay visible instead of flattening to nothing next to the spike.
+    allCounts = [counts, underflow, overflow];
+    peak = max(allCounts);
+    rest = allCounts(allCounts < peak & allCounts > 0);
+    if ~isempty(rest) && peak > 4 * max(rest)
+        set(ax, 'YScale', 'log');
+        ylim(ax, [0.8, peak*1.3]);
     end
 end
 

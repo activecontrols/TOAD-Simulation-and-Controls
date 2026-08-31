@@ -99,7 +99,7 @@ J_tot = J_dry + J_lox + J_ipa + J_d;
 % EDF) (TODO: UPDATE for use with RCS)
 % Off center moments for Simulation
 thrustDir = [cos(theta)*sin(phi); -sin(theta); cos(theta)*cos(phi)];
-MB = zetaCross([0;0;-CGz] + TB_d)*TB + roll * thrustDir;
+MB = zetaCross([0;0;-CGz] + TB_d)*TB + [0; 0; roll]; % * thrustDir;
 
 % Dynamics
 qdot = 0.5 * HamiltonianProd(q) * [0; omegaB];
