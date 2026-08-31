@@ -13,8 +13,8 @@
 
 %% Configuration
 model_name = 'TOAD_Simulation';
-num_sims = 100;
-seed = int64(seconds(datetime('now','Timezone','UTC')-datetime('1970-01-01','Timezone','UTC')));
+num_sims = 14;
+seed = 1788146097;%int64(seconds(datetime('now','Timezone','UTC')-datetime('1970-01-01','Timezone','UTC')));
 
 clear simIn out
 
