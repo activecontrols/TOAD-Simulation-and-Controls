@@ -10,7 +10,7 @@ function [U_cmd, U_fb, X_err] = TOAD_TVLQI(GND, X_est, X_trg, U_ff, K, t, consta
         U_dist_filt = zeros(4,1);
         if GND == 1
             U_cmd = U_last;
-            U_fb = zeros(4,1);
+            U_fb = zeros(3,1);
             X_err = zeros(12,1);
             return;
         end
@@ -37,14 +37,16 @@ function [U_cmd, U_fb, X_err] = TOAD_TVLQI(GND, X_est, X_trg, U_ff, K, t, consta
                    X_est(8:10) - X_trg(8:10)];
 
     Delta_A = -K_trans * X_err_trans;
-    MaxAccelCorr = [3;3;5];
+    MaxAccelCorr = [1.5;1.5;2];
     Delta_A = max(min(Delta_A, MaxAccelCorr), -MaxAccelCorr);
 
     % Nominal NLP Acceleration
     Q_ref = X_trg(1:4);
+    Q_est = X_est(1:4);
     C_B2I_ref = quatRot(Q_ref)'; 
+    C_B2I_est = quatRot(Q_est)'; 
     T_B_ff = U_ff(3) * [cos(U_ff(1))*sin(U_ff(2)); -sin(U_ff(1)); cos(U_ff(1))*cos(U_ff(2))];
-    a_ff = (C_B2I_ref * T_B_ff) / Mass + g_vec; 
+    a_ff = (C_B2I_ref * T_B_ff) / Mass + g_vec;
 
     % Torque from LESO estimate — already available, no dependency on a_cmd
     [J_tot,lever_arm] = ComputeJtot(X_est(14), X_est(15), constantsTOAD);
@@ -68,23 +70,7 @@ function [U_cmd, U_fb, X_err] = TOAD_TVLQI(GND, X_est, X_trg, U_ff, K, t, consta
     U_dist(3) = ang_accel_dist(3);
     U_dist(1) = 1 * torque(1)/(lever_arm*U_cmd(3));
     U_dist(2) = 1 * torque(2)/(lever_arm*(1-U_cmd(1)^2/2)*U_cmd(3));
-    
-    % Construct the Thrust-to-Inertial Frame (C_T2I_cmd)
-    if norm_f > 1e-6
-        Z_t = f_req / norm_f;
-    else
-        Z_t = [0; 0; 1];
-    end
-    X_b_ref = C_B2I_ref(:, 1);
-    Y_t_unnorm = cross(Z_t, X_b_ref);
-    if norm(Y_t_unnorm) > 1e-6
-        Y_t = Y_t_unnorm / norm(Y_t_unnorm);
-    else
-        Y_t = [0; 1; 0];
-    end
-    X_t = cross(Y_t, Z_t);
-    C_T2I_cmd = [X_t, Y_t, Z_t]; 
-    
+
     % Construct the Thrust-to-Body Rotation Matrix (C_T2B)
     theta_eff = U_ff(1) - U_dist(1); 
     phi_eff   = U_ff(2) - U_dist(2);
@@ -99,6 +85,34 @@ function [U_cmd, U_fb, X_err] = TOAD_TVLQI(GND, X_est, X_trg, U_ff, K, t, consta
            
     C_T2B = R_y * R_x; 
     
+    % Construct the Thrust-to-Inertial Frame (C_T2I_cmd)
+    if norm_f > 1e-6
+        Z_t = f_req / norm_f;
+    else
+        Z_t = [0; 0; 1];
+    end
+
+    % Reference thrust-frame X axis corresponding to target body X axis
+    X_t_ref = C_B2I_ref * C_T2B(:,1);
+    
+    % Re-orthogonalize against requested thrust direction
+    X_t_ref = X_t_ref - dot(X_t_ref, Z_t) * Z_t;
+    
+    if norm(X_t_ref) > 1e-6
+        X_t_ref = X_t_ref / norm(X_t_ref);
+        Y_t = cross(Z_t, X_t_ref);
+        Y_t = Y_t / norm(Y_t);
+        X_t = cross(Y_t, Z_t);
+    else
+        % Fallback
+        Y_t = [0; 1; 0];
+        X_t = cross(Y_t, Z_t);
+        X_t = X_t / norm(X_t);
+        Y_t = cross(Z_t, X_t);
+    end
+    
+    C_T2I_cmd = [X_t, Y_t, Z_t];
+    
     % Apply Inverse Mapping to determine Commanded Body Attitude
     C_B2I_cmd = C_T2I_cmd * C_T2B'; 
     Q_cmd = DCM_Quat_Conversion(C_B2I_cmd);
@@ -111,9 +125,12 @@ function [U_cmd, U_fb, X_err] = TOAD_TVLQI(GND, X_est, X_trg, U_ff, K, t, consta
     if AttError(1) < 0
         AttError = -AttError;
     end
-
+    
+    % Frame correction for the angular rates. Need to be represented in the
+    % actual body frame not the target frame. UNTESTED FIX for now
+    omegaTRG = C_B2I_est' * C_B2I_ref * X_trg(11:13);
     X_err_rot = [2 * AttError(2:4);
-                 X_est(11:13) - X_trg(11:13)];
+                 X_est(11:13) - omegaTRG];
     Delta_u = -K_rot * X_err_rot;
 
     
@@ -122,7 +139,8 @@ function [U_cmd, U_fb, X_err] = TOAD_TVLQI(GND, X_est, X_trg, U_ff, K, t, consta
     U_cmd(2) = U_ff(2) + Delta_u(2) - U_dist(2);               
     U_cmd(4) = U_ff(4) + Delta_u(3) - U_dist(3); 
 
-    U_fb = [Delta_u(1); Delta_u(2); U_cmd(3) - U_ff(3); Delta_u(3)];
+    % U_fb = [Delta_u(1); Delta_u(2); U_cmd(3) - U_ff(3); Delta_u(3)];
+    U_fb = Delta_A;
     X_err = [X_err_rot; X_err_trans]; 
 
     thrustMax = constantsTOAD.MaxThrust;
