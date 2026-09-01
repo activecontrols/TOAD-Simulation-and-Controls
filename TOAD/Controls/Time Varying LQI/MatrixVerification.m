@@ -2,7 +2,7 @@
 if ~exist("constantsTOAD", "var")
     LoadTOADSim;
 end
-trajectoryName = "Circle_v1.csv";
+trajectoryName = "Backflip_v1.csv";
 % ReadGains now returns the cascaded gain set (4 outputs), not the old
 % single [K_List, ~] pair.
 [K_trans_List, K_rot_List, LA_List, LT_List] = ReadGains(trajectoryName);

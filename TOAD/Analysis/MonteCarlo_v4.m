@@ -13,7 +13,7 @@
 
 %% Configuration
 model_name = 'TOAD_Simulation';
-num_sims = 100;
+num_sims = 40;
 seed = 1788146097;%int64(seconds(datetime('now','Timezone','UTC')-datetime('1970-01-01','Timezone','UTC')));
 
 clear simIn out
@@ -162,7 +162,7 @@ end
 
 %% Execute Parallel Simulations
 disp('Starting Parallel Monte Carlo Trajectory Simulations (parsim)...');
-out = parsim(simIn, 'ShowProgress', 'on', 'UseFastRestart', 'on');
+out = sim(simIn, 'ShowProgress', 'on', 'UseFastRestart', 'on');
 
 %% Extract Metrics and Interpolate Trajectories
 disp('Simulations complete. Extracting and interpolating trajectories...');

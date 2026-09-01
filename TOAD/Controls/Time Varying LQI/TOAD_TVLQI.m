@@ -37,7 +37,7 @@ function [U_cmd, U_fb, X_err] = TOAD_TVLQI(GND, X_est, X_trg, U_ff, K, t, consta
                    X_est(8:10) - X_trg(8:10)];
 
     Delta_A = -K_trans * X_err_trans;
-    MaxAccelCorr = [1.5;1.5;2];
+    MaxAccelCorr = [1.5;1.5;4];
     Delta_A = max(min(Delta_A, MaxAccelCorr), -MaxAccelCorr);
 
     % Nominal NLP Acceleration
