@@ -149,9 +149,9 @@ opti.subject_to(-max_thrust_rate*dt <= dU_phys(3,:) <= max_thrust_rate*dt);
 opti.subject_to(-max_roll_rate*dt <= dU_phys(4,:) <= max_roll_rate*dt);
 
 %% Trajectory 
-N_ascent   = round(0.05*N);
+N_ascent   = round(0.15*N);
 N_flip     = round(0.5*N);
-N_approach = round(0.95*N);
+N_approach = round(0.85*N);
 
 % Ascent
     opti.subject_to(X(1:4, N_ascent) == q0)
@@ -176,7 +176,7 @@ N_approach = round(0.95*N);
     opti.subject_to(X(1:4, N_approach) == q0)
     pos_desc = X(5:7, N_approach:end);
     vel_desc = X(8:10, N_approach:end);
-    opti.subject_to( (pos_desc(1,:) - r_f(1)).^2 + (pos_desc(2,:) - r_f(2)).^2 <= 1^2 );
+    opti.subject_to( (pos_desc(1,:) - r_f(1)).^2 + (pos_desc(2,:) - r_f(2)).^2 <= 0.5^2 );
     opti.subject_to( vel_desc(1,:).^2 + vel_desc(2,:).^2 <= 1^2 );
     opti.subject_to(-2 <= vel_desc(3,:) <= 2)
         
@@ -224,10 +224,10 @@ J_marginRoll = sum((Uhat(4, :) / roll_bound).^2);
 
 %% Main costs
 w_crit         = 1;
-w_rate_flip    = 2;
-w_marginGimbal = 1e-2;
+w_rate_flip    = 3e-2;
+w_marginGimbal = 5e-1;
 w_marginThrust = 1e-4;
-w_marginRoll   = 1e-2;
+w_marginRoll   = 5e-0;
 
 opti.minimize( ...
       w_crit         * J_critical      ...
@@ -236,37 +236,10 @@ opti.minimize( ...
     + w_marginThrust * J_marginThrust  ...
     + w_marginRoll   * J_marginRoll);
 
-fprintf('Starting Coarse Solve!\n');
-p_opts_coarse = struct('expand', true);
-s_opts_coarse = struct('max_iter', 1500, 'tol', 5e-3, 'constr_viol_tol', 1e-2);
-opti.solver('ipopt', p_opts_coarse, s_opts_coarse);
-
-try
-    sol_coarse = opti.solve();
-    fprintf('Coarse solve successful!\n');
-    
-    % Extract values from successful solve
-    x_warm   = sol_coarse.value(opti.x);
-    lam_warm = sol_coarse.value(opti.lam_g);
-    
-catch
-    fprintf('Coarse solve failed to converge. Extracting debug values...\n');
-    
-    % Extract values from the last solver iteration using opti.debug
-    x_warm   = opti.debug.value(opti.x);
-    lam_warm = opti.debug.value(opti.lam_g);
-end
-
-% Set the initial guess for the next (fine) solve
-opti.set_initial(opti.x, x_warm);
-opti.set_initial(opti.lam_g, lam_warm);
-
-% Stage B: full-precision solve, warm-started
+fprintf('Starting Solve!\n');
 p_opts = struct('expand', true);
-s_opts = struct('max_iter', 5000, 'tol', 1e-4, 'constr_viol_tol', 1e-3, ...
-                 'warm_start_init_point', 'yes', 'mu_strategy', 'adaptive');
+s_opts = struct('max_iter', 1500, 'tol', 5e-3, 'constr_viol_tol', 1e-2);
 opti.solver('ipopt', p_opts, s_opts);
-fprintf('Starting Full Solve!\n');
 
 %% Solve
 try
