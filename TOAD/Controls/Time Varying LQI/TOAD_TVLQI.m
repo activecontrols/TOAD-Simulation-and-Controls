@@ -10,7 +10,7 @@ function [U_cmd, U_fb, X_err] = TOAD_TVLQI(GND, X_est, X_trg, U_ff, K, t, consta
         U_dist_filt = zeros(4,1);
         if GND == 1
             U_cmd = U_last;
-            U_fb = zeros(3,1);
+            U_fb = zeros(4,1);
             X_err = zeros(12,1);
             return;
         end
@@ -139,8 +139,8 @@ function [U_cmd, U_fb, X_err] = TOAD_TVLQI(GND, X_est, X_trg, U_ff, K, t, consta
     U_cmd(2) = U_ff(2) + Delta_u(2) - U_dist(2);               
     U_cmd(4) = U_ff(4) + Delta_u(3) - U_dist(3); 
 
-    % U_fb = [Delta_u(1); Delta_u(2); U_cmd(3) - U_ff(3); Delta_u(3)];
-    U_fb = Delta_A;
+    U_fb = [Delta_u(1); Delta_u(2); U_cmd(3) - U_ff(3); Delta_u(3)];
+    %U_fb = Delta_A;
     X_err = [X_err_rot; X_err_trans]; 
 
     thrustMax = constantsTOAD.MaxThrust;

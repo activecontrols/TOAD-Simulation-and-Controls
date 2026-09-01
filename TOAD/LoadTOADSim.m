@@ -68,7 +68,7 @@ constantsTOAD.R_trans = eye(3) .* (1 / max_a_trans^2);
 constantsTOAD.OmegaThr = 2.25;
 
 % Inner Loop
-max_x_rot = [0.27, 0.27, 0.07, 2, 2, 20];
+max_x_rot = [0.27, 0.27, 0.1, 2, 2, 20];
 constantsTOAD.Q_rot = diag(1 ./ max_x_rot.^2);
 constantsTOAD.R_rot = diag([8, 8, 1/3^2]);
 constantsTOAD.OmegaAtt = 0.9;

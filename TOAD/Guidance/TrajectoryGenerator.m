@@ -105,7 +105,7 @@ opti.subject_to(sum(X(1:4, :).^2, 1) == 1.00);
 MaxThrust_val = constantsTOAD.MaxThrust;
 max_gimbal_rate = deg2rad(30);   % deg/s, tune to lin act spec.
 max_thrust_rate = 1000;          % N/s
-max_torque_rate = 6;
+max_roll_rate = 6;
 
 % Initial state (On the pad)
 q0 = [1; 0; 0; 0];               % Upright
@@ -139,14 +139,14 @@ opti.subject_to(-1 <= X(7, :) <= 150);
     opti.subject_to((0.25 + thrust_margin) * MaxThrust_val <= U(3,:) <= (1 - thrust_margin) * MaxThrust_val);
     opti.subject_to(-(1 - gimbal_margin) * pi/15 <= U(1,:) <= (1 - gimbal_margin) * pi/15);
     opti.subject_to(-(1 - gimbal_margin) * pi/15 <= U(2,:) <= (1 - gimbal_margin) * pi/15);
-    opti.subject_to(-(1 - thrust_margin) * 7 <= U(4,:) <= (1 - thrust_margin) * 7);
+    opti.subject_to(-(1 - thrust_margin) * max_roll_rate <= U(4,:) <= (1 - thrust_margin) * max_roll_rate);
 
 %% Rate constraints (physical rate limits — keep on U, not Uhat)
 dU_phys = U(:, 2:end) - U(:, 1:end-1);
 opti.subject_to(-max_gimbal_rate*dt <= dU_phys(1,:) <= max_gimbal_rate*dt);
 opti.subject_to(-max_gimbal_rate*dt <= dU_phys(2,:) <= max_gimbal_rate*dt);
 opti.subject_to(-max_thrust_rate*dt <= dU_phys(3,:) <= max_thrust_rate*dt);
-opti.subject_to(-max_torque_rate*dt <= dU_phys(4,:) <= max_torque_rate*dt);
+opti.subject_to(-max_roll_rate*dt <= dU_phys(4,:) <= max_roll_rate*dt);
 
 %% Trajectory 
 N_ascent   = round(0.05*N);
@@ -219,7 +219,7 @@ Tmid_hat  = (Tmin_hat + Tmax_hat) / 2;
 Thalf_hat = (Tmax_hat - Tmin_hat) / 2;
 J_marginThrust = sum(((Uhat(3, :) - Tmid_hat) / Thalf_hat).^2);
 
-roll_bound   = (1 - thrust_margin) * 7 / Roll_c;
+roll_bound   = (1 - thrust_margin) * max_roll_rate / Roll_c;
 J_marginRoll = sum((Uhat(4, :) / roll_bound).^2);
 
 %% Main costs

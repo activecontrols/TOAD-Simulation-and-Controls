@@ -148,9 +148,9 @@ for n = N:-1:2
                 zeros(3), zeros(3), eye(3)];
     C_LESO_T = [eye(6), zeros(6,3)];
     
-    GainScaling = -abs(u_n1(1:2)) / deg2rad(15) + 1;
+    GainScaling = -abs(max(u_n1(1:2))) / deg2rad(15) + 1;
     GainScaling = min(max(GainScaling, 0), 1); 
-    omega_att_eff = norm(omega_att * GainScaling);
+    omega_att_eff = (omega_att * GainScaling);
 
     % Pole Placement
     s_poles_att = -omega_att_eff * (1 - (0:5)*0.05);
