@@ -65,13 +65,13 @@ max_x_trans = [2.0, 2.0, 2.0, 50, 50, 50];
 constantsTOAD.Q_trans = diag(1 ./ max_x_trans.^2);
 max_a_trans = 1.2; 
 constantsTOAD.R_trans = eye(3) .* (1 / max_a_trans^2);
-constantsTOAD.OmegaThr = 0.6;
+constantsTOAD.OmegaThr = 1.0;
 
 % Inner Loop
-max_x_rot = [0.25, 0.25, 0.1, 1, 1, 4];
+max_x_rot = [0.25, 0.25, 0.1, 1, 1, 2];
 constantsTOAD.Q_rot = diag(1 ./ max_x_rot.^2);
 constantsTOAD.R_rot = diag([6, 6, 1/3^2]);
-constantsTOAD.OmegaAtt = 0.85;
+constantsTOAD.OmegaAtt = 0.75;
 
 % Pick a trajectory filename 
 try 

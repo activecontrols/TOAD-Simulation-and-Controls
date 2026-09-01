@@ -10,7 +10,7 @@ CasADiDynamics;
 if ~exist("constantsTOAD")
     LoadTOADSim;
 end
-Filename = "Backflip_v1";
+Filename = "Backflip_v2";
 SaveFile = true;
 import casadi.*
 opti = casadi.Opti();
@@ -105,7 +105,7 @@ opti.subject_to(sum(X(1:4, :).^2, 1) == 1.00);
 MaxThrust_val = constantsTOAD.MaxThrust;
 max_gimbal_rate = deg2rad(30);   % deg/s, tune to lin act spec.
 max_thrust_rate = 1000;          % N/s
-max_roll_rate = 6;
+max_roll_rate = 4;
 
 % Initial state (On the pad)
 q0 = [1; 0; 0; 0];               % Upright
@@ -224,9 +224,9 @@ J_marginRoll = sum((Uhat(4, :) / roll_bound).^2);
 
 %% Main costs
 w_crit         = 1;
-w_rate_flip    = 1e-2;
+w_rate_flip    = 2;
 w_marginGimbal = 1e-2;
-w_marginThrust = 1e-2;
+w_marginThrust = 1e-4;
 w_marginRoll   = 1e-2;
 
 opti.minimize( ...

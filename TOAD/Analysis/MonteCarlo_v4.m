@@ -14,7 +14,7 @@
 %% Configuration
 model_name = 'TOAD_Simulation';
 num_sims = 50;
-seed = int64(seconds(datetime('now','Timezone','UTC')-datetime('1970-01-01','Timezone','UTC')));
+seed = 1788146097; % int64(seconds(datetime('now','Timezone','UTC')-datetime('1970-01-01','Timezone','UTC')));
 
 clear simIn out
 
@@ -56,7 +56,7 @@ RMSE_Wind_all     = zeros(1, num_sims);
 MaxLESODist_all   = zeros(6, num_sims);
 
 %% Preallocate interpolated state histories
-t_sim = 50;
+t_sim = 60;
 t_common = (0:0.1:t_sim)';
 
 pos_all  = nan(num_sims, length(t_common), 3);

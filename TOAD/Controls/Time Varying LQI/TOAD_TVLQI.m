@@ -128,7 +128,16 @@ function [U_cmd, U_fb, X_err] = TOAD_TVLQI(GND, X_est, X_trg, U_ff, K, t, consta
     % Frame correction for the angular rates. Need to be represented in the
     % actual body frame not the target frame. UNTESTED FIX for now
     omegaTRG = C_B2I_est' * C_B2I_ref * X_trg(11:13);
-    X_err_rot = [2 * AttError(2:4);
+
+    %% Test implementation
+    n = norm(AttError(2:4));
+    if n > 1e-6
+        Axis = AttError(2:4) / n;
+    else
+        Axis = zeros(3,1);
+    end
+    ThetaErr = 2 * atan2(norm(AttError(2:4)), AttError(1)) * Axis;
+    X_err_rot = [ThetaErr;
                  X_est(11:13) - omegaTRG];
     Delta_u = -K_rot * X_err_rot;
 

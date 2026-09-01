@@ -64,7 +64,6 @@ matlabFunction(B, 'Vars', {xn, u},'File', './Controls/Time Varying LQI/JacobianU
 omega_att = constantsTOAD.OmegaAtt;
 omega_thr = constantsTOAD.OmegaThr;
 
-
 N = size(Trajectory.x, 2);
 K_trans_List = zeros(N, 3, 6);
 K_rot_List   = zeros(N, 3, 6);
@@ -148,9 +147,10 @@ for n = N:-1:2
                 zeros(3), zeros(3), eye(3)];
     C_LESO_T = [eye(6), zeros(6,3)];
     
-    GainScaling = -max(abs(u_n1(1:2))) / deg2rad(12) + 1;
-    GainScaling = min(max(GainScaling, 0.03), 1); 
-    omega_att_eff = (omega_att * GainScaling);
+    % Gain schedule 
+    GainScalingAtt = -max(abs(u_n1(1:2))) / deg2rad(12) + 1;
+    GainScalingAtt = min(max(GainScalingAtt, 0.03), 1); 
+    omega_att_eff = (omega_att * GainScalingAtt);
 
     % Pole Placement
     s_poles_att = -omega_att_eff * (1 - (0:5)*0.05);
