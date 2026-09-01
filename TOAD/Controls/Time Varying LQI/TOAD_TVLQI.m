@@ -66,7 +66,7 @@ function [U_cmd, U_fb, X_err] = TOAD_TVLQI(GND, X_est, X_trg, U_ff, K, t, consta
 
     %% Disturbance tracking
     U_dist = zeros(4,1);
-    U_dist(3) = ang_accel_dist(3);
+    U_dist(3) = torque(3);
     U_dist(1) = -1 * torque(1)/(lever_arm*U_cmd(3));
     U_dist(2) = -1 * torque(2)/(lever_arm*(1-U_cmd(1)^2/2)*U_cmd(3));
 

@@ -37,7 +37,7 @@ function U_dist = LESO_Attitude(GND, X_est, X_trg, U_trg, L_Att, constantsTOAD, 
     anglAccel = (cross(lever_arm_vec, ThrustVec_B) + [0; 0; U_trg(4)])' / J_tot;
 
     % Substract gyroscopic coupling
-    gyroCoupling = J_tot^(-1) * cross(y_meas, J_tot * y_meas);
+    gyroCoupling = J_tot^(-1) * cross(xhat(1:3), J_tot * xhat(1:3));
 
     % Discrete STMs
     A_LESO_Thr = [eye(3), eye(3)*dT;
