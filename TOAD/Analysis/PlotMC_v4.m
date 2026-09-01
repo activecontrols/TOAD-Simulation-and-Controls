@@ -17,7 +17,7 @@ if nargin < 1 || isempty(filename)
     reqVars = {'out', 't_common', 'Lever_Radial', 'Lever_Axial', ...
                'J_Trans_Scale', 'J_Axial_Scale', 'J_Wobble_Coup', 'J_Trans_Coup', ...
                'Wind_Gain_all', 'Wind_Covar_all', 'RMSE_Wind_all', ...
-               'RMSE_Controls_all', 'RMSE_Filter_all'};
+               'RMSE_Controls_all', 'RMSE_Filter_all', 'MaxLESODist_all'};
     for i = 1:numel(reqVars)
         try evalin('base', [reqVars{i} ';']); catch, end
         eval([reqVars{i} ' = evalin(''base'', ''' reqVars{i} ''');']);
@@ -251,6 +251,31 @@ for k = 1:4
     nexttile;
     plotSensitivityScatter(inertia_vals{k}, Attitude_RMSE_total, inertia_lbls{k}, ...
         'Attitude RMSE [deg]', sprintf('Attitude Error vs %s', inertia_lbls{k}));
+end
+
+%% 11. LESO Disturbance Sensitivities
+if exist('MaxLESODist_all', 'var') && size(MaxLESODist_all, 1) == 6
+    % Figure 1: Acceleration LESO vs Pos RMSE
+    figure('Name', 'Acceleration LESO Sensitivities', 'Color', bkgColor, 'WindowStyle', 'docked');
+    tiledlayout(1, 3, 'TileSpacing', 'compact');
+    accel_lbls = {'Accel X', 'Accel Y', 'Accel Z'};
+    for c = 1:3
+        nexttile;
+        plotSensitivityScatter(MaxLESODist_all(c, :), Pos_RMSE_total, ...
+            sprintf('Max %s', accel_lbls{c}), 'Total Pos RMSE [m]', ...
+            sprintf('Pos RMSE vs %s', accel_lbls{c}));
+    end
+
+    % Figure 2: Attitude LESO vs Pos RMSE
+    figure('Name', 'Attitude LESO Sensitivities', 'Color', bkgColor, 'WindowStyle', 'docked');
+    tiledlayout(1, 3, 'TileSpacing', 'compact');
+    att_lbls = {'Attitude Pitch', 'Attitude Yaw', 'Attitude Roll'};
+    for c = 1:3
+        nexttile;
+        plotSensitivityScatter(MaxLESODist_all(c+3, :), Pos_RMSE_total, ...
+            sprintf('Max %s', att_lbls{c}), 'Total Pos RMSE [m]', ...
+            sprintf('Pos RMSE vs %s', att_lbls{c}));
+    end
 end
 
 end

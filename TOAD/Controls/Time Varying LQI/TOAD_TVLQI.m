@@ -1,13 +1,12 @@
 function [U_cmd, U_fb, X_err] = TOAD_TVLQI(GND, X_est, X_trg, U_ff, K, t, constantsTOAD, Dist_LESO)
     % TOAD_TVLQI Trim Controller
     
-    persistent t_last U_last U_dist_filt
+    persistent t_last U_last
     
     % Reset persistent variables if on the ground
     if isempty(t_last) || GND == 1
         t_last = t;
         U_last = [0; 0; constantsTOAD.m_wet * constantsTOAD.g; 0];
-        U_dist_filt = zeros(4,1);
         if GND == 1
             U_cmd = U_last;
             U_fb = zeros(4,1);
@@ -68,8 +67,8 @@ function [U_cmd, U_fb, X_err] = TOAD_TVLQI(GND, X_est, X_trg, U_ff, K, t, consta
     %% Disturbance tracking
     U_dist = zeros(4,1);
     U_dist(3) = ang_accel_dist(3);
-    U_dist(1) = 1 * torque(1)/(lever_arm*U_cmd(3));
-    U_dist(2) = 1 * torque(2)/(lever_arm*(1-U_cmd(1)^2/2)*U_cmd(3));
+    U_dist(1) = -1 * torque(1)/(lever_arm*U_cmd(3));
+    U_dist(2) = -1 * torque(2)/(lever_arm*(1-U_cmd(1)^2/2)*U_cmd(3));
 
     % Construct the Thrust-to-Body Rotation Matrix (C_T2B)
     theta_eff = U_ff(1) - U_dist(1); 

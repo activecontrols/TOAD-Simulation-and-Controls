@@ -13,7 +13,7 @@
 
 %% Configuration
 model_name = 'TOAD_Simulation';
-num_sims = 100;
+num_sims = 50;
 seed = int64(seconds(datetime('now','Timezone','UTC')-datetime('1970-01-01','Timezone','UTC')));
 
 clear simIn out
@@ -53,6 +53,7 @@ Wind_Covar_vals = cell(1, num_sims);
 RMSE_Controls_all = zeros(12, num_sims);
 RMSE_Filter_all   = zeros(3, num_sims);
 RMSE_Wind_all     = zeros(1, num_sims);
+MaxLESODist_all   = zeros(6, num_sims);
 
 %% Preallocate interpolated state histories
 t_sim = 50;
@@ -141,7 +142,8 @@ for i = 1:num_sims
         'TOAD_Simulation/state_log', 'Commented', 'off');
     simIn(i) = simIn(i).setBlockParameter( ...
         'TOAD_Simulation/state_log', 'SampleTime', '0.5');
-
+    simIn(i) = simIn(i).setBlockParameter( ...
+        'TOAD_Simulation/Controller & LESOs/MaxLESODist', 'Commented', 'off');
     simIn(i) = simIn(i).setBlockParameter( ...
         'TOAD_Simulation/target_pos_log', 'Commented', 'off');
     simIn(i) = simIn(i).setBlockParameter( ...
@@ -179,6 +181,7 @@ for i = 1:num_sims
         % channels, combine them into one RMS wind-error magnitude.
         wind_sse = out(i).SSE_Wind(:);
         RMSE_Wind_all(i) = sqrt(sum(wind_sse) / t_sim);
+       MaxLESODist_all(:, i) = out(i).MaxLESODist.Data(:);
 
         % Actual state
         ts_state = out(i).state_log;

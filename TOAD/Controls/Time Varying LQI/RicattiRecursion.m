@@ -136,7 +136,7 @@ for n = N:-1:2
     P_rot   = Q_rot + A_rot_d'*P_rot*A_rot_d - A_rot_d'*P_rot*B_rot_d * K_rot;
     
     % LESO Scheduler
-    dT_LESO = 1/1000;
+    dT_LESO = 1/500;
     
     % Attitude LESO 
     A_LESO_A = [eye(3), eye(3)*dT_LESO; zeros(3,3), eye(3)];
@@ -148,8 +148,8 @@ for n = N:-1:2
                 zeros(3), zeros(3), eye(3)];
     C_LESO_T = [eye(6), zeros(6,3)];
     
-    GainScaling = -abs(max(u_n1(1:2))) / deg2rad(15) + 1;
-    GainScaling = min(max(GainScaling, 0), 1); 
+    GainScaling = -max(abs(u_n1(1:2))) / deg2rad(12) + 1;
+    GainScaling = min(max(GainScaling, 0.03), 1); 
     omega_att_eff = (omega_att * GainScaling);
 
     % Pole Placement

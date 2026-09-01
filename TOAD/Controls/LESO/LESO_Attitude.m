@@ -33,8 +33,8 @@ function U_dist = LESO_Attitude(GND, X_est, X_trg, U_trg, L_Att, constantsTOAD, 
 
     % Compute inertia
     [J_tot,lever_arm]  = ComputeJtot(X_est(14), X_est(15), constantsTOAD);
-    lever_arm_vec = [0;0;lever_arm];
-    anglAccel = cross(lever_arm_vec, ThrustVec_B)' / J_tot;
+    lever_arm_vec = [0;0;-lever_arm];
+    anglAccel = (cross(lever_arm_vec, ThrustVec_B) + [0; 0; U_trg(4)])' / J_tot;
 
     % Substract gyroscopic coupling
     gyroCoupling = J_tot^(-1) * cross(y_meas, J_tot * y_meas);
