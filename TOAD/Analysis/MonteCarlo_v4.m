@@ -13,7 +13,7 @@
 
 %% Configuration
 model_name = 'TOAD_Simulation';
-num_sims = 50;
+num_sims = 400;
 seed = 1788146097; % int64(seconds(datetime('now','Timezone','UTC')-datetime('1970-01-01','Timezone','UTC')));
 
 clear simIn out
@@ -54,7 +54,6 @@ RMSE_Controls_all = zeros(12, num_sims);
 RMSE_Filter_all   = zeros(3, num_sims);
 RMSE_Wind_all     = zeros(1, num_sims);
 MaxLESODist_all   = zeros(6, num_sims);
-MaxSpectralRad_all = zeros(2, num_sims);
 
 %% Preallocate interpolated state histories
 t_sim = 60;
@@ -63,7 +62,6 @@ t_common = (0:0.1:t_sim)';
 pos_all  = nan(num_sims, length(t_common), 3);
 vel_all  = nan(num_sims, length(t_common), 3);
 quat_all = nan(num_sims, length(t_common), 4);
-specrad_all = nan(num_sims, length(t_common), 2);
 
 % The target is now a full-state trajectory. Its width is determined after
 % parsim from the actual target logger rather than assuming a legacy
@@ -150,10 +148,6 @@ for i = 1:num_sims
         'TOAD_Simulation/target_pos_log', 'Commented', 'off');
     simIn(i) = simIn(i).setBlockParameter( ...
         'TOAD_Simulation/target_pos_log', 'SampleTime', '0.5');
-    simIn(i) = simIn(i).setBlockParameter( ...
-        'TOAD_Simulation/Controller & LESOs/SpecRad_log', 'Commented', 'off');
-    simIn(i) = simIn(i).setBlockParameter( ...
-        'TOAD_Simulation/Controller & LESOs/SpecRad_log', 'SampleTime', '0.05');
 
     % Disable unused logs to reduce data movement / RAM use.
     simIn(i) = simIn(i).setBlockParameter( ...
@@ -170,7 +164,7 @@ end
 
 %% Execute Parallel Simulations
 disp('Starting Parallel Monte Carlo Trajectory Simulations (parsim)...');
-out = sim(simIn, 'ShowProgress', 'on', 'UseFastRestart', 'on');
+out = parsim(simIn, 'ShowProgress', 'on', 'UseFastRestart', 'on');
 
 %% Extract Metrics and Interpolate Trajectories
 disp('Simulations complete. Extracting and interpolating trajectories...');
@@ -187,8 +181,7 @@ for i = 1:num_sims
         % channels, combine them into one RMS wind-error magnitude.
         wind_sse = out(i).SSE_Wind(:);
         RMSE_Wind_all(i) = sqrt(sum(wind_sse) / t_sim);
-        MaxLESODist_all(:, i) = out(i).MaxLESODist.Data(:);
-        MaxSpectralRad_all(:, i) = out(i).MaxSpectralRad(:);
+       MaxLESODist_all(:, i) = out(i).MaxLESODist.Data(:);
 
         % Actual state
         ts_state = out(i).state_log;
@@ -207,15 +200,6 @@ for i = 1:num_sims
         quat_raw = data_raw(:, 1:4);
         pos_raw  = data_raw(:, 5:7);
         vel_raw  = data_raw(:, 8:10);
-
-        ts_specrad = out(i).SpecRad_log;
-        t_sr = ts_specrad.Time;
-        sr_raw = squeeze(ts_specrad.Data);
-        if size(sr_raw,1) ~= length(t_sr), sr_raw = sr_raw'; end
-        for dim = 1:2
-            specrad_all(i,:,dim) = interp1(t_sr, sr_raw(:,dim), ...
-                t_common, 'linear', 'extrap');
-        end
 
         for dim = 1:3
             pos_all(i,:,dim) = interp1(t_raw, pos_raw(:,dim), ...
@@ -259,7 +243,6 @@ for i = 1:num_sims
         RMSE_Controls_all(:, i) = NaN;
         RMSE_Filter_all(:, i)   = NaN;
         RMSE_Wind_all(:, i)     = NaN;
-        MaxSpectralRad_all(:, i) = NaN;
     end
 end
 
