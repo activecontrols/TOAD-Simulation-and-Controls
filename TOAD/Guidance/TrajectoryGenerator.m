@@ -10,7 +10,7 @@ CasADiDynamics;
 if ~exist("constantsTOAD")
     LoadTOADSim;
 end
-Filename = "Backflip_v1";
+Filename = "Backflip_v2";
 SaveFile = true;
 import casadi.*
 opti = casadi.Opti();
@@ -149,16 +149,16 @@ opti.subject_to(-max_thrust_rate*dt <= dU_phys(3,:) <= max_thrust_rate*dt);
 opti.subject_to(-max_roll_rate*dt <= dU_phys(4,:) <= max_roll_rate*dt);
 
 %% Trajectory 
-N_ascent   = round(0.2*N);
+N_ascent   = round(0.15*N);
 N_flip     = round(0.5*N);
-N_approach = round(0.7*N);
+N_approach = round(0.85*N);
 
 % Ascent
-    % opti.subject_to(X(1:4, N_ascent) == q0)
-    pos_desc = X(5:7, 1:N_ascent);
-    vel_desc = X(8:10, 1:N_ascent);
-    opti.subject_to(pos_desc(1,:).^2 + pos_desc(2,:).^2 <= (pos_desc(3,:) / tan(deg2rad(15))).^2 + 0.5);
-    % opti.subject_to(vel_desc(1,:).^2 + vel_desc(2,:).^2 <= 1^2);
+    opti.subject_to(X(1:4, N_ascent) == q0)
+    pos_desc = X(5:6, 1:N_ascent);
+    vel_desc = X(8:9, 1:N_ascent);
+    opti.subject_to(pos_desc(1,:).^2 + pos_desc(2,:).^2 <= 1^2);
+    opti.subject_to(vel_desc(1,:).^2 + vel_desc(2,:).^2 <= 1^2);
     
 % Flip Maneuver
     theta_tol = deg2rad(25); % allow 15 degrees of rotational slack
@@ -173,12 +173,12 @@ N_approach = round(0.7*N);
     opti.subject_to(X(7, N_flip) >= 40);
     
 % Descent 
-    % opti.subject_to(X(1:4, N_approach) == q0)
+    opti.subject_to(X(1:4, N_approach) == q0)
     pos_desc = X(5:7, N_approach:end);
     vel_desc = X(8:10, N_approach:end);
-    opti.subject_to((pos_desc(1,:) - r_f(1)).^2 + (pos_desc(2,:) - r_f(2)).^2 <= ((pos_desc(3,:) - r_f(3)) / tan(deg2rad(15))).^2 + 0.5);
-    % pti.subject_to( vel_desc(1,:).^2 + vel_desc(2,:).^2 <= 1^2 );
-    % opti.subject_to(-2 <= vel_desc(3,:) <= 2)
+    opti.subject_to( (pos_desc(1,:) - r_f(1)).^2 + (pos_desc(2,:) - r_f(2)).^2 <= 0.5^2 );
+    opti.subject_to( vel_desc(1,:).^2 + vel_desc(2,:).^2 <= 1^2 );
+    opti.subject_to(-2 <= vel_desc(3,:) <= 2)
         
 %% Initial Guess
 % Linearly interpolate positions from start to end
@@ -221,7 +221,6 @@ J_marginThrust = sum(((Uhat(3, :) - Tmid_hat) / Thalf_hat).^2);
 
 roll_bound   = (1 - thrust_margin) * max_roll_rate / Roll_c;
 J_marginRoll = sum((Uhat(4, :) / roll_bound).^2);
-J_time =T_total;
 
 %% Main costs
 w_crit         = 1;
@@ -229,15 +228,13 @@ w_rate_flip    = 3e-2;
 w_marginGimbal = 5e-1;
 w_marginThrust = 1e-4;
 w_marginRoll   = 5e-0;
-w_time         = 1e-2;
 
 opti.minimize( ...
       w_crit         * J_critical      ...
     + w_rate_flip    * J_rate_flip     ...
     + w_marginGimbal * J_marginGimbal  ...
     + w_marginThrust * J_marginThrust  ...
-    + w_marginRoll   * J_marginRoll    ...
-    + w_time         * J_time);
+    + w_marginRoll   * J_marginRoll);
 
 fprintf('Starting Solve!\n');
 p_opts = struct('expand', true);

@@ -21,7 +21,6 @@ assert(size(x, 2) == N, ...
 A_fcn = str2func('JacobianX');
 B_fcn = str2func('JacobianU');
 
-
 %% Reference (single endpoint) linearization + discretization
 % Sanity check only -- the per-step spectral radius below is the maneuver-wide check.
 x_n  = x(:, end);

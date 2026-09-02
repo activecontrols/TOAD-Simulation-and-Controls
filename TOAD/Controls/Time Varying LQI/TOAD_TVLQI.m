@@ -1,16 +1,15 @@
-function [U_cmd, SpecRad, X_err] = TOAD_TVLQI(GND, X_est, X_trg, U_ff, K, t, constantsTOAD, Dist_LESO)
+function [U_cmd, U_fb, X_err] = TOAD_TVLQI(GND, X_est, X_trg, U_ff, K, t, constantsTOAD, Dist_LESO)
     % TOAD_TVLQI Trim Controller
     
-    persistent t_last U_last LastSpecRad
+    persistent t_last U_last
     
     % Reset persistent variables if on the ground
     if isempty(t_last) || GND == 1
         t_last = t;
         U_last = [0; 0; constantsTOAD.m_wet * constantsTOAD.g; 0];
-        LastSpecRad = 0.99 * ones(2,1);
         if GND == 1
             U_cmd = U_last;
-            SpecRad = 0.99 * ones(2,1);
+            U_fb = zeros(4,1);
             X_err = zeros(12,1);
             return;
         end
@@ -148,50 +147,8 @@ function [U_cmd, SpecRad, X_err] = TOAD_TVLQI(GND, X_est, X_trg, U_ff, K, t, con
     U_cmd(2) = U_ff(2) + Delta_u(2) - U_dist(2);               
     U_cmd(4) = U_ff(4) + Delta_u(3) - U_dist(3); 
 
-    % SpecRad = [Delta_u(1); Delta_u(2); U_cmd(3) - U_ff(3); Delta_u(3)];
-    %% Spectral radius calculation for analysis (Taken from MatrixVerif)
-
-    % Run at 10Hz for efficiency
-    if mod(round(t*100), 10) == 0
-        % Calculate full Jacobians
-        A_est = JacobianX(X_est, U_cmd);
-        B_est = JacobianU(X_est, U_cmd);
-    
-        % Map to reduced (attitude-error) state via quaternion kinematics
-        T_sr = zeros(15, 12);
-        T_sr(1:4, 1:3)   = 0.5 * XiMat(Q_est);
-        T_sr(5:13, 4:12) = eye(9);
-        A_lin_sr = pinv(T_sr) * A_est * T_sr;
-        B_lin_sr = pinv(T_sr) * B_est;
-    
-        % Translational model
-        A_trans_c_sr = [zeros(3,3), eye(3,3); zeros(3,3), zeros(3,3)];
-        B_trans_c_sr = [zeros(3,3); eye(3,3)];
-        M_c_trans_sr = [A_trans_c_sr, B_trans_c_sr; zeros(3,6), zeros(3,3)];
-        M_d_trans_sr = expm(M_c_trans_sr * dT);
-        A_trans_d_sr = M_d_trans_sr(1:6, 1:6);
-        B_trans_d_sr = M_d_trans_sr(1:6, 7:9);
-    
-        % Rotational model
-        A_rot_c_sr = [A_lin_sr(1:3,1:3),   A_lin_sr(1:3,10:12);
-                      A_lin_sr(10:12,1:3), A_lin_sr(10:12,10:12)];
-        B_rot_c_sr = [B_lin_sr(1:3,  [1,2,4]);
-                      B_lin_sr(10:12,[1,2,4])];
-        M_c_rot_sr = [A_rot_c_sr, B_rot_c_sr; zeros(3,6), zeros(3,3)];
-        M_d_rot_sr = expm(M_c_rot_sr * dT);
-        A_rot_d_sr = M_d_rot_sr(1:6, 1:6);
-        B_rot_d_sr = M_d_rot_sr(1:6, 7:9);
-    
-        % Closed-loop spectral radius
-        eig_cl_trans = eig(A_trans_d_sr - B_trans_d_sr * K_trans);
-        eig_cl_rot   = eig(A_rot_d_sr   - B_rot_d_sr   * K_rot);
-        SpecRad = [max(abs(eig_cl_trans)); max(abs(eig_cl_rot))];
-    else
-        SpecRad = LastSpecRad;
-    end
-
-    LastSpecRad = SpecRad;
-    % Error computation for output & clamping 
+    U_fb = [Delta_u(1); Delta_u(2); U_cmd(3) - U_ff(3); Delta_u(3)];
+    %U_fb = Delta_A;
     X_err = [X_err_rot; X_err_trans]; 
 
     thrustMax = constantsTOAD.MaxThrust;
