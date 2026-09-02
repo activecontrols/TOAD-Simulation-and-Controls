@@ -13,8 +13,14 @@
 
 %% Configuration
 model_name = 'TOAD_Simulation';
-num_sims = 50;
+num_sims = 14;
 seed = 1788146097; % int64(seconds(datetime('now','Timezone','UTC')-datetime('1970-01-01','Timezone','UTC')));
+trajectoryName = "Backflip_v2.csv";
+
+A_fcn = str2func('JacobianX');
+B_fcn = str2func('JacobianU');
+
+[K_trans_List, K_rot_List, LA_List, LT_List] = ReadGains(trajectoryName);
 
 clear simIn out
 
@@ -62,6 +68,9 @@ t_common = (0:0.1:t_sim)';
 pos_all  = nan(num_sims, length(t_common), 3);
 vel_all  = nan(num_sims, length(t_common), 3);
 quat_all = nan(num_sims, length(t_common), 4);
+
+rho_rot = nan(num_sims);
+rho_trans = nan(num_sims);
 
 % The target is now a full-state trajectory. Its width is determined after
 % parsim from the actual target logger rather than assuming a legacy
@@ -148,6 +157,8 @@ for i = 1:num_sims
         'TOAD_Simulation/target_pos_log', 'Commented', 'off');
     simIn(i) = simIn(i).setBlockParameter( ...
         'TOAD_Simulation/target_pos_log', 'SampleTime', '0.5');
+    simIn(i) = simIn(i).setBlockParameter( ...
+        'TOAD_Simulation/inputCMD', 'Commented', 'off');
 
     % Disable unused logs to reduce data movement / RAM use.
     simIn(i) = simIn(i).setBlockParameter( ...
@@ -158,8 +169,7 @@ for i = 1:num_sims
     simIn(i) = simIn(i).setBlockParameter( ...
         'TOAD_Simulation/State Estimator & Filters/Multiplicative Extended Kalman Filter [M-EKF]/MEKF_P', ...
         'Commented', 'on');
-    simIn(i) = simIn(i).setBlockParameter( ...
-        'TOAD_Simulation/inputCMD', 'Commented', 'on');
+    
 end
 
 %% Execute Parallel Simulations
@@ -168,6 +178,7 @@ out = sim(simIn, 'ShowProgress', 'on', 'UseFastRestart', 'on');
 
 %% Extract Metrics and Interpolate Trajectories
 disp('Simulations complete. Extracting and interpolating trajectories...');
+
 
 for i = 1:num_sims
     if isempty(out(i).ErrorMessage)
@@ -238,6 +249,22 @@ for i = 1:num_sims
             target_state_all(i,:,dim) = interp1( ...
                 t_target, target_raw(:,dim), t_common, 'linear', 'extrap');
         end
+
+        % Actual input
+        ts_input = out(i).inputCMD;
+        input_raw = squeeze(ts_input.Data);
+
+        if size(input_raw, 1)-1 ~= length(t_raw)
+            input_raw = input_raw';
+        end
+
+         if size(input_raw,2) < 10
+            error('Simulation %d: state_log contains only %d columns; at least 10 are required.', ...
+                i, size(input_raw,2));
+         end
+
+         [rho_rot{i}, rho_trans{i}]=SpectralRadius(A_fcn, B_fcn, x, u, K_trans_List, K_rot_List);
+
     else
         warning('Simulation %d failed: %s', i, out(i).ErrorMessage);
         RMSE_Controls_all(:, i) = NaN;
