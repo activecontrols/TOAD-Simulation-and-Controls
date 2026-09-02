@@ -17,7 +17,8 @@ if nargin < 1 || isempty(filename)
     reqVars = {'out', 't_common', 'Lever_Radial', 'Lever_Axial', ...
                'J_Trans_Scale', 'J_Axial_Scale', 'J_Wobble_Coup', 'J_Trans_Coup', ...
                'Wind_Gain_all', 'Wind_Covar_all', 'RMSE_Wind_all', ...
-               'RMSE_Controls_all', 'RMSE_Filter_all', 'MaxLESODist_all'};
+               'RMSE_Controls_all', 'RMSE_Filter_all', 'MaxLESODist_all', ...
+               'MaxSpectralRad_all'};
     for i = 1:numel(reqVars)
         try evalin('base', [reqVars{i} ';']); catch, end
         eval([reqVars{i} ' = evalin(''base'', ''' reqVars{i} ''');']);
@@ -26,6 +27,20 @@ else
     S = load(filename);
     vars = fieldnames(S);
     for i = 1:numel(vars), eval([vars{i} ' = S.' vars{i} ';']); end
+end
+
+% Optional: full spectral-radius timeseries (see
+% MonteCarlo_v4_SpecRadPatch.m). Not required by any of the plots above,
+% so its absence must not break anything -- only Section 13 below depends
+% on it, and that section checks for it itself.
+if nargin < 1 || isempty(filename)
+    try
+        specrad_all = evalin('base', 'specrad_all');
+    catch
+        specrad_all = [];
+    end
+elseif ~exist('specrad_all', 'var')
+    specrad_all = [];
 end
 
 num_sims = numel(out);
@@ -276,6 +291,106 @@ if exist('MaxLESODist_all', 'var') && size(MaxLESODist_all, 1) == 6
             sprintf('Max %s', att_lbls{c}), 'Total Pos RMSE [m]', ...
             sprintf('Pos RMSE vs %s', att_lbls{c}));
     end
+end
+
+%% 12. Spectral Radius Sensitivities
+if exist('MaxSpectralRad_all', 'var') && size(MaxSpectralRad_all, 1) == 2
+    figure('Name', 'Spectral Radius Sensitivities', 'Color', bkgColor, 'WindowStyle', 'docked');
+    tiledlayout(1, 2, 'TileSpacing', 'compact');
+
+    msr_lbls = {'MSR(1)', 'MSR(2)'};
+    for c = 1:2
+        nexttile;
+        plotSensitivityScatter(MaxSpectralRad_all(c, :), Pos_RMSE_total, ...
+            msr_lbls{c}, 'Total Pos RMSE [m]', ...
+            sprintf('Pos RMSE vs %s', msr_lbls{c}));
+        xline(1, 'r--');
+    end
+end
+
+%% 13. Spectral Radius Timeseries Overlay & Causality Check
+% Requires specrad_all: [num_sims x length(t_common) x 2], the raw MSR
+% signal (not just its per-run max). See MonteCarlo_v4_SpecRadPatch.m to
+% enable this logging -- until then this section is skipped.
+if exist('specrad_all', 'var') && ~isempty(specrad_all)
+    pos_err_norm = sqrt(sum(pos_error_all.^2, 3));   % [num_sims x T]
+    nWorst = 8;
+
+    % Worst-RMSE runs + a handful of clean runs for contrast
+    [~, order] = sort(Pos_RMSE_total, 'descend', 'ComparisonMethod', 'auto');
+    worst_idx = order(1:min(nWorst, sum(isfinite(Pos_RMSE_total))));
+
+    goodRMSE = Pos_RMSE_total; goodRMSE(~isfinite(goodRMSE)) = inf;
+    [~, orderAsc] = sort(goodRMSE, 'ascend');
+    clean_idx = orderAsc(1:min(4, numel(orderAsc)));
+
+    plot_set = [worst_idx(:); clean_idx(:)];
+    run_labels = [repmat({'WORST'}, numel(worst_idx),1); repmat({'clean'}, numel(clean_idx),1)];
+
+    figure('Name', 'MSR(2) vs Position Error Overlay', 'Color', bkgColor, 'WindowStyle', 'docked');
+    nCols = 4; nRows = ceil(numel(plot_set)/nCols);
+    tlOverlay = tiledlayout(nRows, nCols, 'TileSpacing', 'compact', 'Padding', 'compact');
+
+    for k = 1:numel(plot_set)
+        i = plot_set(k);
+        ax1 = nexttile(tlOverlay); hold(ax1, 'on'); grid(ax1, 'on');
+        yyaxis(ax1, 'left');
+        plot(ax1, t_common, squeeze(specrad_all(i,:,2)), 'b-', 'LineWidth', 1.3);
+        yline(ax1, 1, 'b--');
+        ylabel(ax1, 'MSR(2)');
+        yyaxis(ax1, 'right');
+        plot(ax1, t_common, pos_err_norm(i,:), 'r-', 'LineWidth', 1.3);
+        ylabel(ax1, '||pos err|| [m]');
+        title(ax1, sprintf('Run %d (%s), PosRMSE=%.1f', i, run_labels{k}, Pos_RMSE_total(i)));
+        xlabel(ax1, 'Time [s]');
+    end
+    title(tlOverlay, 'Blue = MSR(2) (left, ref line at 1)   Red = position error norm (right)');
+
+    % Aggregate lead/lag across every run that crosses MSR(2) = 1
+    abs_floor = 2.0;
+    lags = [];
+    crossed_never_diverged = 0;
+    diverged_never_crossed = 0;
+
+    for i = 1:num_sims
+        msr = squeeze(specrad_all(i,:,2));
+        perr = pos_err_norm(i,:);
+        if all(isnan(msr)) || all(isnan(perr)), continue; end
+
+        baseline_std = std(perr(t_common <= 10), 'omitnan');
+        thresh = max(abs_floor, 3*baseline_std);
+
+        cross_i = find(msr > 1, 1, 'first');
+        div_i   = find(perr > thresh, 1, 'first');
+
+        if ~isempty(cross_i) && ~isempty(div_i)
+            lags(end+1) = t_common(div_i) - t_common(cross_i); %#ok<AGROW>
+        elseif ~isempty(cross_i) && isempty(div_i)
+            crossed_never_diverged = crossed_never_diverged + 1;
+        elseif isempty(cross_i) && ~isempty(div_i)
+            diverged_never_crossed = diverged_never_crossed + 1;
+        end
+    end
+
+    figure('Name', 'MSR(2) Crossing -> Divergence Lag', 'Color', bkgColor, 'WindowStyle', 'docked');
+    histogram(lags, 'FaceColor', [0.3 0.5 0.8]);
+    xline(0, 'k--', 'LineWidth', 1.5);
+    xlabel('t_{divergence} - t_{MSR2 crosses 1}  [s]');
+    ylabel('Count');
+    title(sprintf(['Lag distribution (n=%d runs with both events)\n' ...
+        '%d crossed MSR=1 but never diverged | %d diverged without ever crossing MSR=1'], ...
+        numel(lags), crossed_never_diverged, diverged_never_crossed));
+    grid on;
+
+    fprintf('\n--- MSR(2)=1 crossing -> divergence timing summary ---\n');
+    fprintf('Runs with both a crossing and a divergence event: %d\n', numel(lags));
+    fprintf('  median lag = %.2f s, mean lag = %.2f s\n', median(lags,'omitnan'), mean(lags,'omitnan'));
+    fprintf('  fraction with POSITIVE lag (MSR leads divergence): %.0f%%\n', 100*mean(lags>0));
+    fprintf('Runs that crossed MSR=1 but NEVER diverged: %d (bumps that were harmless)\n', crossed_never_diverged);
+    fprintf('Runs that diverged WITHOUT ever crossing MSR=1: %d (divergence with another cause)\n', diverged_never_crossed);
+else
+    disp('specrad_all not found -- skipping Section 13 (spectral radius timeseries overlay).');
+    disp('See MonteCarlo_v4_SpecRadPatch.m to enable full MSR timeseries logging.');
 end
 
 end
