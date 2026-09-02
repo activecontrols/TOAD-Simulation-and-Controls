@@ -17,7 +17,7 @@ if nargin < 1 || isempty(filename)
     reqVars = {'out', 't_common', 'Lever_Radial', 'Lever_Axial', ...
                'J_Trans_Scale', 'J_Axial_Scale', 'J_Wobble_Coup', 'J_Trans_Coup', ...
                'Wind_Gain_all', 'Wind_Covar_all', 'RMSE_Wind_all', ...
-               'RMSE_Controls_all', 'RMSE_Filter_all', 'MaxLESODist_all', ...
+               'RMSE_Controls_all', 'RMSE_Filter_all', 'LESODist_all', ...
                'MaxSpectralRad_all'};
     for i = 1:numel(reqVars)
         try evalin('base', [reqVars{i} ';']); catch, end
@@ -268,31 +268,6 @@ for k = 1:4
         'Attitude RMSE [deg]', sprintf('Attitude Error vs %s', inertia_lbls{k}));
 end
 
-%% 11. LESO Disturbance Sensitivities
-if exist('MaxLESODist_all', 'var') && size(MaxLESODist_all, 1) == 6
-    % Figure 1: Acceleration LESO vs Pos RMSE
-    figure('Name', 'Acceleration LESO Sensitivities', 'Color', bkgColor, 'WindowStyle', 'docked');
-    tiledlayout(1, 3, 'TileSpacing', 'compact');
-    accel_lbls = {'Accel X', 'Accel Y', 'Accel Z'};
-    for c = 1:3
-        nexttile;
-        plotSensitivityScatter(MaxLESODist_all(c, :), Pos_RMSE_total, ...
-            sprintf('Max %s', accel_lbls{c}), 'Total Pos RMSE [m]', ...
-            sprintf('Pos RMSE vs %s', accel_lbls{c}));
-    end
-
-    % Figure 2: Attitude LESO vs Pos RMSE
-    figure('Name', 'Attitude LESO Sensitivities', 'Color', bkgColor, 'WindowStyle', 'docked');
-    tiledlayout(1, 3, 'TileSpacing', 'compact');
-    att_lbls = {'Attitude Pitch', 'Attitude Yaw', 'Attitude Roll'};
-    for c = 1:3
-        nexttile;
-        plotSensitivityScatter(MaxLESODist_all(c+3, :), Pos_RMSE_total, ...
-            sprintf('Max %s', att_lbls{c}), 'Total Pos RMSE [m]', ...
-            sprintf('Pos RMSE vs %s', att_lbls{c}));
-    end
-end
-
 %% 12. Spectral Radius Sensitivities
 if exist('MaxSpectralRad_all', 'var') && size(MaxSpectralRad_all, 1) == 2
     figure('Name', 'Spectral Radius Sensitivities', 'Color', bkgColor, 'WindowStyle', 'docked');
@@ -357,8 +332,8 @@ if exist('specrad_all', 'var') && ~isempty(specrad_all)
         perr = pos_err_norm(i,:);
         if all(isnan(msr)) || all(isnan(perr)), continue; end
 
-        baseline_std = std(perr(t_common <= 10), 'omitnan');
-        thresh = max(abs_floor, 3*baseline_std);
+        baseline_std = std(perr(t_common >= 15 & t_common <= 25), 'omitnan');
+        thresh = max(abs_floor, 4*baseline_std);
 
         cross_i = find(msr > 1, 1, 'first');
         div_i   = find(perr > thresh, 1, 'first');
@@ -391,6 +366,35 @@ if exist('specrad_all', 'var') && ~isempty(specrad_all)
 else
     disp('specrad_all not found -- skipping Section 13 (spectral radius timeseries overlay).');
     disp('See MonteCarlo_v4_SpecRadPatch.m to enable full MSR timeseries logging.');
+end
+
+%% 14. LESO Disturbance Causality: Accel & Torque vs Divergence
+% Mirrors the Section 13 MSR/position-error causality check, but uses the
+% two LESO disturbance-estimate channel groups -- translational accel
+% [xyz] (channels 1:3) and rotational torque [xyz] (channels 4:6) -- as
+% the candidate leading indicators instead of the discrete-time spectral
+% radius. Accel disturbance is checked against position divergence;
+% torque disturbance is checked against attitude (tilt) divergence.
+% Unlike specrad_all, LESODist_all is always logged by MonteCarlo_v4.m,
+% so this section has no "not logged yet" fallback -- only a malformed-
+% data guard.
+if exist('LESODist_all', 'var') && ~isempty(LESODist_all) && size(LESODist_all, 3) == 6
+
+    accel_dist_norm  = squeeze(sqrt(sum(LESODist_all(:,:,1:3).^2, 3)));  % [num_sims x T], m/s^2
+    torque_dist_norm = squeeze(sqrt(sum(LESODist_all(:,:,4:6).^2, 3)));  % [num_sims x T], N*m
+
+    pos_err_norm  = sqrt(sum(pos_error_all.^2, 3));    % [num_sims x T], m
+    tilt_err_norm = abs(tilt_actual - tilt_target);    % [num_sims x T], deg
+
+    plotLESOCausality(t_common, accel_dist_norm, pos_err_norm, Pos_RMSE_total, ...
+        num_sims, bkgColor, 'LESO Accel Disturbance', '||pos err|| [m]', ...
+        'Accel Dist [m/s^2]', 2.0);
+
+    plotLESOCausality(t_common, torque_dist_norm, tilt_err_norm, Attitude_RMSE_total, ...
+        num_sims, bkgColor, 'LESO Torque Disturbance', '||tilt err|| [deg]', ...
+        'Torque Dist [N\cdotm]', 5.0);
+else
+    disp('LESODist_all not found or malformed -- skipping Section 14 (LESO disturbance causality diagnostics).');
 end
 
 end
@@ -461,6 +465,92 @@ function plotSmartHistogram(ax, data, clr, name)
         set(ax, 'YScale', 'log');
         ylim(ax, [0.8, peak*1.3]);
     end
+end
+
+function plotLESOCausality(t_common, sig_all, err_all, sortMetric, num_sims, bkgColor, sigName, errYLabel, sigYLabel, err_abs_floor)
+    % sig_all, err_all: [num_sims x T]. sortMetric: [num_sims x 1], used to
+    % pick the worst-divergence runs (plus a few clean ones for contrast),
+    % same convention as the Section 13 MSR/position-error overlay.
+    nWorst = 8;
+    [~, order] = sort(sortMetric, 'descend', 'ComparisonMethod', 'auto');
+    worst_idx = order(1:min(nWorst, sum(isfinite(sortMetric))));
+
+    goodMetric = sortMetric; goodMetric(~isfinite(goodMetric)) = inf;
+    [~, orderAsc] = sort(goodMetric, 'ascend');
+    clean_idx = orderAsc(1:min(4, numel(orderAsc)));
+
+    plot_set = [worst_idx(:); clean_idx(:)];
+    run_labels = [repmat({'WORST'}, numel(worst_idx),1); repmat({'clean'}, numel(clean_idx),1)];
+
+    figure('Name', sprintf('%s vs %s Overlay', sigName, errYLabel), 'Color', bkgColor, 'WindowStyle', 'docked');
+    nCols = 4; nRows = ceil(numel(plot_set)/nCols);
+    tlOverlay = tiledlayout(nRows, nCols, 'TileSpacing', 'compact', 'Padding', 'compact');
+
+    for k = 1:numel(plot_set)
+        i = plot_set(k);
+        ax1 = nexttile(tlOverlay); hold(ax1, 'on'); grid(ax1, 'on');
+        yyaxis(ax1, 'left');
+        plot(ax1, t_common, sig_all(i,:), 'b-', 'LineWidth', 1.3);
+        ylabel(ax1, sigYLabel);
+        yyaxis(ax1, 'right');
+        plot(ax1, t_common, err_all(i,:), 'r-', 'LineWidth', 1.3);
+        ylabel(ax1, errYLabel);
+        title(ax1, sprintf('Run %d (%s), Metric=%.2f', i, run_labels{k}, sortMetric(i)));
+        xlabel(ax1, 'Time [s]');
+    end
+    title(tlOverlay, sprintf('Blue = %s (left)   Red = %s (right)', sigName, errYLabel));
+
+    % Aggregate lead/lag across every run that shows an "elevated
+    % disturbance" event. Since there is no fixed stability boundary for
+    % the LESO disturbance magnitude (unlike MSR=1), the threshold is
+    % adaptive per run: 3-sigma above that run's own baseline, taken over
+    % the settled 15-25s window (post-transient, pre-landing) for both
+    % the disturbance signal and the divergence error.
+    baseline_mask = t_common >= 17 & t_common <= 23;
+    lags = [];
+    crossed_never_diverged = 0;
+    diverged_never_crossed = 0;
+
+    for i = 1:num_sims
+        sig  = sig_all(i,:);
+        perr = err_all(i,:);
+        if all(isnan(sig)) || all(isnan(perr)), continue; end
+
+        sig_baseline_mean = mean(sig(baseline_mask), 'omitnan');
+        sig_baseline_std  = std(sig(baseline_mask), 'omitnan');
+        sig_thresh = sig_baseline_mean + 5*sig_baseline_std;
+
+        err_baseline_std = std(perr(baseline_mask), 'omitnan');
+        err_thresh = max(err_abs_floor, 5*err_baseline_std);
+
+        cross_i = find(sig > sig_thresh, 1, 'first');
+        div_i   = find(perr > err_thresh, 1, 'first');
+
+        if ~isempty(cross_i) && ~isempty(div_i)
+            lags(end+1) = t_common(div_i) - t_common(cross_i); %#ok<AGROW>
+        elseif ~isempty(cross_i) && isempty(div_i)
+            crossed_never_diverged = crossed_never_diverged + 1;
+        elseif isempty(cross_i) && ~isempty(div_i)
+            diverged_never_crossed = diverged_never_crossed + 1;
+        end
+    end
+
+    figure('Name', sprintf('%s Crossing -> Divergence Lag', sigName), 'Color', bkgColor, 'WindowStyle', 'docked');
+    histogram(lags, 'FaceColor', [0.3 0.5 0.8]);
+    xline(0, 'k--', 'LineWidth', 1.5);
+    xlabel(sprintf('t_{divergence} - t_{%s elevated}  [s]', sigName));
+    ylabel('Count');
+    title(sprintf(['Lag distribution (n=%d runs with both events)\n' ...
+        '%d elevated %s but never diverged | %d diverged without elevated %s'], ...
+        numel(lags), crossed_never_diverged, sigName, diverged_never_crossed, sigName));
+    grid on;
+
+    fprintf('\n--- %s elevation -> divergence timing summary ---\n', sigName);
+    fprintf('Runs with both an elevation and a divergence event: %d\n', numel(lags));
+    fprintf('  median lag = %.2f s, mean lag = %.2f s\n', median(lags,'omitnan'), mean(lags,'omitnan'));
+    fprintf('  fraction with POSITIVE lag (%s leads divergence): %.0f%%\n', sigName, 100*mean(lags>0));
+    fprintf('Runs that showed elevated %s but NEVER diverged: %d (bumps that were harmless)\n', sigName, crossed_never_diverged);
+    fprintf('Runs that diverged WITHOUT elevated %s: %d (divergence with another cause)\n', sigName, diverged_never_crossed);
 end
 
 function drawMCTraj_v4(ax, pos_all, target_pos, x_idx, y_idx, x_lbl, y_lbl, alphaVal)

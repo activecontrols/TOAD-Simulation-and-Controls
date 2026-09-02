@@ -86,6 +86,9 @@ function [U_cmd, SpecRad, X_err] = TOAD_TVLQI(GND, X_est, X_trg, U_ff, K, t, con
     C_T2B = R_y * R_x; 
     
     % Construct the Thrust-to-Inertial Frame (C_T2I_cmd)
+    % This construction might break down at large tilt angles, especially
+    % when commanded inertial acceleration is close to a negative G (might
+    % be the case during a backflip maneuver)
     if norm_f > 1e-6
         Z_t = f_req / norm_f;
     else
@@ -93,6 +96,10 @@ function [U_cmd, SpecRad, X_err] = TOAD_TVLQI(GND, X_est, X_trg, U_ff, K, t, con
     end
 
     % Reference thrust-frame X axis corresponding to target body X axis
+    % NOTE: Might be worth studying a fallback for this if/when tracking
+    % performance is heavily deteriorated. Consider falling back to a
+    % maintain current roll situation to avoid coupling or unnecessary
+    % actuator coupling from roll error growing.
     X_t_ref = C_B2I_ref * C_T2B(:,1);
     
     % Re-orthogonalize against requested thrust direction
@@ -127,7 +134,7 @@ function [U_cmd, SpecRad, X_err] = TOAD_TVLQI(GND, X_est, X_trg, U_ff, K, t, con
     end
     
     % Frame correction for the angular rates. Need to be represented in the
-    % actual body frame not the target frame. UNTESTED FIX for now
+    % actual body frame not the target frame.
     omegaTRG = C_B2I_est' * C_B2I_ref * X_trg(11:13);
 
     %% Test implementation

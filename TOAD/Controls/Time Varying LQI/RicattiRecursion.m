@@ -153,7 +153,7 @@ for n = N:-1:2
     omega_att_eff = (omega_att * GainScalingAtt);
 
     % Pole Placement
-    s_poles_att = -omega_att_eff * (1 - (0:5)*0.05);
+    s_poles_att = -omega_att * (1 - (0:5)*0.05);
     z_poles_att = exp(s_poles_att * dT_LESO);
     L_att_n = place(A_LESO_A', C_LESO_A', z_poles_att)';
     

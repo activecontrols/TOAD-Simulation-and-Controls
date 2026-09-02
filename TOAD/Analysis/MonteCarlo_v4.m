@@ -13,7 +13,7 @@
 
 %% Configuration
 model_name = 'TOAD_Simulation';
-num_sims = 50;
+num_sims = 500;
 seed = 1788146097; % int64(seconds(datetime('now','Timezone','UTC')-datetime('1970-01-01','Timezone','UTC')));
 
 clear simIn out
@@ -53,7 +53,6 @@ Wind_Covar_vals = cell(1, num_sims);
 RMSE_Controls_all = zeros(12, num_sims);
 RMSE_Filter_all   = zeros(3, num_sims);
 RMSE_Wind_all     = zeros(1, num_sims);
-MaxLESODist_all   = zeros(6, num_sims);
 MaxSpectralRad_all = zeros(2, num_sims);
 
 %% Preallocate interpolated state histories
@@ -64,6 +63,7 @@ pos_all  = nan(num_sims, length(t_common), 3);
 vel_all  = nan(num_sims, length(t_common), 3);
 quat_all = nan(num_sims, length(t_common), 4);
 specrad_all = nan(num_sims, length(t_common), 2);
+LESODist_all   = nan(num_sims, length(t_common), 6);
 
 % The target is now a full-state trajectory. Its width is determined after
 % parsim from the actual target logger rather than assuming a legacy
@@ -145,7 +145,9 @@ for i = 1:num_sims
     simIn(i) = simIn(i).setBlockParameter( ...
         'TOAD_Simulation/state_log', 'SampleTime', '0.5');
     simIn(i) = simIn(i).setBlockParameter( ...
-        'TOAD_Simulation/Controller & LESOs/MaxLESODist', 'Commented', 'off');
+        'TOAD_Simulation/Controller & LESOs/LESODist', 'Commented', 'off');
+    simIn(i) = simIn(i).setBlockParameter( ...
+        'TOAD_Simulation/Controller & LESOs/LESODist', 'SampleTime', '0.1');
     simIn(i) = simIn(i).setBlockParameter( ...
         'TOAD_Simulation/target_pos_log', 'Commented', 'off');
     simIn(i) = simIn(i).setBlockParameter( ...
@@ -153,7 +155,7 @@ for i = 1:num_sims
     simIn(i) = simIn(i).setBlockParameter( ...
         'TOAD_Simulation/Controller & LESOs/SpecRad_log', 'Commented', 'off');
     simIn(i) = simIn(i).setBlockParameter( ...
-        'TOAD_Simulation/Controller & LESOs/SpecRad_log', 'SampleTime', '0.05');
+        'TOAD_Simulation/Controller & LESOs/SpecRad_log', 'SampleTime', '0.1');
 
     % Disable unused logs to reduce data movement / RAM use.
     simIn(i) = simIn(i).setBlockParameter( ...
@@ -170,7 +172,7 @@ end
 
 %% Execute Parallel Simulations
 disp('Starting Parallel Monte Carlo Trajectory Simulations (parsim)...');
-out = sim(simIn, 'ShowProgress', 'on', 'UseFastRestart', 'on');
+out = parsim(simIn, 'ShowProgress', 'on', 'UseFastRestart', 'on');
 
 %% Extract Metrics and Interpolate Trajectories
 disp('Simulations complete. Extracting and interpolating trajectories...');
@@ -187,8 +189,7 @@ for i = 1:num_sims
         % channels, combine them into one RMS wind-error magnitude.
         wind_sse = out(i).SSE_Wind(:);
         RMSE_Wind_all(i) = sqrt(sum(wind_sse) / t_sim);
-        MaxLESODist_all(:, i) = out(i).MaxLESODist.Data(:);
-        MaxSpectralRad_all(:, i) = out(i).MaxSpectralRad(:);
+        MaxSpectralRad_all(:, i) = out(i).MaxSpectralRad.Data(:);
 
         % Actual state
         ts_state = out(i).state_log;
@@ -214,6 +215,15 @@ for i = 1:num_sims
         if size(sr_raw,1) ~= length(t_sr), sr_raw = sr_raw'; end
         for dim = 1:2
             specrad_all(i,:,dim) = interp1(t_sr, sr_raw(:,dim), ...
+                t_common, 'linear', 'extrap');
+        end
+
+        ts_LESO = out(i).LESODist;
+        t_LESO = ts_LESO.Time;
+        LESO_raw = squeeze(ts_LESO.Data);
+        if size(LESO_raw,1) ~= length(t_LESO), LESO_raw = LESO_raw'; end
+        for dim = 1:6
+            LESODist_all(i,:,dim) = interp1(t_LESO, LESO_raw(:,dim), ...
                 t_common, 'linear', 'extrap');
         end
 
@@ -259,7 +269,6 @@ for i = 1:num_sims
         RMSE_Controls_all(:, i) = NaN;
         RMSE_Filter_all(:, i)   = NaN;
         RMSE_Wind_all(:, i)     = NaN;
-        MaxSpectralRad_all(:, i) = NaN;
     end
 end
 
