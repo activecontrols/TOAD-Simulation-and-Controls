@@ -15,7 +15,6 @@ cp_N2 = double(py.CoolProp.CoolProp.PropsSI('Cpmass', ...
 
 % Dynamic COPV wall heat-transfer model
 % Positive Q_gas = energy leaving nitrogen and entering wall
-
 deltaT = abs(T_fg - T_amb);
 L_copv = .57; %m
 alpha_N2 = k_N2 / (rho_N2 * cp_N2);
@@ -26,7 +25,6 @@ T_amb = 297.04; % K
 
 %% Inside convection
 A_in = 1.1289;
-
 h_in_fill = 150; % W / (m^2 * K)
 
 %calculate Raleigh number
@@ -75,7 +73,6 @@ m_fg = rho_fg * A_fg * t_fg;
 
 %% Outside convection
 A_out = 1.2529; %m^2
- 
 k_air = 0.024; %W / (m * K)
 Ra_L = 10^8 * (deltaT) * L_copv^3;
 Pr = 0.71;
