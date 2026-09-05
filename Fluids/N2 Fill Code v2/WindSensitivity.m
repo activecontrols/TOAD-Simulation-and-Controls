@@ -5,7 +5,7 @@ windSpeeds = (0:1:14) / 2.23694;
 fillTime = zeros(size(windSpeeds));
 
 for i = 1:(length(windSpeeds))
-    fillTime(i) = FillTimeSim(windSpeeds(i)) / 60;
+    fillTime(i) = FillTimeSim(windSpeeds(i), 0) / 60;
     fprintf('%.2f%% Done!\n', i/length(windSpeeds) * 100);
 end
 

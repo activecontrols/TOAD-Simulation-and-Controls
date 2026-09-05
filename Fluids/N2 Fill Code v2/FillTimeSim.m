@@ -1,5 +1,5 @@
 %% COPV Fill Time Simulation for TOAD Vehicle
-function Time2Settle = FillTimeSim(WindVel)
+function Time2Settle = FillTimeSim(WindVel, PlotMode)
 % clear; clc;
 psi2Pa = 6894.75729;
 Pa2psi = 1 / psi2Pa;
@@ -15,6 +15,7 @@ Tank.m(1)   = Tank.rho(1) * Tank.V;        % kg
 Tank.h(1)   = double(py.CoolProp.CoolProp.PropsSI('Hmass', 'P', Tank.P(1), 'T', Tank.T(1), 'Nitrogen')); 
 Tank.u(1)   = double(py.CoolProp.CoolProp.PropsSI('Umass', 'P', Tank.P(1), 'T', Tank.T(1), 'Nitrogen'));
 Tank.U(1)   = Tank.u(1) * Tank.m(1);       % J
+Tank.s(1)   = double(py.CoolProp.CoolProp.PropsSI('S', 'P', Tank.P(1), 'T', Tank.T(1), 'Nitrogen'));
 
 % Initialize Receiver COPV
 COPV.V      = 0.036;                       % m3
@@ -30,7 +31,7 @@ COPV.TMax   = 320.00;                      % K
 COPV_Temps  = [297.15, 297.15, 297.15];    % Aluminum, Carbon Fiber, and Fiber Glass temps
 
 % Reg Properties
-Reg.SetPress = 4500 * psi2Pa;              % Pa
+Reg.SetPress = 4400 * psi2Pa;              % Pa
 Reg.SPE_Coef = 0.07;                       % psi drop per psi inlet drop 
 Reg.CdA_MAX  = 2.4828e-6;                  % m2 
 
@@ -50,7 +51,8 @@ Time(i) = 0;
 dt_hist(1) = dT;
 mdot_hist(1) = 0;
 COPV_T_hist(1) = COPV_Temps(1);
-
+ValveOpenCount = 0;
+LastFillMode = 0;
 while ~isFilled
     % Pause fill if temps exceed the level
     if COPV_Temps(1) < COPV.TMax
@@ -66,6 +68,10 @@ while ~isFilled
         mdot = 0; 
         dt_limit = dt_max_cool;
     end
+    if fillMode ~= LastFillMode && fillMode == 1
+        ValveOpenCount = ValveOpenCount + 1; 
+    end
+    LastFillMode = fillMode;
 
     %% Adaptive timestep
     if mdot > 0
@@ -111,6 +117,7 @@ while ~isFilled
     Tank.P(i+1) = double(py.CoolProp.CoolProp.PropsSI('P', 'Umass', Tank_u, 'Dmass', Tank_rho, 'Nitrogen')); 
     Tank.T(i+1) = double(py.CoolProp.CoolProp.PropsSI('T', 'Umass', Tank_u, 'Dmass', Tank_rho, 'Nitrogen')); 
     Tank.h(i+1) = double(py.CoolProp.CoolProp.PropsSI('Hmass', 'Umass', Tank_u, 'Dmass', Tank_rho, 'Nitrogen')); 
+    Tank.s(i+1) = double(py.CoolProp.CoolProp.PropsSI('S', 'Umass', Tank_u, 'Dmass', Tank_rho, 'Nitrogen')); 
     
     COPV.P(i+1) = double(py.CoolProp.CoolProp.PropsSI('P', 'Umass', COPV_u, 'Dmass', COPV_rho, 'Nitrogen')); 
     COPV.T(i+1) = double(py.CoolProp.CoolProp.PropsSI('T', 'Umass', COPV_u, 'Dmass', COPV_rho, 'Nitrogen')); 
@@ -137,8 +144,59 @@ while ~isFilled
     end
 end
 
-fprintf('Fill finished at t = %.1f s. Final COPV Pressure: %.1f psi\n', Time(end), COPV.P(end)*Pa2psi);
-
+fprintf('Fill finished at t = %.1f s. Final COPV Pressure: %.1f psi,    Number of cycles: %i\n', Time(end), COPV.P(end)*Pa2psi, ValveOpenCount);
+if PlotMode == 1
+    % Plots & Post-Processing
+    t_min = Time / 60;
+    
+    % mdot is associated with each completed integration interval.
+    t_flow = Time(1:end-1) / 60;
+    mdot_plot = mdot_hist(2:end);
+    
+    figure('Name', 'COPV Fill & Thermal Transient Analysis', 'Color', 'w');
+    
+    % Pressure Transients
+    subplot(2, 2, 1);
+    plot(t_min, Tank.P * Pa2psi, 'LineWidth', 1.5, 'Color', [0.85 0.33 0.1]); hold on;
+    plot(t_min, COPV.P * Pa2psi, 'LineWidth', 1.5, 'Color', [0 0.45 0.74]);
+    yline(Reg.SetPress * Pa2psi, '--r', 'Regulator Setpoint', 'LineWidth', 1.2);
+    xlabel('Time (min)');
+    ylabel('Pressure (psi)');
+    title('Pressure History');
+    grid on; grid minor;
+    legend('Supply Tank', 'COPV Gas', 'Location', 'best');
+    
+    % Temperature Transients
+    subplot(2, 2, 2);
+    plot(t_min, COPV_T_hist, 'LineWidth', 1.5, 'Color', [0.85 0.33 0.1]); hold on;
+    plot(t_min, Tank.T, 'LineWidth', 1.5, 'Color', [0 0.45 0.74]);
+    yline(333.15, '--r', 'Absolute COPV Limit (60°C)', 'LineWidth', 1.2)
+    yline(COPV.TMax, '--g', 'Target Max Temp', 'LineWidth', 1.2);
+    yline(COPV.T(1), ':k', 'Ambient (24°C)', 'LineWidth', 1.2);
+    xlabel('Time (min)');
+    ylabel('Temperature (K)');
+    title('Fluid Temperature Transients');
+    grid on; grid minor;
+    legend('COPV Gas', 'Supply Tank Gas', 'Location', 'best');
+    
+    % Mass Flow Rate
+    subplot(2, 2, 3);
+    plot(t_flow, mdot_plot * 1000, 'LineWidth', 1.5, 'Color', [0.47 0.67 0.19]);
+    xlabel('Time (min)');
+    ylabel('Mass Flow Rate (g/s)');
+    title('Regulator Delivery Rate (\dot{m})');
+    grid on; grid minor;
+    
+    % System Mass Distribution
+    subplot(2, 2, 4);
+    plot(t_min, COPV.m, 'LineWidth', 1.5, 'Color', [0 0.45 0.74]); hold on;
+    plot(t_min, Tank.m, 'LineWidth', 1.5, 'Color', [0.85 0.33 0.1]);
+    xlabel('Time (min)');
+    ylabel('Fluid Mass (kg)');
+    title('Mass Tracking');
+    grid on; grid minor;
+    legend('COPV Gas Mass', 'Supply Tank Mass', 'Location', 'best');
+end
 %% Supporting Regulator Function
 function mdot = RegulatorMdot(Reg, P_tank, Tank_Rho, P_tank0, P_copv, gamma)
     % Press rise from inlet drop.
@@ -176,54 +234,3 @@ end
     
 Time2Settle = Time(end);
 end
-
-% %% Plots & Post-Processing
-% t_min = Time / 60;
-% 
-% % mdot is associated with each completed integration interval.
-% t_flow = Time(1:end-1) / 60;
-% mdot_plot = mdot_hist(2:end);
-% 
-% figure('Name', 'COPV Fill & Thermal Transient Analysis', 'Color', 'w');
-% 
-% % Pressure Transients
-% subplot(2, 2, 1);
-% plot(t_min, Tank.P * Pa2psi, 'LineWidth', 1.5, 'Color', [0.85 0.33 0.1]); hold on;
-% plot(t_min, COPV.P * Pa2psi, 'LineWidth', 1.5, 'Color', [0 0.45 0.74]);
-% yline(Reg.SetPress * Pa2psi, '--r', 'Regulator Setpoint', 'LineWidth', 1.2);
-% xlabel('Time (min)');
-% ylabel('Pressure (psi)');
-% title('Pressure History');
-% grid on; grid minor;
-% legend('Supply Tank', 'COPV Gas', 'Location', 'best');
-% 
-% % Temperature Transients
-% subplot(2, 2, 2);
-% plot(t_min, COPV_T_hist, 'LineWidth', 1.5, 'Color', [0.85 0.33 0.1]); hold on;
-% plot(t_min, Tank.T, 'LineWidth', 1.5, 'Color', [0 0.45 0.74]);
-% yline(333.15, '--r', 'Absolute COPV Limit (60°C)', 'LineWidth', 1.2)
-% yline(COPV.TMax, '--g', 'Target Max Temp', 'LineWidth', 1.2);
-% yline(COPV.T(1), ':k', 'Ambient (24°C)', 'LineWidth', 1.2);
-% xlabel('Time (min)');
-% ylabel('Temperature (K)');
-% title('Fluid Temperature Transients');
-% grid on; grid minor;
-% legend('COPV Gas', 'Supply Tank Gas', 'Location', 'best');
-% 
-% % Mass Flow Rate
-% subplot(2, 2, 3);
-% plot(t_flow, mdot_plot * 1000, 'LineWidth', 1.5, 'Color', [0.47 0.67 0.19]);
-% xlabel('Time (min)');
-% ylabel('Mass Flow Rate (g/s)');
-% title('Regulator Delivery Rate (\dot{m})');
-% grid on; grid minor;
-% 
-% % System Mass Distribution
-% subplot(2, 2, 4);
-% plot(t_min, COPV.m, 'LineWidth', 1.5, 'Color', [0 0.45 0.74]); hold on;
-% plot(t_min, Tank.m, 'LineWidth', 1.5, 'Color', [0.85 0.33 0.1]);
-% xlabel('Time (min)');
-% ylabel('Fluid Mass (kg)');
-% title('Mass Tracking');
-% grid on; grid minor;
-% legend('COPV Gas Mass', 'Supply Tank Mass', 'Location', 'best');

@@ -150,10 +150,29 @@ function [U_cmd, SpecRad, X_err] = TOAD_TVLQI(GND, X_est, X_trg, U_ff, K, t, con
     Delta_u = -K_rot * X_err_rot;
 
     
-    %% Trim Integration & clamping   
-    U_cmd(1) = U_ff(1) + Delta_u(1) - U_dist(1); 
-    U_cmd(2) = U_ff(2) + Delta_u(2) - U_dist(2);               
-    U_cmd(4) = U_ff(4) + Delta_u(3) - U_dist(3); 
+    %% Trim Integration & Clamping
+    Channels = [1, 2, 4];
+    
+    % Input bounds
+    thrustMax = constantsTOAD.MaxThrust;
+    gimbalMax = pi/12;
+    InputBounds = [-gimbalMax       gimbalMax;
+                   -gimbalMax       gimbalMax;
+                   0.2 * thrustMax  thrustMax;
+                   -7               7];
+    
+    % Maximum allowable trim authority
+    MaxTrim = [ones(2,1) * deg2rad(10); 5];
+    Trim = Delta_u(:) - U_dist(:);
+    Trim = min(max(Trim, -MaxTrim), MaxTrim);
+    
+    % Compute asymmetric bounds remaining for feedforward
+    U_ff_min = InputBounds(Channels, 1) - Trim;
+    U_ff_max = InputBounds(Channels, 2) - Trim;
+    
+    % Clamp feedforward to available headroom and sum with Trim
+    U_ff_cmd = min(max(U_ff(Channels), U_ff_min), U_ff_max);
+    U_cmd(Channels, 1) = U_ff_cmd + Trim;
 
     % SpecRad = [Delta_u(1); Delta_u(2); U_cmd(3) - U_ff(3); Delta_u(3)];
     %% Spectral radius calculation for analysis (Taken from MatrixVerif)
@@ -200,13 +219,6 @@ function [U_cmd, SpecRad, X_err] = TOAD_TVLQI(GND, X_est, X_trg, U_ff, K, t, con
     LastSpecRad = SpecRad;
     % Error computation for output & clamping 
     X_err = [X_err_rot; X_err_trans]; 
-
-    thrustMax = constantsTOAD.MaxThrust;
-    gimbalMax = pi/12;
-    InputBounds = [-gimbalMax       gimbalMax;
-                   -gimbalMax       gimbalMax;
-                   .2 * thrustMax   thrustMax;
-                   -7               7];
     U_cmd = min(max(U_cmd, InputBounds(:, 1)), InputBounds(:, 2));
     U_last = U_cmd;
 end
