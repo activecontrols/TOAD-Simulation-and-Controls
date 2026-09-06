@@ -61,11 +61,11 @@ dt_SIM = 1/500;
 %% Trajectory Load
 % Controller gains
 % Outer Loop
-max_x_trans = [1.8, 1.8, 1.8, 2, 2, 1.8]; 
+max_x_trans = [1.5, 1.5, 1.5, 1.5, 1.5, 1.5]; 
 constantsTOAD.Q_trans = diag(1 ./ max_x_trans.^2);
-max_a_trans = 1.2; 
+max_a_trans = 1.0; 
 constantsTOAD.R_trans = eye(3) .* (1 / max_a_trans^2);
-constantsTOAD.OmegaThr = 1.4;
+constantsTOAD.OmegaThr = 2;
 
 % Inner Loop
 max_x_rot = [0.13, 0.13, 0.13, 0.24, 0.24, 0.21];
