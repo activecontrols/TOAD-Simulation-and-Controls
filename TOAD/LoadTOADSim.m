@@ -40,8 +40,8 @@ constantsTOAD.BBias = 1e-8;
 
 % Magnetometer
 constantsTOAD.mag = [0.385202; 0.030609; -0.922324];
-dM_xx = 0.035;      % 3.5% Scaling from SS Rods
-dM_zz = 0.060;      % 6.0% Scaling from crown
+dM_xx = 0.015;      % 3.5% Scaling from SS Rods
+dM_zz = 0.010;      % 6.0% Scaling from crown
 dM_xz = 0.010;      % 1.00% Coupling
 dM_xy = 0.005;      % 0.50% Coupling
 magDistMatrix = [dM_xx, dM_xy, dM_xz;
@@ -61,21 +61,21 @@ dt_SIM = 1/500;
 %% Trajectory Load
 % Controller gains
 % Outer Loop
-max_x_trans = [2.0, 2.0, 2.0, 50, 50, 50]; 
+max_x_trans = [1.8, 1.8, 1.8, 2, 2, 1.8]; 
 constantsTOAD.Q_trans = diag(1 ./ max_x_trans.^2);
 max_a_trans = 1.2; 
 constantsTOAD.R_trans = eye(3) .* (1 / max_a_trans^2);
-constantsTOAD.OmegaThr = 1.0;
+constantsTOAD.OmegaThr = 1.4;
 
 % Inner Loop
-max_x_rot = [0.25, 0.25, 0.25, 1, 1, 2];
+max_x_rot = [0.13, 0.13, 0.13, 0.24, 0.24, 0.21];
 constantsTOAD.Q_rot = diag(1 ./ max_x_rot.^2);
-constantsTOAD.R_rot = diag([6, 6, 1/2^2]);
-constantsTOAD.OmegaAtt = 0.75;
+constantsTOAD.R_rot = diag([30, 30, 1/4^2]);
+constantsTOAD.OmegaAtt = 2.75;
 
 % Pick a trajectory filename 
 try 
-    filename = "Backflip_v1.csv";
+    filename = "Backflip_v1";
     Data = readmatrix("Guidance\Trajectories\"+filename);
     constantsTOAD.Traj.Time = Data(:, 1);
     constantsTOAD.Traj.States = Data(:, 2:16);

@@ -172,7 +172,7 @@ end
 
 %% Execute Parallel Simulations
 disp('Starting Parallel Monte Carlo Trajectory Simulations (parsim)...');
-out = parsim(simIn, 'ShowProgress', 'on', 'UseFastRestart', 'on');
+out = sim(simIn, 'ShowProgress', 'on', 'UseFastRestart', 'on');
 
 %% Extract Metrics and Interpolate Trajectories
 disp('Simulations complete. Extracting and interpolating trajectories...');

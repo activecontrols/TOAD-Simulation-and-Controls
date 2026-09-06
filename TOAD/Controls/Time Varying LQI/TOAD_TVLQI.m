@@ -37,7 +37,7 @@ function [U_cmd, SpecRad, X_err] = TOAD_TVLQI(GND, X_est, X_trg, U_ff, K, t, con
                    X_est(8:10) - X_trg(8:10)];
 
     Delta_A = -K_trans * X_err_trans;
-    MaxAccelCorr = [1.5;1.5;4];
+    MaxAccelCorr = [1;1;4];
     Delta_A = max(min(Delta_A, MaxAccelCorr), -MaxAccelCorr);
 
     % Nominal NLP Acceleration
@@ -149,32 +149,38 @@ function [U_cmd, SpecRad, X_err] = TOAD_TVLQI(GND, X_est, X_trg, U_ff, K, t, con
                  X_est(11:13) - omegaTRG];
     Delta_u = -K_rot * X_err_rot;
 
-    
-    %% Trim Integration & Clamping
+    %% Trim Integration & Clamping (cascaded authority allocation)
     Channels = [1, 2, 4];
     
     % Input bounds
     thrustMax = constantsTOAD.MaxThrust;
     gimbalMax = pi/12;
     InputBounds = [-gimbalMax       gimbalMax;
-                   -gimbalMax       gimbalMax;
-                   0.2 * thrustMax  thrustMax;
-                   -7               7];
+        -gimbalMax       gimbalMax;
+        0.2 * thrustMax  thrustMax;
+        -7               7];
     
-    % Maximum allowable trim authority
+    %% Feedback Trim 
     MaxTrim = [ones(2,1) * deg2rad(10); 5];
-    Trim = Delta_u(:) - U_dist(:);
-    Trim = min(max(Trim, -MaxTrim), MaxTrim);
+    Trim_FB = min(max(Delta_u(:), -MaxTrim), MaxTrim);
     
-    % Compute asymmetric bounds remaining for feedforward
-    U_ff_min = InputBounds(Channels, 1) - Trim;
-    U_ff_max = InputBounds(Channels, 2) - Trim;
+    Bnd_min_1 = InputBounds(Channels, 1) - Trim_FB;
+    Bnd_max_1 = InputBounds(Channels, 2) - Trim_FB;
     
-    % Clamp feedforward to available headroom and sum with Trim
-    U_ff_cmd = min(max(U_ff(Channels), U_ff_min), U_ff_max);
-    U_cmd(Channels, 1) = U_ff_cmd + Trim;
+    %% Disturbance
+    MaxDist   = [ones(2,1) * deg2rad(10); 5]; 
+    U_dist_req = min(max(-U_dist(Channels), -MaxDist), MaxDist);
+    Trim_Dist  = min(max(U_dist_req, Bnd_min_1), Bnd_max_1);
+    
+    Trim = Trim_FB + Trim_Dist;
+    
+    Bnd_min_2 = InputBounds(Channels, 1) - Trim;
+    Bnd_max_2 = InputBounds(Channels, 2) - Trim;
+    
+    %% Feedforward
+    U_ff_cmd = min(max(U_ff(Channels), Bnd_min_2), Bnd_max_2);
+    U_cmd(Channels, 1) = Trim + U_ff_cmd;
 
-    % SpecRad = [Delta_u(1); Delta_u(2); U_cmd(3) - U_ff(3); Delta_u(3)];
     %% Spectral radius calculation for analysis (Taken from MatrixVerif)
 
     % Run at 10Hz for efficiency

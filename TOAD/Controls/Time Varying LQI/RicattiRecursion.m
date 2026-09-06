@@ -157,7 +157,7 @@ for n = N:-1:2
     z_poles_att = exp(s_poles_att * dT_LESO);
     L_att_n = place(A_LESO_A', C_LESO_A', z_poles_att)';
     
-    s_poles_th = -omega_thr * (1 + (0:8)*0.01);
+    s_poles_th = -omega_thr * (1 + (0:8)*0.04);
     z_poles_th = exp(s_poles_th * dT_LESO);
     L_th_n = place(A_LESO_T', C_LESO_T', z_poles_th)';
     
