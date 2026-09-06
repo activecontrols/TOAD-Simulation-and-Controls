@@ -179,6 +179,7 @@ function [U_cmd, SpecRad, X_err] = TOAD_TVLQI(GND, X_est, X_trg, U_ff, K, t, con
     
     %% Feedforward
     U_ff_cmd = min(max(U_ff(Channels), Bnd_min_2), Bnd_max_2);
+    U_ff_cmd(3) = 0;
     U_cmd(Channels, 1) = Trim + U_ff_cmd;
 
     %% Spectral radius calculation for analysis (Taken from MatrixVerif)
