@@ -37,7 +37,7 @@ function [U_cmd, SpecRad, X_err] = TOAD_TVLQI(GND, X_est, X_trg, U_ff, K, t, con
                    X_est(8:10) - X_trg(8:10)];
 
     Delta_A = -K_trans * X_err_trans;
-    MaxAccelCorr = [1;1;4];
+    MaxAccelCorr = [1.5;1.5;4];
     Delta_A = max(min(Delta_A, MaxAccelCorr), -MaxAccelCorr);
 
     % Nominal NLP Acceleration
@@ -179,7 +179,6 @@ function [U_cmd, SpecRad, X_err] = TOAD_TVLQI(GND, X_est, X_trg, U_ff, K, t, con
     
     %% Feedforward
     U_ff_cmd = min(max(U_ff(Channels), Bnd_min_2), Bnd_max_2);
-    U_ff_cmd(3) = 0;
     U_cmd(Channels, 1) = Trim + U_ff_cmd;
 
     %% Spectral radius calculation for analysis (Taken from MatrixVerif)
