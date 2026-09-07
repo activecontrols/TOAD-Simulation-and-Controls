@@ -87,18 +87,49 @@ constants6DoF.Q_rot = diag(1 ./ max_x_rot.^2);
 constants6DoF.R_rot = diag([32, 32, 1/4^2]);
 constants6DoF.OmegaAtt = 3.0;
 
-% Pick a trajectory filename 
-try 
-    filename = "Backflip_v3";
-    Data = readmatrix("Guidance\Trajectories\"+filename);
-    constants6DoF.Traj.Time = Data(:, 1);
-    constants6DoF.Traj.States = Data(:, 2:16);
-    constants6DoF.Traj.Inputs = Data(:, 17:20);
-    [constants6DoF.Traj.KTGain, constants6DoF.Traj.KRGain, ...
-     constants6DoF.Traj.LAGain, constants6DoF.Traj.LTGain] = ReadGains(filename);
-catch e
-    disp("Failed to read trajectory filename")
+% Pick a trajectory filename (e.g. "TOAD_Backflip_v001", "ASTRAv2_Circle_v001", or "Backflip_v3")
+filename = "ASTRAv2_Backflip_v001";
+
+% Resolve trajectory CSV file path
+traj_dir = fullfile(pwd, 'Guidance', 'Trajectories');
+[~, name_stem, ext] = fileparts(filename);
+if isempty(ext)
+    traj_file = fullfile(traj_dir, name_stem + ".csv");
+    if ~exist(traj_file, 'file')
+        traj_file = fullfile(traj_dir, filename);
+    end
+else
+    traj_file = fullfile(traj_dir, filename) + '.csv';
 end
+
+% Check existance
+if ~exist(traj_file, 'file')
+    error('LoadTOADSim:TrajectoryNotFound', ...
+        ['Trajectory file not found: %s\n' ...
+         'Please generate the trajectory using TrajectoryGenerator.m before loading.'], traj_file);
+end
+
+% Load trajectory matrices into constants6DoF.Traj
+Data = readmatrix(traj_file);
+constants6DoF.Traj.Time   = Data(:, 1);
+constants6DoF.Traj.States = Data(:, 2:16);
+constants6DoF.Traj.Inputs = Data(:, 17:20);
+
+% Check for gain files
+gains_dir = fullfile(traj_dir, 'Gains');
+gain_prefix = fullfile(gains_dir, "K_trans_" + name_stem);
+gain_exists = exist(gain_prefix + ".txt", 'file') || exist(gain_prefix + ".csv", 'file') || exist(gain_prefix, 'file');
+
+if ~gain_exists
+    fprintf('Gain files not found for %s. Automatically calling SaveGains to generate TV-LQI tracking gains...\n', name_stem);
+    SaveGains(name_stem, constants6DoF);
+    fprintf('Gain files successfully generated for %s.\n', name_stem);
+end
+
+% Load tracking gains into constants6DoF.Traj
+[constants6DoF.Traj.KTGain, constants6DoF.Traj.KRGain, ...
+ constants6DoF.Traj.LAGain, constants6DoF.Traj.LTGain] = ReadGains(name_stem);
+
 clear slBus* 
 busInfo = Simulink.Bus.createObject(constants6DoF);
 topLevelBusName = busInfo(end).busName;

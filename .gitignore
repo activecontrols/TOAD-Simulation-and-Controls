@@ -40,3 +40,7 @@ codegen/
 *.sbproj.bak
 
 *.csv
+
+# Antigravity Sandbox
+sandbox/
+TOAD/sandbox/
