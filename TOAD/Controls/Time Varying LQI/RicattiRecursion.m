@@ -31,7 +31,12 @@ m = m_dry + m_lox + m_ipa;
 [J_tot, CGz] = ComputeJtot(m_lox, m_ipa, constantsTOAD);
 
 % Angular dynamics
-MB = zetaCross([0; 0; -CGz])*TB + [0; 0; roll];
+thrustDir = [cos(theta)*sin(phi); -sin(theta); cos(theta)*cos(phi)];
+if constantsTOAD.Vehicle == "ASTRAv2"
+    MB = zetaCross([0; 0; -CGz])*TB + roll * thrustDir;
+else
+    MB = zetaCross([0; 0; -CGz])*TB + [0; 0; roll];
+end
 M = [q(1) -q(2) -q(3) -q(4);
      q(2)  q(1) -q(4)  q(3);
      q(3)  q(4)  q(1) -q(2);
@@ -48,8 +53,13 @@ rdot = [v1;v2;v3];
 vdot = FI/m;
 
 % Mass Dynamics
-mdot_lox = -thrust / constantsTOAD.MaxThrust * constantsTOAD.OF / (1 + constantsTOAD.OF) * (constantsTOAD.MaxMdot);
-mdot_ipa = -thrust / constantsTOAD.MaxThrust * 1 / (1 + constantsTOAD.OF) * (constantsTOAD.MaxMdot);
+if constantsTOAD.Vehicle == "ASTRAv2"
+    mdot_lox = sym(0);
+    mdot_ipa = sym(0);
+else
+    mdot_lox = -thrust / constantsTOAD.MaxThrust * constantsTOAD.OF / (1 + constantsTOAD.OF) * (constantsTOAD.MaxMdot);
+    mdot_ipa = -thrust / constantsTOAD.MaxThrust * 1 / (1 + constantsTOAD.OF) * (constantsTOAD.MaxMdot);
+end
 
 %% State vector derivative
 xdot = [qdot;rdot;vdot; omegaBdot;mdot_lox;mdot_ipa];

@@ -51,12 +51,22 @@ rdot = v;
 vdot = FI / m;
 
 % Tank drain dynamics
-mdot_lox = -thrust / MaxThrust * OF / (1 + OF) * (MaxMdot + MaxMdot_d);
-mdot_ipa = -thrust / MaxThrust * 1 / (1 + OF) * (MaxMdot + MaxMdot_d);
+if C.Vehicle == "ASTRAv2"
+    mdot_lox = sym(0);
+    mdot_ipa = sym(0);
+else
+    mdot_lox = -thrust / MaxThrust * OF / (1 + OF) * (MaxMdot + MaxMdot_d);
+    mdot_ipa = -thrust / MaxThrust * 1 / (1 + OF) * (MaxMdot + MaxMdot_d);
+end
 
 % Propellant Fill height
-OxFluidHeight = (m_lox / OxMassI) * OxHeight * 0.9;
-FuFluidHeight = (m_ipa / FuMassI) * FuHeight * 0.9;
+if C.Vehicle == "ASTRAv2"
+    OxFluidHeight = sym(0);
+    FuFluidHeight = sym(0);
+else
+    OxFluidHeight = (m_lox / OxMassI) * OxHeight * 0.9;
+    FuFluidHeight = (m_ipa / FuMassI) * FuHeight * 0.9;
+end
 
 % Propellant inertias
 J_xx = 1/12 * m_lox * (3 * OxRadius^2 + OxFluidHeight^2);
@@ -92,7 +102,12 @@ J_tot = J_dry + J_lox + J_ipa + J_d;
 % Body frame moment (Roll torque along the thrust vector axis due to contra
 % EDF) (TODO: UPDATE for use with RCS)
 % Off center moments for Simulation
-MB = zetaCross([0; 0; -CGz] + TB_d)*TB + [0; 0; roll];
+thrustDir = [cos(theta)*sin(phi); -sin(theta); cos(theta)*cos(phi)];
+if C.Vehicle == "ASTRAv2"
+    MB = zetaCross([0; 0; -CGz])*TB + roll * thrustDir;
+else
+    MB = zetaCross([0; 0; -CGz])*TB + [0; 0; roll];
+end
 
 % Dynamics
 qdot = 0.5 * HamiltonianProd(q) * [0; omegaB];

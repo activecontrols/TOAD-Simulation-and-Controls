@@ -10,36 +10,52 @@
 clear functions;
 MEKF_Constants;
 
-%% Create constants struct for TOAD (Approximate values, all metric)
-% Vehicle Parameters
-constantsTOAD.m_dry = 141.521;
-constantsTOAD.g = 9.80145; 
-constantsTOAD.rTB = 0.75;
-constantsTOAD.J = diag([110 110 20]);
-constantsTOAD.MaxThrust = 2446.52;
-constantsTOAD.MaxMdot = 1.3204;
-constantsTOAD.OF = 1;
-constantsTOAD.OxMass = 20.78;   constantsTOAD.FuMass = 19.79;
-constantsTOAD.OxHeight = 0.377; constantsTOAD.FuHeight = 0.495;
-constantsTOAD.OxRadius = 0.146; constantsTOAD.FuRadius = 0.146;
-constantsTOAD.Ox_Z = 0.85;      constantsTOAD.Fu_Z = 1.35;
-constantsTOAD.m_wet = constantsTOAD.m_dry + constantsTOAD.OxMass + constantsTOAD.FuMass;
+%% Select vehicle
+constants6DoF.Vehicle = "ASTRAv2";
+
+%% Create constants struct for vehicle (Approximate values, all metric)
+if constants6DoF.Vehicle == "TOAD"
+    % TOAD Parameters
+    constants6DoF.m_dry = 141.521;
+    constants6DoF.g = 9.80145; 
+    constants6DoF.rTB = 0.75;
+    constants6DoF.J = diag([110 110 20]);
+    constants6DoF.MaxThrust = 2446.52;
+    constants6DoF.MaxMdot = 1.3204;
+    constants6DoF.OF = 1;
+    constants6DoF.OxMass = 20.78;   constants6DoF.FuMass = 19.79;
+    constants6DoF.OxHeight = 0.377; constants6DoF.FuHeight = 0.495;
+    constants6DoF.OxRadius = 0.146; constants6DoF.FuRadius = 0.146;
+    constants6DoF.Ox_Z = 0.85;      constants6DoF.Fu_Z = 1.35;
+    constants6DoF.m_wet = constants6DoF.m_dry + constants6DoF.OxMass + constants6DoF.FuMass;
+elseif constants6DoF.Vehicle == "ASTRAv2"
+    constants6DoF.m_dry = 1.275;
+    constants6DoF.g = 9.80145; 
+    constants6DoF.rTB = 0.26;
+    constants6DoF.J = diag([0.067 0.067 0.02]);
+    constants6DoF.MaxThrust = constants6DoF.m_dry * constants6DoF.g * 1.30;  % Check properly
+    constants6DoF.MaxMdot = 0;
+    constants6DoF.OF = 1;
+    constants6DoF.m_wet = constants6DoF.m_dry; 
+    constants6DoF.OxMass = 0;       constants6DoF.FuMass = 0;
+    constants6DoF.OxHeight = 1;     constants6DoF.FuHeight = 1;
+    constants6DoF.OxRadius = 1;     constants6DoF.FuRadius = 1; 
+    constants6DoF.Ox_Z = 1;         constants6DoF.Fu_Z = 1;
+end
 
 % Dynamic Files Generation & Control
-% FlightDynamicsGen(constantsTOAD);
-[K_Att_Wet, ~] = TOAD_Controller_Gen(constantsTOAD, constantsTOAD.OxMass, constantsTOAD.FuMass);
-[K_Att_Dry, ~] = TOAD_Controller_Gen(constantsTOAD, 0, 0);
-x0 = [1; zeros(12,1); constantsTOAD.OxMass; constantsTOAD.FuMass];
-u0 = [0; 0; constantsTOAD.g * constantsTOAD.m_wet; 0];
+FlightDynamicsGen(constants6DoF);
+x0 = [1; zeros(12,1); constants6DoF.OxMass; constants6DoF.FuMass];
+u0 = [0; 0; constants6DoF.g * constants6DoF.m_wet; 0];
 
 % Kalman Filter & Control Parameters
-constantsTOAD.Q = p2.Q;
-constantsTOAD.R = p2.obsv_cov_mat;
-constantsTOAD.BSigma = 5e-2;
-constantsTOAD.BBias = 1e-8;
+constants6DoF.Q = p2.Q;
+constants6DoF.R = p2.obsv_cov_mat;
+constants6DoF.BSigma = 5e-2;
+constants6DoF.BBias = 1e-8;
 
 % Magnetometer
-constantsTOAD.mag = [0.385202; 0.030609; -0.922324];
+constants6DoF.mag = [0.385202; 0.030609; -0.922324];
 dM_xx = 0.015;      % 3.5% Scaling from SS Rods
 dM_zz = 0.010;      % 6.0% Scaling from crown
 dM_xz = 0.010;      % 1.00% Coupling
@@ -48,8 +64,6 @@ magDistMatrix = [dM_xx, dM_xy, dM_xz;
                  dM_xy, dM_xx, dM_xz;
                  dM_xz, dM_xz, dM_zz] * 0.1 + eye(3);
 
-constantsTOAD.K_Att_Wet = K_Att_Wet;
-constantsTOAD.K_Att_Dry = K_Att_Dry;
 covar_vec = [accel_proc_cov; gyro_cov; mag_proc_cov];
 IMU_Rate = 500;
 Checkpoints =  [0, 5, 5,  5;
@@ -62,40 +76,38 @@ dt_SIM = 1/500;
 % Controller gains
 % Outer Loop
 max_x_trans = 1.4 * ones(1,6);
-constantsTOAD.Q_trans = diag(1 ./ max_x_trans.^2);
+constants6DoF.Q_trans = diag(1 ./ max_x_trans.^2);
 max_a_trans = 1.2; 
-constantsTOAD.R_trans = eye(3) .* (1 / max_a_trans^2);
-constantsTOAD.OmegaThr = 2.2;
+constants6DoF.R_trans = eye(3) .* (1 / max_a_trans^2);
+constants6DoF.OmegaThr = 2.2;
 
 % Inner Loop
 max_x_rot = [0.12, 0.12, 0.12, 0.22, 0.22, 0.21];
-constantsTOAD.Q_rot = diag(1 ./ max_x_rot.^2);
-constantsTOAD.R_rot = diag([32, 32, 1/4^2]);
-constantsTOAD.OmegaAtt = 3.0;
+constants6DoF.Q_rot = diag(1 ./ max_x_rot.^2);
+constants6DoF.R_rot = diag([32, 32, 1/4^2]);
+constants6DoF.OmegaAtt = 3.0;
 
 % Pick a trajectory filename 
 try 
     filename = "Backflip_v3";
     Data = readmatrix("Guidance\Trajectories\"+filename);
-    constantsTOAD.Traj.Time = Data(:, 1);
-    constantsTOAD.Traj.States = Data(:, 2:16);
-    constantsTOAD.Traj.Inputs = Data(:, 17:20);
-    [constantsTOAD.Traj.KTGain, constantsTOAD.Traj.KRGain, ...
-     constantsTOAD.Traj.LAGain, constantsTOAD.Traj.LTGain] = ReadGains(filename);
+    constants6DoF.Traj.Time = Data(:, 1);
+    constants6DoF.Traj.States = Data(:, 2:16);
+    constants6DoF.Traj.Inputs = Data(:, 17:20);
+    [constants6DoF.Traj.KTGain, constants6DoF.Traj.KRGain, ...
+     constants6DoF.Traj.LAGain, constants6DoF.Traj.LTGain] = ReadGains(filename);
 catch e
     disp("Failed to read trajectory filename")
 end
 clear slBus* 
-busInfo = Simulink.Bus.createObject(constantsTOAD);
+busInfo = Simulink.Bus.createObject(constants6DoF);
 topLevelBusName = busInfo(end).busName;
 TOAD_Bus = evalin('base', topLevelBusName);
 
 Waypoints = TrajectoryBuilder;
-J_d = zeros(3);
-J_d = diag([15, 15, 0]);
+J_d = constants6DoF.J * 0.1;
 MaxMdot_d = 0;
-TB_d = zeros(3,1);
-TB_d = [0.02, 0.02, 0]';
+TB_d = [0.01, 0.01, 0]';
 
 % Constant vars (varied usage)
 [windMerid, windZonal] = atmoshwm(40.4258686, -86.9080655, 186 + 50);
