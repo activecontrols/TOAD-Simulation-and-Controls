@@ -133,7 +133,7 @@ end
 clear slBus* 
 busInfo = Simulink.Bus.createObject(constants6DoF);
 topLevelBusName = busInfo(end).busName;
-TOAD_Bus = evalin('base', topLevelBusName);
+Vehicle_Bus = evalin('base', topLevelBusName);
 
 Waypoints = TrajectoryBuilder;
 J_d = constants6DoF.J * 0.1;
