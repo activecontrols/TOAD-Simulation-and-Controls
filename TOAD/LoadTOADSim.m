@@ -7,11 +7,42 @@
 
 %% Initialize parameters and clear functions
 % Initial conditions for state
-clear functions;
+clear functions; %#ok<CLFUNC>
+
+%% Ensure required project paths are added, should be redundant but oh well
+sim_dir = fileparts(mfilename('fullpath'));
+if ~isempty(sim_dir)
+    p_proj = sim_dir;
+    while ~isempty(p_proj) && ~exist(fullfile(p_proj, 'Navigation'), 'dir')
+        p_parent = fileparts(p_proj);
+        if strcmp(p_parent, p_proj), break; end
+        p_proj = p_parent;
+    end
+    if exist(fullfile(p_proj, 'Navigation'), 'dir')
+        addpath(fullfile(p_proj, 'Navigation', 'Kalman FIlter'));
+        addpath(fullfile(p_proj, 'Helper'));
+        addpath(fullfile(p_proj, 'Flight Dynamics'));
+        addpath(fullfile(p_proj, 'Analysis'));
+        addpath(fullfile(p_proj, 'Controls'));
+        addpath(fullfile(p_proj, 'Guidance'));
+    end
+end
+
 MEKF_Constants;
 
-%% Select vehicle
-constants6DoF.Vehicle = 1; % 1 for TOAD, 0 for ASTRA
+%% Select vehicle (1 for TOAD, 0 for ASTRA)
+if ~isfield(constants6DoF, 'Vehicle') || isempty(constants6DoF.Vehicle)
+    constants6DoF.Vehicle = 0; % 1 for TOAD, 0 for ASTRA (default TOAD)
+else
+    % Normalize strings if passed in
+    if ischar(constants6DoF.Vehicle) || isstring(constants6DoF.Vehicle)
+        if any(strcmpi(string(constants6DoF.Vehicle), ["ASTRA", "ASTRAv2"]))
+            constants6DoF.Vehicle = 0;
+        elseif strcmpi(string(constants6DoF.Vehicle), "TOAD")
+            constants6DoF.Vehicle = 1;
+        end
+    end
+end
 
 %% Create constants struct for vehicle (Approximate values, all metric)
 if constants6DoF.Vehicle == 1
@@ -29,6 +60,7 @@ if constants6DoF.Vehicle == 1
     constants6DoF.Ox_Z = 0.85;      constants6DoF.Fu_Z = 1.35;
     constants6DoF.m_wet = constants6DoF.m_dry + constants6DoF.OxMass + constants6DoF.FuMass;
 elseif constants6DoF.Vehicle == 0
+    % ASTRA Parameters
     constants6DoF.m_dry = 1.275;
     constants6DoF.g = 9.80145; 
     constants6DoF.rTB = 0.26;
@@ -44,6 +76,20 @@ elseif constants6DoF.Vehicle == 0
 end
 
 % Dynamic Files Generation & Control
+% Ensure working directory is project root for relative file writes, once
+% again should be redundant but needed. Failing when working on diffrent
+% machines
+if ~exist(fullfile(pwd, 'Flight Dynamics'), 'dir')
+    p_check = fileparts(mfilename('fullpath'));
+    while ~isempty(p_check) && ~exist(fullfile(p_check, 'Flight Dynamics'), 'dir')
+        parent_check = fileparts(p_check);
+        if strcmp(parent_check, p_check), break; end
+        p_check = parent_check;
+    end
+    if exist(fullfile(p_check, 'Flight Dynamics'), 'dir')
+        cd(p_check);
+    end
+end
 FlightDynamicsGen(constants6DoF);
 x0 = [1; zeros(12,1); constants6DoF.OxMass; constants6DoF.FuMass];
 u0 = [0; 0; constants6DoF.g * constants6DoF.m_wet; 0];
@@ -87,8 +133,8 @@ constants6DoF.Q_rot = diag(1 ./ max_x_rot.^2);
 constants6DoF.R_rot = diag([32, 32, 1/4^2]);
 constants6DoF.OmegaAtt = 3.0;
 
-% Pick a trajectory filename (e.g. "TOAD_Backflip_v001", "ASTRAv2_Circle_v001", or "Backflip_v3")
-filename = "TOAD_Backflip_v001";
+% Pick a trajectory filename (e.g. "TOAD_Backflip_v001", "ASTRA_Circle_v001", or "Backflip_v3")
+filename = "ASTRA_Hop_v001";
 
 % Resolve trajectory CSV file path
 traj_dir = fullfile(pwd, 'Guidance', 'Trajectories');

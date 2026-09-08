@@ -9,9 +9,14 @@ classdef TrajectoryOptimizer < handle
     properties
         % System and Vehicle Properties
         constants           % Vehicle constants struct (from LoadTOADSim)
-        Vehicle string      % "TOAD" or "ASTRAv2"
-        isElectric logical  % True if vehicle has no propellant drain (ASTRAv2)
-        
+        Vehicle = 1         % Vehicle flag: 1 for TOAD, 0 for ASTRA
+    end
+    
+    properties (Dependent)
+        isElectric logical  % True if vehicle has no propellant drain (ASTRA)
+    end
+    
+    properties
         % Discretization and Timing
         N double = 200      % Number of control intervals
         T_bounds = [15, 50] % [T_min, T_max] total trajectory duration bounds [s]
@@ -71,6 +76,33 @@ classdef TrajectoryOptimizer < handle
     end
     
     methods
+        function set.Vehicle(obj, val)
+            if ischar(val) || isstring(val)
+                strVal = string(val);
+                if strcmpi(strVal, "ASTRA") || strcmpi(strVal, "ASTRAv2")
+                    obj.Vehicle = 0;
+                elseif strcmpi(strVal, "TOAD")
+                    obj.Vehicle = 1;
+                else
+                    error('TrajectoryOptimizer:UnknownVehicle', ...
+                        'Unknown vehicle: %s. Must be 1 (TOAD), 0 (ASTRA), or "TOAD"/"ASTRA".', strVal);
+                end
+            elseif islogical(val) || isnumeric(val)
+                if val == 0 || val == 1
+                    obj.Vehicle = double(val);
+                else
+                    error('TrajectoryOptimizer:InvalidVehicle', ...
+                        'Vehicle flag must be 1 (TOAD) or 0 (ASTRA). Received: %g', double(val));
+                end
+            else
+                error('TrajectoryOptimizer:InvalidVehicle', 'Unsupported Vehicle type: %s', class(val));
+            end
+        end
+        
+        function val = get.isElectric(obj)
+            val = (obj.Vehicle == 0);
+        end
+        
         function obj = TrajectoryOptimizer(constants6DoF, varargin)
             %% TRAJECTORYOPTIMIZER  Construct optimizer instance from vehicle constants.
             if nargin < 1 || isempty(constants6DoF)
@@ -85,8 +117,11 @@ classdef TrajectoryOptimizer < handle
             addpath(fullfile(pwd, 'Flight Dynamics'));
             
             obj.constants = constants6DoF;
-            obj.Vehicle = constants6DoF.Vehicle;
-            
+            if isfield(constants6DoF, 'Vehicle')
+                obj.Vehicle = constants6DoF.Vehicle;
+            else
+                obj.Vehicle = 1; % Default TOAD
+            end
             
             % Apply optional name-value pairs
             if ~isempty(varargin)
@@ -95,6 +130,23 @@ classdef TrajectoryOptimizer < handle
                     if isprop(obj, propName)
                         obj.(propName) = varargin{i+1};
                     end
+                end
+            end
+            
+            % Verify vehicle consistency with constants struct
+            if isfield(constants6DoF, 'Vehicle')
+                constVeh = constants6DoF.Vehicle;
+                if ischar(constVeh) || isstring(constVeh)
+                    if strcmpi(string(constVeh), "ASTRA") || strcmpi(string(constVeh), "ASTRAv2")
+                        constVeh = 0;
+                    else
+                        constVeh = 1;
+                    end
+                end
+                if obj.Vehicle ~= double(constVeh)
+                    warning('TrajectoryOptimizer:VehicleMismatch', ...
+                        'Vehicle was set to %s (%d), but constants6DoF.Vehicle is %d. Dynamics and physical parameters may be inconsistent!', ...
+                        obj.getVehicleName(), obj.Vehicle, double(constVeh));
                 end
             end
             
@@ -623,7 +675,7 @@ classdef TrajectoryOptimizer < handle
             opti.subject_to(sum(X(8:10, end).^2) <= obj.v_f_tol^2);
             
             % Propellant Margin (Enforced only for chemical rocket with drain dynamics)
-            if ~(obj.Vehicle == 0)
+            if obj.Vehicle == 1
                 prop_margin_frac = 0.10;
                 opti.subject_to(X(14, end) >= prop_margin_frac * m_lox0);
                 opti.subject_to(X(15, end) >= prop_margin_frac * m_ipa0);
@@ -771,7 +823,7 @@ classdef TrajectoryOptimizer < handle
             s_opts = struct('max_iter', obj.MaxIter, ...
                             'tol', obj.Tol, ...
                             'constr_viol_tol', obj.ConstrViolTol, ...
-                            'acceptable_tol', 1e-2, ...
+                            'acceptable_tol', 1e-3, ...
                             'acceptable_constr_viol_tol', 1e-3, ...
                             'acceptable_iter', 10, ...
                             'print_level', 0);
@@ -781,7 +833,7 @@ classdef TrajectoryOptimizer < handle
             Uhat = obj.OptiVars.Uhat;
             T_total = obj.OptiVars.T_total;
             
-            fprintf('Starting %s optimization solve for vehicle: %s\n', obj.Maneuver, obj.Vehicle);
+            fprintf('Starting %s optimization solve for vehicle: %s\n', obj.Maneuver, obj.getVehicleName());
             
             try
                 sol_casadi = opti.solve();
@@ -803,6 +855,11 @@ classdef TrajectoryOptimizer < handle
             end
             
             time_res = linspace(0, T_res, obj.N + 1);
+            
+            % For electric vehicles, strictly zero propellant states for clean export
+            if obj.Vehicle == 0
+                X_res(14:15, :) = 0;
+            end
             
             % Store in Solution struct
             obj.Solution = struct( ...
@@ -949,13 +1006,13 @@ classdef TrajectoryOptimizer < handle
             thrust    = U_res(3, :);
             
             % Plot 1: 3D Mission Trajectory
-            f1 = figure('Name', sprintf('%s: 3D Mission Profile (%s)', obj.Maneuver, obj.Vehicle));
+            f1 = figure('Name', sprintf('%s: 3D Mission Profile (%s)', obj.Maneuver, obj.getVehicleName()));
             tl = tiledlayout(f1, 3, 4, 'TileSpacing', 'compact', 'Padding', 'compact');
             
             axMain = nexttile(tl, 1, [3 3]);
             hold(axMain, 'on'); grid(axMain, 'on'); axis(axMain, 'equal'); view(axMain, 3);
             xlabel(axMain, 'X [m]'); ylabel(axMain, 'Y [m]'); zlabel(axMain, 'Z (Alt) [m]');
-            title(axMain, sprintf('3D Trajectory (%s - %s)', obj.Maneuver, obj.Vehicle));
+            title(axMain, sprintf('3D Trajectory (%s - %s)', obj.Maneuver, obj.getVehicleName()));
             
             patch(axMain, [pos(1,:), NaN], [pos(2,:), NaN], [pos(3,:), NaN], [t_state, NaN], ...
                   'FaceColor', 'none', 'EdgeColor', 'interp', 'LineWidth', 2.5);
@@ -980,7 +1037,7 @@ classdef TrajectoryOptimizer < handle
             xlabel(axFront, 'Y [m]'); ylabel(axFront, 'Z [m]'); title(axFront, 'Front View (Y-Z)');
             
             % Plot 2: Control & Attitude Performance
-            f2 = figure('Name', sprintf('%s: Control & Attitude (%s)', obj.Maneuver, obj.Vehicle));
+            f2 = figure('Name', sprintf('%s: Control & Attitude (%s)', obj.Maneuver, obj.getVehicleName()));
             subplot(3, 1, 1); hold on; grid on;
             yyaxis left;
             plot(t_state, quat(1, :), 'k', 'LineWidth', 1.5, 'DisplayName', 'q_w');
@@ -1007,7 +1064,7 @@ classdef TrajectoryOptimizer < handle
             ylabel('Thrust [N]'); xlabel('Time [s]'); title('Thrust Command');
             
             % Plot 3: Mission Kinematics
-            f3 = figure('Name', sprintf('%s: Kinematics (%s)', obj.Maneuver, obj.Vehicle));
+            f3 = figure('Name', sprintf('%s: Kinematics (%s)', obj.Maneuver, obj.getVehicleName()));
             tl_kin = tiledlayout(f3, 3, 2, 'TileSpacing', 'compact', 'Padding', 'compact');
             labels_p = {'X Pos [m]', 'Y Pos [m]', 'Z Pos [m]'};
             labels_v = {'X Vel [m/s]', 'Y Vel [m/s]', 'Z Vel [m/s]'};
@@ -1038,7 +1095,7 @@ classdef TrajectoryOptimizer < handle
             thrust = obj.InitialGuess.U(3, :);
             t_ctrl = t(1:end-1);
             
-            f = figure('Name', sprintf('Initial Guess: %s (%s)', obj.Maneuver, obj.Vehicle));
+            f = figure('Name', sprintf('Initial Guess: %s (%s)', obj.Maneuver, obj.getVehicleName()));
             tl = tiledlayout(f, 2, 2, 'TileSpacing', 'compact', 'Padding', 'compact');
             
             % 3D Path
@@ -1068,12 +1125,21 @@ classdef TrajectoryOptimizer < handle
             title('Thrust Command Guess'); xlabel('Time [s]'); ylabel('Thrust [N]');
         end
         
+        function name = getVehicleName(obj)
+            %% GETVEHICLENAME  Returns standardized vehicle name string ("TOAD" or "ASTRA").
+            if obj.Vehicle == 0
+                name = "ASTRA";
+            else
+                name = "TOAD";
+            end
+        end
+        
         function fn = getFormattedFilename(obj)
             %% GETFORMATTEDFILENAME  Standardized naming: Vehicle_ManeuverType_v###
             if strlength(obj.Filename) > 0
                 fn = obj.Filename;
             else
-                fn = sprintf('%s_%s_v%03d', obj.Vehicle, obj.Maneuver, obj.Version);
+                fn = sprintf('%s_%s_v%03d', obj.getVehicleName(), obj.Maneuver, obj.Version);
             end
         end
         
