@@ -11,7 +11,7 @@ clear functions;
 MEKF_Constants;
 
 %% Select vehicle
-constants6DoF.Vehicle = 0; % 1 for TOAD, 0 for ASTRA
+constants6DoF.Vehicle = 1; % 1 for TOAD, 0 for ASTRA
 
 %% Create constants struct for vehicle (Approximate values, all metric)
 if constants6DoF.Vehicle == 1
@@ -88,7 +88,7 @@ constants6DoF.R_rot = diag([32, 32, 1/4^2]);
 constants6DoF.OmegaAtt = 3.0;
 
 % Pick a trajectory filename (e.g. "TOAD_Backflip_v001", "ASTRAv2_Circle_v001", or "Backflip_v3")
-filename = "ASTRAv2_Backflip_v001";
+filename = "TOAD_Backflip_v001";
 
 % Resolve trajectory CSV file path
 traj_dir = fullfile(pwd, 'Guidance', 'Trajectories');

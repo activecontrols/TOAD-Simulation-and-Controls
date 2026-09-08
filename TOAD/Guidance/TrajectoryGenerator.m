@@ -16,11 +16,10 @@ addpath(project_root);
 addpath(genpath(fullfile(project_root, 'Guidance')));
 addpath(genpath(fullfile(project_root, 'Controls')));
 addpath(genpath(fullfile(project_root, 'Flight Dynamics')));
-addpath(fullfile(project_root, 'sandbox', 'experiments'));
 LoadTOADSim;
 
 %% Mission Configuration
-Vehicle     = "ASTRAv2";        % Vehicle model: "TOAD", "ASTRAv2"
+Vehicle     = "TOAD";        % Vehicle model: "TOAD", "ASTRAv2"
 Maneuver    = "Backflip";       % Maneuver preset: "Backflip", "Circle", "Hop", "Custom"
 Version     = 1;                % Version integer: formats as v001, v002, etc.
 
