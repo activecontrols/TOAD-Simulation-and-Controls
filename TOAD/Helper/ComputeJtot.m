@@ -4,7 +4,7 @@ function [J_tot, CGz] = ComputeJtot(m_lox, m_ipa, constants6DoF)
     m = m_dry + m_lox + m_ipa;
 
     % Propellant fill height
-    if constants6DoF.Vehicle == "ASTRAv2"
+    if constants6DoF.Vehicle == 0
         OxFluidHeight = 0;
         FuFluidHeight = 0;
     else

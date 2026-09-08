@@ -51,7 +51,7 @@ rdot = v;
 vdot = FI / m;
 
 % Tank drain dynamics
-if C.Vehicle == "ASTRAv2"
+if C.Vehicle == 0 % if astra, 0
     mdot_lox = sym(0);
     mdot_ipa = sym(0);
 else
@@ -60,7 +60,7 @@ else
 end
 
 % Propellant Fill height
-if C.Vehicle == "ASTRAv2"
+if C.Vehicle == 0 % if astra, 0
     OxFluidHeight = sym(0);
     FuFluidHeight = sym(0);
 else
@@ -103,7 +103,7 @@ J_tot = J_dry + J_lox + J_ipa + J_d;
 % EDF) (TODO: UPDATE for use with RCS)
 % Off center moments for Simulation
 thrustDir = [cos(theta)*sin(phi); -sin(theta); cos(theta)*cos(phi)];
-if C.Vehicle == "ASTRAv2"
+if C.Vehicle == 0 % if astra, 0
     MB = zetaCross([0; 0; -CGz])*TB + roll * thrustDir;
 else
     MB = zetaCross([0; 0; -CGz])*TB + [0; 0; roll];

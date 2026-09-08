@@ -32,7 +32,7 @@ m = m_dry + m_lox + m_ipa;
 
 % Angular dynamics
 thrustDir = [cos(theta)*sin(phi); -sin(theta); cos(theta)*cos(phi)];
-if constantsTOAD.Vehicle == "ASTRAv2"
+if constantsTOAD.Vehicle == 0 % if astra, 0
     MB = zetaCross([0; 0; -CGz])*TB + roll * thrustDir;
 else
     MB = zetaCross([0; 0; -CGz])*TB + [0; 0; roll];
@@ -53,7 +53,7 @@ rdot = [v1;v2;v3];
 vdot = FI/m;
 
 % Mass Dynamics
-if constantsTOAD.Vehicle == "ASTRAv2"
+if constantsTOAD.Vehicle == 0
     mdot_lox = sym(0);
     mdot_ipa = sym(0);
 else

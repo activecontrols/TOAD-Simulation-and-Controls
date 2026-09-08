@@ -85,10 +85,8 @@ classdef TrajectoryOptimizer < handle
             addpath(fullfile(pwd, 'Flight Dynamics'));
             
             obj.constants = constants6DoF;
-            obj.Vehicle = string(constants6DoF.Vehicle);
+            obj.Vehicle = constants6DoF.Vehicle;
             
-            % Determine if vehicle is electric (ASTRAv2 has no propellant mass drain)
-            obj.isElectric = (obj.Vehicle == "ASTRAv2") || (constants6DoF.MaxMdot == 0);
             
             % Apply optional name-value pairs
             if ~isempty(varargin)
@@ -118,7 +116,7 @@ classdef TrajectoryOptimizer < handle
             Roll_c = 10;
             
             % For electric drone, propellant mass scales default to 1 to avoid zero division
-            if obj.isElectric
+            if obj.Vehicle == 0
                 Mlox_c = 1;
                 Mipa_c = 1;
             else
@@ -143,7 +141,7 @@ classdef TrajectoryOptimizer < handle
                     p.Glideslope = tan(deg2rad(10));
                     p.theta_tol = deg2rad(30);
                     p.q_inverted = [0; 0; -1; 0];
-                    if obj.isElectric
+                    if obj.Vehicle == 0
                         p.apex_alt = 35; % Scaled for ASTRAv2 lower ceiling
                         obj.T_initial = 30;
                     else
@@ -159,7 +157,7 @@ classdef TrajectoryOptimizer < handle
                     p.N_c4       = round(0.70 * obj.N);
                     p.N_approach = round(0.75 * obj.N);
                     p.circle_radius = 5.0;
-                    if obj.isElectric
+                    if obj.Vehicle == 0
                         p.circle_alt = 12.0;
                     else
                         p.circle_alt = 20.0;
@@ -174,7 +172,7 @@ classdef TrajectoryOptimizer < handle
                     p.N_ascent   = round(0.3 * obj.N);
                     p.N_approach = round(0.7 * obj.N);
                     p.Glideslope = tan(deg2rad(15));
-                    if obj.isElectric
+                    if obj.Vehicle == 0
                         p.apex_alt = 15;
                     else
                         p.apex_alt = 30;
@@ -236,7 +234,7 @@ classdef TrajectoryOptimizer < handle
             min_thrust = (0.25 + obj.thrust_margin) * MaxThrust;
             max_thrust = (1.0 - obj.thrust_margin) * MaxThrust;
             
-            if obj.isElectric
+            if obj.Vehicle == 0
                 m_curr = m_dry;
                 m_lox_sim = zeros(1, N_nodes);
                 m_ipa_sim = zeros(1, N_nodes);
@@ -608,7 +606,7 @@ classdef TrajectoryOptimizer < handle
             % Flight Sandbox Constraints
             opti.subject_to(-30 <= X(5, :) <= 30); %#ok<CHAIN>
             opti.subject_to(-30 <= X(6, :) <= 30); %#ok<CHAIN>
-            if obj.isElectric
+            if obj.Vehicle == 0
                 opti.subject_to(-1 <= X(7, :) <= 75); %#ok<CHAIN>  % ASTRAv2 ceiling
             else
                 opti.subject_to(-1 <= X(7, :) <= 150); %#ok<CHAIN> % TOAD ceiling
@@ -625,7 +623,7 @@ classdef TrajectoryOptimizer < handle
             opti.subject_to(sum(X(8:10, end).^2) <= obj.v_f_tol^2);
             
             % Propellant Margin (Enforced only for chemical rocket with drain dynamics)
-            if ~obj.isElectric
+            if ~(obj.Vehicle == 0)
                 prop_margin_frac = 0.10;
                 opti.subject_to(X(14, end) >= prop_margin_frac * m_lox0);
                 opti.subject_to(X(15, end) >= prop_margin_frac * m_ipa0);
@@ -875,7 +873,7 @@ classdef TrajectoryOptimizer < handle
             vdot = FI / m;
             
             % Propellant Drain Dynamics
-            if obj.isElectric
+            if obj.Vehicle == 0
                 mdot_lox = 0;
                 mdot_ipa = 0;
                 OxFluidHeight = 0;
@@ -912,7 +910,7 @@ classdef TrajectoryOptimizer < handle
             
             % Body Moments
             thrustDir = [cos(theta)*sin(phi); -sin(theta); cos(theta)*cos(phi)];
-            if obj.isElectric
+            if obj.Vehicle == 0
                 MB = zetaCross([0; 0; -CGz] + TB_d)*TB + roll * thrustDir;
             else
                 MB = zetaCross([0; 0; -CGz] + TB_d)*TB + [0; 0; roll];
