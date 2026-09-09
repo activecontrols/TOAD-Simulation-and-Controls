@@ -9,7 +9,7 @@ classdef TrajectoryOptimizer < handle
     properties
         % System and Vehicle Properties
         constants           % Vehicle constants struct (from LoadTOADSim)
-        Vehicle = 1         % Vehicle flag: 1 for TOAD, 0 for ASTRA
+        Vehicle = 0         % Vehicle flag: 1 for TOAD, 0 for ASTRA
     end
     
     properties (Dependent)

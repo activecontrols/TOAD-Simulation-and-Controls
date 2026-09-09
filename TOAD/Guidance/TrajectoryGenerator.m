@@ -24,7 +24,7 @@ r_target    = [0; 0; 0];        % Target landing touchdown position
 project_root = '';
 p_scan = fileparts(mfilename('fullpath'));
 while ~isempty(p_scan)
-    if exist(fullfile(p_scan, 'LoadTOADSim.m'), 'file') && exist(fullfile(p_scan, 'Navigation'), 'dir')
+    if exist(fullfile(p_scan, 'LoadTOADSimParams.m'), 'file') && exist(fullfile(p_scan, 'Navigation'), 'dir')
         project_root = p_scan;
         break;
     end
@@ -38,9 +38,7 @@ end
 cd(project_root);
 addpath(genpath(project_root));
 
-% Pre-set vehicle in constants6DoF so LoadTOADSim loads matching parameters
-constants6DoF.Vehicle = Vehicle;
-LoadTOADSim;
+LoadTOADParams;
 
 % Target directory for trajectory CSV export
 save_dir    = fullfile(project_root, 'Guidance', 'Trajectories');
