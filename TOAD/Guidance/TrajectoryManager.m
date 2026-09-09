@@ -2,6 +2,7 @@ function [X, U, K, LA, LT] = TrajectoryManager(t, X_est, constantsTOAD)
     Time = constantsTOAD.Traj.Time;
     States = constantsTOAD.Traj.States;
     Inputs = constantsTOAD.Traj.Inputs;
+    disp(constantsTOAD)
     
     % FBGain maps to K_trans, FBCost maps to K_rot
     K_trans_Gain = constantsTOAD.Traj.KTGain;
@@ -20,6 +21,7 @@ function [X, U, K, LA, LT] = TrajectoryManager(t, X_est, constantsTOAD)
         
         X(:) = States(1,:);
         U(:) = Inputs(1,:);
+        disp(U)
         
         % Merge matrices
         K(1:3, 1:6) = K_trans_Gain(1, :, :);

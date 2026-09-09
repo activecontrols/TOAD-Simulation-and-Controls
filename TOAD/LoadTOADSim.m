@@ -32,7 +32,7 @@ MEKF_Constants;
 
 %% Select vehicle (1 for TOAD, 0 for ASTRA)
 if ~isfield(constants6DoF, 'Vehicle') || isempty(constants6DoF.Vehicle)
-    constants6DoF.Vehicle = 0; % 1 for TOAD, 0 for ASTRA (default TOAD)
+    constants6DoF.Vehicle = 0; % 1 for TOAD, 0 for ASTRA (default ASTRA)
 else
     % Normalize strings if passed in
     if ischar(constants6DoF.Vehicle) || isstring(constants6DoF.Vehicle)
@@ -150,31 +150,36 @@ end
 
 % Check existance
 if ~exist(traj_file, 'file')
-    error('LoadTOADSim:TrajectoryNotFound', ...
+    warning('LoadTOADSim:TrajectoryNotFound', ...
         ['Trajectory file not found: %s\n' ...
-         'Please generate the trajectory using TrajectoryGenerator.m before loading.'], traj_file);
+         'Please generate the trajectory using TrajectoryGenerator.m.'], traj_file);
 end
 
 % Load trajectory matrices into constants6DoF.Traj
-Data = readmatrix(traj_file);
-constants6DoF.Traj.Time   = Data(:, 1);
-constants6DoF.Traj.States = Data(:, 2:16);
-constants6DoF.Traj.Inputs = Data(:, 17:20);
 
+if exist(traj_file, 'file')
+    Data = readmatrix(traj_file);
+    constants6DoF.Traj.Time   = Data(:, 1);
+    constants6DoF.Traj.States = Data(:, 2:16);
+    constants6DoF.Traj.Inputs = Data(:, 17:20);
+end
 % Check for gain files
-gains_dir = fullfile(traj_dir, 'Gains');
-gain_prefix = fullfile(gains_dir, "K_trans_" + name_stem);
-gain_exists = exist(gain_prefix + ".txt", 'file') || exist(gain_prefix + ".csv", 'file') || exist(gain_prefix, 'file');
+    gains_dir = fullfile(traj_dir, 'Gains');
+    gain_prefix = fullfile(gains_dir, "K_trans_" + name_stem);
+    gain_exists = exist(gain_prefix + ".txt", 'file') || exist(gain_prefix + ".csv", 'file') || exist(gain_prefix, 'file');
 
-if ~gain_exists
+
+if ~gain_exists && exist(traj_file, 'file')
     fprintf('Gain files not found for %s. Automatically calling SaveGains to generate TV-LQI tracking gains...\n', name_stem);
     SaveGains(name_stem, constants6DoF);
     fprintf('Gain files successfully generated for %s.\n', name_stem);
 end
 
 % Load tracking gains into constants6DoF.Traj
+if gain_exists || exist(traj_file, 'file')
 [constants6DoF.Traj.KTGain, constants6DoF.Traj.KRGain, ...
  constants6DoF.Traj.LAGain, constants6DoF.Traj.LTGain] = ReadGains(name_stem);
+end
 
 clear slBus* 
 busInfo = Simulink.Bus.createObject(constants6DoF);
