@@ -24,7 +24,7 @@ width1 = 35;     % Hz
 if ~GND
     %% Notch #1
         % Setup first notch at constant frequency
-        f0 = TRACK(1, 1) * THRUST + TRACK(1, 2);    %Hz
+        f0 = TRACK(1, 1) * THRUST + TRACK(1, 2); %Hz
         w0 = 2 * pi * f0 / fs;
         r = exp(-pi * width1 / fs);
 

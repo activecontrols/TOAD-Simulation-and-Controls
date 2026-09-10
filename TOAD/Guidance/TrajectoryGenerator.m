@@ -6,7 +6,6 @@
 % Authors: PSP Active Controls (Pablo Plata, Andrew Lulo, & Antigravity)
 
 clear; clc; close all;
-
 %% Mission Configuration
 Vehicle     = 0;                % Vehicle model: 1 for TOAD, 0 for ASTRA (legacy strings "TOAD", "ASTRAv2" also supported)
 Maneuver    = "Hop";            % Maneuver preset: "Backflip", "Circle", "Hop", "Custom"
@@ -21,27 +20,10 @@ r_launch    = [0; 0; 0];        % Launch pad position
 r_target    = [0; 0; 0];        % Target landing touchdown position
 
 %% Initialize Simulation Parameters & Project Paths
-project_root = '';
-p_scan = fileparts(mfilename('fullpath'));
-while ~isempty(p_scan)
-    if exist(fullfile(p_scan, 'LoadTOADSimParams.m'), 'file') && exist(fullfile(p_scan, 'Navigation'), 'dir')
-        project_root = p_scan;
-        break;
-    end
-    parent_scan = fileparts(p_scan);
-    if strcmp(parent_scan, p_scan), break; end
-    p_scan = parent_scan;
-end
-if isempty(project_root)
-    project_root = pwd;
-end
-cd(project_root);
-addpath(genpath(project_root));
-
-LoadTOADParams;
+constants6DoF = LoadTOADParams(Vehicle);
 
 % Target directory for trajectory CSV export
-save_dir    = fullfile(project_root, 'Guidance', 'Trajectories');
+save_dir    = fullfile(pwd, 'Guidance', 'Trajectories');
 
 %% Instantiate & Configure TrajectoryOptimizer
 % Normalize vehicle for comparison
@@ -62,7 +44,8 @@ opt = TrajectoryOptimizer(constants6DoF, ...
     'N',         N_nodes, ...
     'T_initial', T_initial, ...
     'SaveDir',   save_dir, ...
-    'max_iter',  1000);
+    'max_iter',  500, ...
+    'tol', 1e-3);
 
 opt.setBoundaries(r_launch, r_target);
 

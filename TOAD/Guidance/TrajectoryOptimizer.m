@@ -57,7 +57,7 @@ classdef TrajectoryOptimizer < handle
         
         % Solver Configuration
         MaxIter double = 500
-        Tol double = 2e-3
+        Tol double = 1e-3
         ConstrViolTol double = 1e-3
         
         % Execution & Output Flags
@@ -221,8 +221,8 @@ classdef TrajectoryOptimizer < handle
                                            0, -5];
                                            
                 case "Hop"
-                    p.N_ascent   = round(0.3 * obj.N);
-                    p.N_approach = round(0.7 * obj.N);
+                    p.N_ascent   = round(0.4 * obj.N);
+                    p.N_approach = round(0.6 * obj.N);
                     p.Glideslope = tan(deg2rad(15));
                     if obj.Vehicle == 0
                         p.apex_alt = 15;
@@ -781,6 +781,7 @@ classdef TrajectoryOptimizer < handle
                 case "Hop"
                     N_ascent = p.N_ascent;
                     N_approach = p.N_approach;
+                    Glideslope = p.Glideslope;
                     
                     % Ascent & Descent vertical speed constraints
                     opti.subject_to(X(10, 1:N_ascent) >= 0);
@@ -789,6 +790,12 @@ classdef TrajectoryOptimizer < handle
                     % Keep attitude upright within 30 deg of vertical
                     R33 = X(1,:).^2 - X(2,:).^2 - X(3,:).^2 + X(4,:).^2;
                     opti.subject_to(R33 >= cosd(35));
+                    
+                    % Descent Glideslope
+                    pos_desc = X(5:7, N_approach:end);
+                    opti.subject_to(X(10, N_approach:end) <= 0.1);
+                    opti.subject_to(sqrt((pos_desc(1,:) - obj.r_f(1)).^2 + (pos_desc(2,:) - obj.r_f(2)).^2 + 1e-4) <= ...
+                        (pos_desc(3,:) - obj.r_f(3)) * Glideslope + 0.5);
             end
             
             % Custom Waypoint Injection

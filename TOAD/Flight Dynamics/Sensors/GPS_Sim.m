@@ -10,8 +10,13 @@ if isempty(error_pos)
     lastGPS = zeros(6,1);
     lastTime = 0;  % Update last GPS timestamp
 end
+if t <= 0 || (t - lastTime) < 0
+    error_pos = 0;
+    lastGPS = zeros(6,1);
+    lastTime = t;
+end
 
-dT = t - lastTime;
+dT = max(t - lastTime, 0);
 
 if t - lastTime > 1 / GPS_Rate
     % Correlated noise measurements (GMP)

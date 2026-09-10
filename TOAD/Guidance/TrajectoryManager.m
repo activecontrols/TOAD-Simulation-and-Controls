@@ -21,7 +21,6 @@ function [X, U, K, LA, LT] = TrajectoryManager(t, X_est, constantsTOAD)
         
         X(:) = States(1,:);
         U(:) = Inputs(1,:);
-        disp(U)
         
         % Merge matrices
         K(1:3, 1:6) = K_trans_Gain(1, :, :);
