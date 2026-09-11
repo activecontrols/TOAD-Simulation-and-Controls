@@ -36,7 +36,13 @@ u0 = [0; 0; constants6DoF.g * constants6DoF.m_wet; 0];
 
 %% Controller params
     % Outer Loop
-    max_x_trans = 1.4 * ones(1,6);
+    if Vehicle == 1
+        % TOAD Tuning
+        max_x_trans = 1.4 * ones(1,6);
+    else
+        % ASTRAv2 Tuning
+        max_x_trans = 1.5 * ones(1,6);
+    end
     constants6DoF.Q_trans = diag(1 ./ max_x_trans.^2);
     max_a_trans = 1.2; 
     constants6DoF.R_trans = eye(3) .* (1 / max_a_trans^2);
@@ -49,8 +55,8 @@ u0 = [0; 0; constants6DoF.g * constants6DoF.m_wet; 0];
         constants6DoF.R_rot = diag([35, 35, 1/4^2]);
     else
         % ASTRAv2 Tuning
-        max_x_rot = [0.20, 0.20, 0.12, 0.4, 0.4, 0.25];
-        constants6DoF.R_rot = diag([100, 100, 1/0.075^2]);
+        max_x_rot = [0.2, 0.2, 0.12, 1.0, 1.0, 0.7];
+        constants6DoF.R_rot = diag([200, 200, 1/0.1^2]);
     end
 
     constants6DoF.Q_rot = diag(1 ./ max_x_rot.^2);
@@ -59,7 +65,7 @@ u0 = [0; 0; constants6DoF.g * constants6DoF.m_wet; 0];
 %% Trajectory Params
     % Pick a trajectory filename (e.g. "TOAD_Backflip_v001",
     % "ASTRA_Circle_v001")
-    filename = "ASTRA_Hop_v001";
+    filename = "ASTRA_Backflip_v002";
     
     % Resolve trajectory CSV file path
     traj_dir = fullfile(pwd, 'Guidance', 'Trajectories');
@@ -136,7 +142,7 @@ kGrom = G.K;
 bGrom = G.C / (2 * sqrt(kGrom * m_FC));
 Kg2 = 0.03;
 G_RMAX = 4;
-Wind_Gain = 0.6;
+Wind_Gain = 0.3;
 Wind_Covar = 7;
 lowEnd = 50;
 highEnd = 800;

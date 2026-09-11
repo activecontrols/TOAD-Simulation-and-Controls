@@ -49,10 +49,8 @@ classdef TrajectoryOptimizer < handle
         L_c double = 50     % Characteristic position length [m]
         
         % Cost Function Weights
-        w_crit = 6e-1       % Critical tilt penalty weight
-        w_rate = 5e-3       % Body rate penalty weight
-        w_marginGimbal = 2e-2 % Gimbal margin penalty weight
-        w_qz = 6e-1         % Yaw deflection penalty weight
+        w_rate = 1e-4       % Body rate penalty weight
+        w_qz = 8e-2         % Yaw deflection penalty weight
         w_time = 0.5        % Mission duration penalty weight
         
         % Solver Configuration
@@ -191,10 +189,10 @@ classdef TrajectoryOptimizer < handle
                     p.N_flip   = round(0.5 * obj.N);
                     p.N_approach = round(0.6 * obj.N);
                     p.Glideslope = tan(deg2rad(10));
-                    p.theta_tol = deg2rad(30);
+                    p.theta_tol = deg2rad(15);
                     p.q_inverted = [0; 0; -1; 0];
                     if obj.Vehicle == 0
-                        p.apex_alt = 35; % Scaled for ASTRAv2 lower ceiling
+                        p.apex_alt = 40; % Scaled for ASTRAv2 lower ceiling
                         obj.T_initial = 30;
                     else
                         p.apex_alt = 75; % TOAD full scale backflip apex
@@ -816,7 +814,7 @@ classdef TrajectoryOptimizer < handle
             J_qz = sum((Xhat(4, :)).^2);
             
             opti.minimize( ...
-                1.0                * J_marginGimbal  + ...
+                0.5                * J_marginGimbal  + ...
                 obj.w_rate         * J_rate          + ...
                 obj.w_qz           * J_qz            + ...
                 obj.w_time         * T_total);

@@ -3,16 +3,16 @@
 % Uses the TrajectoryOptimizer engine to generate 6-DoF optimal trajectories
 % and export them to Guidance/Trajectories/ for Simulink and TV-LQI tracking.
 %
-% Authors: PSP Active Controls (Pablo Plata, Andrew Lulo, & Antigravity)
+% Authors: PSP Active Controls (Pablo Plata, Andrew Lullo, & Antigravity)
 
 clear; clc; close all;
 %% Mission Configuration
 Vehicle     = 0;                % Vehicle model: 1 for TOAD, 0 for ASTRA (legacy strings "TOAD", "ASTRAv2" also supported)
-Maneuver    = "Hop";            % Maneuver preset: "Backflip", "Circle", "Hop", "Custom"
-Version     = 1;                % Version integer: formats as v001, v002, etc.
+Maneuver    = "Backflip";            % Maneuver preset: "Backflip", "Circle", "Hop", "Custom"
+Version     = 2;                % Version integer: formats as v001, v002, etc.
 
 % Discretization & Mesh
-N_nodes     = 100;              % Number of control intervals (80 - 200 recommended)
+N_nodes     = 120;              % Number of control intervals (80 - 200 recommended)
 T_initial   = 35;               % Initial duration guess [s]
 
 % Position Boundaries [m] (East, North, Up)
