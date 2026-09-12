@@ -55,8 +55,8 @@ u0 = [0; 0; constants6DoF.g * constants6DoF.m_wet; 0];
         constants6DoF.R_rot = diag([35, 35, 1/4^2]);
     else
         % ASTRAv2 Tuning
-        max_x_rot = [0.2, 0.2, 0.12, 1.0, 1.0, 0.7];
-        constants6DoF.R_rot = diag([200, 200, 1/0.1^2]);
+        max_x_rot = [0.15, 0.15, 0.12, 0.5, 0.5, 0.7];
+        constants6DoF.R_rot = diag([60, 60, 1/0.1^2]);
     end
 
     constants6DoF.Q_rot = diag(1 ./ max_x_rot.^2);
@@ -65,7 +65,7 @@ u0 = [0; 0; constants6DoF.g * constants6DoF.m_wet; 0];
 %% Trajectory Params
     % Pick a trajectory filename (e.g. "TOAD_Backflip_v001",
     % "ASTRA_Circle_v001")
-    filename = "ASTRA_Backflip_v002";
+    filename = "ASTRA_Backflip_v001";
     
     % Resolve trajectory CSV file path
     traj_dir = fullfile(pwd, 'Guidance', 'Trajectories');
