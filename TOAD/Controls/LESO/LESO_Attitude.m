@@ -3,7 +3,7 @@
 % equivalent angular acceleration disturbance vector u_dist (rad/s^2)
 % using actual commanded plant inputs (U_cmd).
 
-function u_dist = LESO_Attitude_2(GND, X_est, X_trg, U_cmd, L_Att, constantsTOAD, t)
+function u_dist = LESO_Attitude(GND, X_est, X_trg, U_cmd, L_Att, constantsTOAD, t)
     persistent t_last
     persistent xhat 
 

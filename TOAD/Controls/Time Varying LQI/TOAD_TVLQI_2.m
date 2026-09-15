@@ -81,18 +81,18 @@ function [U_cmd, SpecRad, X_err] = TOAD_TVLQI_2(GND, X_est, X_trg, U_ff, K, t, c
         
         if z_curr < stopDist * 1.35 + 2.5
             % Emergency Braking Pullout: Lock thrust strictly vertical to maximize deceleration
-            MaxConeAng = deg2rad(2.0);
+            MaxConeAng = deg2rad(10.0);
             f_req(3) = max(f_req(3), constantsTOAD.MaxThrust / Mass);
-        elseif z_curr < stopDist * 1.80 + 6.0
+        elseif z_curr < stopDist * 1.50 + 5.0
             % Anticipatory Braking, squeeze cone angle smoothly
             coneRatio = (z_curr - stopDist) / max(stopDist, 1.0);
-            MaxConeAng = deg2rad(15) * min(max(coneRatio, 0.15), 1.0);
+            MaxConeAng = deg2rad(15) * min(max(coneRatio, 0.3), 1.0);
             f_req(3) = max(f_req(3), constantsTOAD.g + 1.2);
         else
-            MaxConeAng = deg2rad(15);
+            MaxConeAng = deg2rad(20);
         end
     else
-        MaxConeAng = deg2rad(15);
+        MaxConeAng = deg2rad(20);
     end
 
     % Project the required force direction into the allowable cone relative

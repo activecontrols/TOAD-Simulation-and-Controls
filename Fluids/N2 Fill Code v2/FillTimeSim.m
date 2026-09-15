@@ -55,7 +55,7 @@ ValveOpenCount = 0;
 LastFillMode = 0;
 while ~isFilled
     % Pause fill if temps exceed the level
-    if COPV_Temps(1) < COPV.TMax
+    if COPV_Temps(1) < COPV.TMax - 3 
         % Calculate regulator massflow
         fillMode = 1; 
         gamma = double(py.CoolProp.CoolProp.PropsSI('isentropic_expansion_coefficient', ...
@@ -63,7 +63,7 @@ while ~isFilled
         Tank_Rho = Tank.m(i) / Tank.V;
         mdot = RegulatorMdot(Reg, Tank.P(i), Tank_Rho, Tank.P(1), COPV.P(i), gamma);
         dt_limit = dt_max_fill;
-    else
+    elseif COPV_Temps(1) > COPV.TMax || COPV.P(i) > 4500 * psi2Pa
         fillMode = 0; 
         mdot = 0; 
         dt_limit = dt_max_cool;
