@@ -6,6 +6,11 @@ close all;
 bkgColor = 'w';
 alphaVal = 0.12;
 
+winStyle = 'normal';
+if usejava('desktop')
+    winStyle = 'docked';
+end
+
 % Convention: Pitch (X), Yaw (Y), Roll (Z)
 oranPitch = [0.85 0.60 0.45];
 blueYaw   = [0.55 0.71 0.84];
@@ -73,7 +78,7 @@ Vel_RMSE_total = sqrt(sum(vel_error_rmse.^2, 2));
 target_pos_ref = squeeze(target_interp(firstValid,:,pos_idx));
 
 %% 4. Kinematic Trajectory Overlay (3D + Projections)
-figure('Name', 'MC 3D Trajectories', 'Color', bkgColor, 'WindowStyle', 'docked');
+figure('Name', 'MC 3D Trajectories', 'Color', bkgColor, 'WindowStyle', winStyle);
 tl = tiledlayout(3, 4, 'TileSpacing', 'compact', 'Padding', 'compact');
 
 % Main 3D Plot
@@ -104,12 +109,14 @@ drawMCTraj_v4(axFront, actual_interp(:,:,pos_idx), target_pos_ref, 2, 3, 'Yaw / 
 title(axFront, 'Front View');
 
 %% 5. Kinematic Plot (3-Sigma State Distributions)
-figure('Name', 'State Distributions (3-Sigma)', 'Color', bkgColor, 'WindowStyle', 'docked');
+figure('Name', 'State Distributions (3-Sigma)', 'Color', bkgColor, 'WindowStyle', winStyle);
 tiledlayout(2,3, 'TileSpacing', 'compact');
 state_titles = {'Pitch (X)', 'Yaw (Y)', 'Roll (Z)'};
 vars = {pos_idx, vel_idx};
 ylbls = {'Pos', 'Vel'};
 units = {'m', 'm/s'};
+
+t_row = t_common(:)';
 
 for r = 1:2
     for c = 1:3
@@ -120,9 +127,21 @@ for r = 1:2
         mu_val = mean(data_block, 1, 'omitnan');
         sig_val = std(data_block, 0, 1, 'omitnan');
         
+        mu_row = mu_val(:)';
+        sig_row = sig_val(:)';
+        upper_bound = mu_row + 3*sig_row;
+        lower_bound = mu_row - 3*sig_row;
+        valid_pts = isfinite(upper_bound) & isfinite(lower_bound);
+
+        % Shaded 3-sigma corridor
+        if any(valid_pts)
+            fill([t_row(valid_pts), fliplr(t_row(valid_pts))], ...
+                 [upper_bound(valid_pts), fliplr(lower_bound(valid_pts))], ...
+                 [0.85 0.35 0.35], 'FaceAlpha', 0.22, 'EdgeColor', 'none', 'DisplayName', '\pm3\sigma');
+        end
+        
         plot(t_common, data_block', 'Color', [0.45 0.68 0.88 alphaVal*2], 'HandleVisibility', 'off');
-        plot(t_common, mu_val + 3*sig_val, 'r--', 'LineWidth', 1.5, 'DisplayName', '+3\sigma');
-        plot(t_common, mu_val - 3*sig_val, 'r--', 'LineWidth', 1.5, 'DisplayName', '-3\sigma');
+        plot(t_common, mu_val, 'r-', 'LineWidth', 1.2, 'DisplayName', 'Mean (\mu)');
         plot(t_common, target_block, 'k', 'LineWidth', 2, 'DisplayName', 'Target');
         
         title(sprintf('%s - %s', ylbls{r}, state_titles{c}));
@@ -142,15 +161,28 @@ R33_target = target_interp(firstValid,:,1).^2 - target_interp(firstValid,:,2).^2
              target_interp(firstValid,:,3).^2 + target_interp(firstValid,:,4).^2;
 tilt_target = acosd(max(min(R33_target, 1), -1));
 
-figure('Name', 'Attitude & Angular Rates', 'Color', bkgColor, 'WindowStyle', 'docked');
+figure('Name', 'Attitude & Angular Rates', 'Color', bkgColor, 'WindowStyle', winStyle);
 tl_att = tiledlayout(2, 3, 'TileSpacing', 'compact', 'Padding', 'compact');
 
 axTilt = nexttile(tl_att, 1, [1 3]); hold(axTilt, 'on'); grid(axTilt, 'on');
-plot(axTilt, t_common, tilt_actual', 'Color', [0.45 0.68 0.88 alphaVal*2], 'HandleVisibility', 'off');
 mu_tilt = mean(tilt_actual, 1, 'omitnan');
 sig_tilt = std(tilt_actual, 0, 1, 'omitnan');
-plot(axTilt, t_common, mu_tilt + 3*sig_tilt, 'r--', 'LineWidth', 1.5, 'DisplayName', '+3\sigma');
-plot(axTilt, t_common, mu_tilt - 3*sig_tilt, 'r--', 'LineWidth', 1.5, 'DisplayName', '-3\sigma');
+
+mu_tilt_row = mu_tilt(:)';
+sig_tilt_row = sig_tilt(:)';
+upper_tilt = min(mu_tilt_row + 3*sig_tilt_row, 180);
+lower_tilt = max(mu_tilt_row - 3*sig_tilt_row, 0);
+valid_tilt = isfinite(upper_tilt) & isfinite(lower_tilt);
+
+% Shaded 3-sigma corridor for vehicle tilt
+if any(valid_tilt)
+    fill(axTilt, [t_row(valid_tilt), fliplr(t_row(valid_tilt))], ...
+         [upper_tilt(valid_tilt), fliplr(lower_tilt(valid_tilt))], ...
+         [0.85 0.35 0.35], 'FaceAlpha', 0.22, 'EdgeColor', 'none', 'DisplayName', '\pm3\sigma');
+end
+
+plot(axTilt, t_common, tilt_actual', 'Color', [0.45 0.68 0.88 alphaVal*2], 'HandleVisibility', 'off');
+plot(axTilt, t_common, mu_tilt, 'r-', 'LineWidth', 1.2, 'DisplayName', 'Mean (\mu)');
 plot(axTilt, t_common, tilt_target, 'k', 'LineWidth', 2, 'DisplayName', 'Target');
 title(axTilt, 'Tilt Angle from Vertical'); xlabel(axTilt, 'Time (s)'); ylabel(axTilt, 'Tilt (deg)');
 legend(axTilt, 'Location', 'best');
@@ -163,11 +195,24 @@ for c = 1:3
     mu_val  = mean(data_block, 1, 'omitnan');
     sig_val = std(data_block, 0, 1, 'omitnan');
 
+    mu_row = mu_val(:)';
+    sig_row = sig_val(:)';
+    upper_rate = mu_row + 3*sig_row;
+    lower_rate = mu_row - 3*sig_row;
+    valid_rate = isfinite(upper_rate) & isfinite(lower_rate);
+
+    % Shaded 3-sigma corridor for angular rates
+    if any(valid_rate)
+        fill(ax, [t_row(valid_rate), fliplr(t_row(valid_rate))], ...
+             [upper_rate(valid_rate), fliplr(lower_rate(valid_rate))], ...
+             [0.85 0.35 0.35], 'FaceAlpha', 0.22, 'EdgeColor', 'none', 'DisplayName', '\pm3\sigma');
+    end
+
     plot(ax, t_common, data_block', 'Color', [0.45 0.68 0.88 alphaVal*2], 'HandleVisibility', 'off');
-    plot(ax, t_common, mu_val + 3*sig_val, 'r--', 'LineWidth', 1.5, 'DisplayName', '+3\sigma');
-    plot(ax, t_common, mu_val - 3*sig_val, 'r--', 'LineWidth', 1.5, 'DisplayName', '-3\sigma');
+    plot(ax, t_common, mu_val, 'r-', 'LineWidth', 1.2, 'DisplayName', 'Mean (\mu)');
     plot(ax, t_common, target_block, 'k', 'LineWidth', 2, 'DisplayName', 'Target');
     title(ax, rate_titles{c}); xlabel(ax, 'Time (s)'); ylabel(ax, 'Rate (deg/s)');
+    if c == 1, legend(ax, 'Location', 'best'); end
 end
 
 %% 6. Landing Angular-Rate Distribution
@@ -190,7 +235,7 @@ for i = 1:num_sims
     end
 end
 
-figure('Name', 'Landing Rates', 'Color', bkgColor, 'WindowStyle', 'docked'); 
+figure('Name', 'Landing Rates', 'Color', bkgColor, 'WindowStyle', winStyle); 
 tiledlayout(3,1, 'TileSpacing', 'compact');
 rate_lbls = {'Pitch Rate', 'Yaw Rate', 'Roll Rate'};
 for c = 1:3
@@ -208,7 +253,7 @@ if size(RMSE_Controls_all,1) == 12
     multipliers = [(180/pi), (180/pi), 1, 1];
     
     for g = 1:4
-        figure('Name', sprintf('%s Control RMSE', labels{g}), 'Color', bkgColor, 'WindowStyle', 'docked');
+        figure('Name', sprintf('%s Control RMSE', labels{g}), 'Color', bkgColor, 'WindowStyle', winStyle);
         tiledlayout(3,1, 'TileSpacing', 'compact');
         for c = 1:3
             idx = (g-1)*3 + c;
@@ -224,7 +269,7 @@ end
 
 %% 8. Filter Attitude RMSE Plot (Degrees natively)
 if exist('RMSE_Filter_all', 'var') && size(RMSE_Filter_all,1) >= 3
-    figure('Name', 'Filter Attitude RMSE', 'Color', bkgColor, 'WindowStyle', 'docked');
+    figure('Name', 'Filter Attitude RMSE', 'Color', bkgColor, 'WindowStyle', winStyle);
     tiledlayout(3,1, 'TileSpacing', 'compact');
     filter_lbls = {'Pitch RMSE', 'Yaw RMSE', 'Roll RMSE'}; 
     
@@ -237,7 +282,7 @@ if exist('RMSE_Filter_all', 'var') && size(RMSE_Filter_all,1) >= 3
 end
 
 %% 9. Curated Sensitivities
-figure('Name', 'Focused Disturbance Sensitivities', 'Color', bkgColor, 'WindowStyle', 'docked');
+figure('Name', 'Focused Disturbance Sensitivities', 'Color', bkgColor, 'WindowStyle', winStyle);
 tiledlayout(2,2, 'TileSpacing', 'compact');
 
 nexttile; plotSensitivityScatter(Lever_Radial, Pos_RMSE_total, 'Radial Lever [m]', 'Total Pos RMSE [m]', 'Position Error vs Radial Lever');
@@ -249,7 +294,7 @@ nexttile; plotSensitivityScatter(RMSE_Wind_all, Vel_RMSE_total, 'Wind RMSE', 'To
 Attitude_RMSE_total = sqrt(sum(real(RMSE_Controls_all(1:3,:)).^2, 1))' * (180/pi);
 inertiaColor = [0.65 0.55 0.75];
 
-figure('Name', 'Inertia Diagnostics', 'Color', bkgColor, 'WindowStyle', 'docked');
+figure('Name', 'Inertia Diagnostics', 'Color', bkgColor, 'WindowStyle', winStyle);
 tiledlayout(2, 4, 'TileSpacing', 'compact', 'Padding', 'compact');
 
 inertia_vals = {J_Trans_Scale, J_Axial_Scale, J_Wobble_Coup, J_Trans_Coup};
@@ -270,7 +315,7 @@ end
 
 %% 12. Spectral Radius Sensitivities
 if exist('MaxSpectralRad_all', 'var') && size(MaxSpectralRad_all, 1) == 2
-    figure('Name', 'Spectral Radius Sensitivities', 'Color', bkgColor, 'WindowStyle', 'docked');
+    figure('Name', 'Spectral Radius Sensitivities', 'Color', bkgColor, 'WindowStyle', winStyle);
     tiledlayout(1, 2, 'TileSpacing', 'compact');
 
     msr_lbls = {'MSR(1)', 'MSR(2)'};
@@ -302,7 +347,7 @@ if exist('specrad_all', 'var') && ~isempty(specrad_all)
     plot_set = [worst_idx(:); clean_idx(:)];
     run_labels = [repmat({'WORST'}, numel(worst_idx),1); repmat({'clean'}, numel(clean_idx),1)];
 
-    figure('Name', 'MSR(2) vs Position Error Overlay', 'Color', bkgColor, 'WindowStyle', 'docked');
+    figure('Name', 'MSR(2) vs Position Error Overlay', 'Color', bkgColor, 'WindowStyle', winStyle);
     nCols = 4; nRows = ceil(numel(plot_set)/nCols);
     tlOverlay = tiledlayout(nRows, nCols, 'TileSpacing', 'compact', 'Padding', 'compact');
 
@@ -347,7 +392,7 @@ if exist('specrad_all', 'var') && ~isempty(specrad_all)
         end
     end
 
-    figure('Name', 'MSR(2) Crossing -> Divergence Lag', 'Color', bkgColor, 'WindowStyle', 'docked');
+    figure('Name', 'MSR(2) Crossing -> Divergence Lag', 'Color', bkgColor, 'WindowStyle', winStyle);
     histogram(lags, 'FaceColor', [0.3 0.5 0.8]);
     xline(0, 'k--', 'LineWidth', 1.5);
     xlabel('t_{divergence} - t_{MSR2 crosses 1}  [s]');
@@ -468,6 +513,8 @@ function plotSmartHistogram(ax, data, clr, name)
 end
 
 function plotLESOCausality(t_common, sig_all, err_all, sortMetric, num_sims, bkgColor, sigName, errYLabel, sigYLabel, err_abs_floor)
+    winStyle = 'normal';
+    if usejava('desktop'), winStyle = 'docked'; end
     % sig_all, err_all: [num_sims x T]. sortMetric: [num_sims x 1], used to
     % pick the worst-divergence runs (plus a few clean ones for contrast),
     % same convention as the Section 13 MSR/position-error overlay.
@@ -482,7 +529,7 @@ function plotLESOCausality(t_common, sig_all, err_all, sortMetric, num_sims, bkg
     plot_set = [worst_idx(:); clean_idx(:)];
     run_labels = [repmat({'WORST'}, numel(worst_idx),1); repmat({'clean'}, numel(clean_idx),1)];
 
-    figure('Name', sprintf('%s vs %s Overlay', sigName, errYLabel), 'Color', bkgColor, 'WindowStyle', 'docked');
+    figure('Name', sprintf('%s vs %s Overlay', sigName, errYLabel), 'Color', bkgColor, 'WindowStyle', winStyle);
     nCols = 4; nRows = ceil(numel(plot_set)/nCols);
     tlOverlay = tiledlayout(nRows, nCols, 'TileSpacing', 'compact', 'Padding', 'compact');
 
@@ -535,7 +582,7 @@ function plotLESOCausality(t_common, sig_all, err_all, sortMetric, num_sims, bkg
         end
     end
 
-    figure('Name', sprintf('%s Crossing -> Divergence Lag', sigName), 'Color', bkgColor, 'WindowStyle', 'docked');
+    figure('Name', sprintf('%s Crossing -> Divergence Lag', sigName), 'Color', bkgColor, 'WindowStyle', winStyle);
     histogram(lags, 'FaceColor', [0.3 0.5 0.8]);
     xline(0, 'k--', 'LineWidth', 1.5);
     xlabel(sprintf('t_{divergence} - t_{%s elevated}  [s]', sigName));

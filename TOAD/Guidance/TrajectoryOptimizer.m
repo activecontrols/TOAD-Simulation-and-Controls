@@ -49,16 +49,15 @@ classdef TrajectoryOptimizer < handle
         L_c double = 50     % Characteristic position length [m]
         
         % Cost Function Weights
-        w_crit = 6e-1       % Critical tilt penalty weight
-        w_rate = 5e-3       % Body rate penalty weight
-        w_marginGimbal = 2e-2 % Gimbal margin penalty weight
-        w_qz = 6e-1         % Yaw deflection penalty weight
-        w_time = 0.5        % Mission duration penalty weight
+        w_rate = 1e-4       % Body rate penalty weight
+        w_qz = 8e-2         % Yaw deflection penalty weight
+        w_time = 1.5        % Mission duration penalty weight
         
         % Solver Configuration
-        MaxIter double = 500
+        MaxIter double = 1000
         Tol double = 1e-3
         ConstrViolTol double = 1e-3
+        PrintLevel double = 5
         
         % Execution & Output Flags
         PlotResults logical = false
@@ -113,8 +112,24 @@ classdef TrajectoryOptimizer < handle
             if exist('C:\MATLAB Tools\casadi-3.7.2-windows64-matlab2018b', 'dir')
                 addpath('C:\MATLAB Tools\casadi-3.7.2-windows64-matlab2018b');
             end
-            addpath(fullfile(pwd, 'Helper'));
-            addpath(fullfile(pwd, 'Flight Dynamics'));
+            root_d = pwd;
+            if ~exist(fullfile(root_d, 'Helper'), 'dir')
+                d_cand = fileparts(mfilename('fullpath'));
+                while ~isempty(d_cand) && ~exist(fullfile(d_cand, 'Helper'), 'dir')
+                    parent_d = fileparts(d_cand);
+                    if strcmp(parent_d, d_cand), break; end
+                    d_cand = parent_d;
+                end
+                if exist(fullfile(d_cand, 'Helper'), 'dir')
+                    root_d = d_cand;
+                end
+            end
+            if exist(fullfile(root_d, 'Helper'), 'dir')
+                addpath(fullfile(root_d, 'Helper'));
+            end
+            if exist(fullfile(root_d, 'Flight Dynamics'), 'dir')
+                addpath(fullfile(root_d, 'Flight Dynamics'));
+            end
             
             obj.constants = constants6DoF;
             if isfield(constants6DoF, 'Vehicle')
@@ -187,19 +202,21 @@ classdef TrajectoryOptimizer < handle
             
             switch obj.Maneuver
                 case "Backflip"
-                    p.N_ascent = round(0.3 * obj.N);
-                    p.N_flip   = round(0.5 * obj.N);
-                    p.N_approach = round(0.6 * obj.N);
                     p.Glideslope = tan(deg2rad(10));
-                    p.theta_tol = deg2rad(30);
+                    p.theta_tol = deg2rad(15);
                     p.q_inverted = [0; 0; -1; 0];
                     if obj.Vehicle == 0
-                        p.apex_alt = 35; % Scaled for ASTRAv2 lower ceiling
-                        obj.T_initial = 30;
+                        p.apex_alt = 20; % Default ASTRAv2
+                        p.T_bounds = [10, 30];
+                        obj.T_initial = 20;
                     else
-                        p.apex_alt = 75; % TOAD full scale backflip apex
-                        obj.T_initial = 35;
+                        p.apex_alt = 50; % Default TOAD
+                        p.T_bounds = [15, 35];
+                        obj.T_initial = 24;
                     end
+                    p.N_ascent   = round(0.25 * obj.N);
+                    p.N_flip     = round(0.4 * obj.N);
+                    p.N_approach = round(0.7 * obj.N);
                     
                 case "Circle"
                     p.N_ascent   = round(0.10 * obj.N);
@@ -241,6 +258,26 @@ classdef TrajectoryOptimizer < handle
                     paramName = varargin{i};
                     p.(paramName) = varargin{i+1};
                 end
+            end
+            
+            % If apex_alt was modified, adjust duration bounds and initial guess
+            if obj.Maneuver == "Backflip"
+                if p.apex_alt <= 25
+                    p.T_bounds = [10, 22];
+                    obj.T_initial = 16;
+                elseif p.apex_alt <= 55
+                    p.T_bounds = [15, 32];
+                    obj.T_initial = 24;
+                else
+                    p.T_bounds = [20, 42];
+                    obj.T_initial = 30;
+                end
+            end
+            if isfield(p, 'T_bounds')
+                obj.T_bounds = p.T_bounds;
+            end
+            if isfield(p, 'T_initial')
+                obj.T_initial = p.T_initial;
             end
             obj.ManeuverParams = p;
         end
@@ -318,34 +355,24 @@ classdef TrajectoryOptimizer < handle
             U_phys    = zeros(4, N_ctrl);
             
             if obj.Maneuver == "Backflip"
-                k_flip = obj.ManeuverParams.N_flip;
-                k_span = max(4, round(3.5 / dt_sim));
-                k_flip_start = max(1, k_flip - k_span);
-                k_flip_end   = min(N_ctrl, k_flip + k_span);
-                L1 = max(1, k_flip - k_flip_start);
-                L2 = max(1, k_flip_end - k_flip);
-                T1 = L1 * dt_sim;
-                T2 = L2 * dt_sim;
+                k_flip_start = obj.ManeuverParams.N_ascent;
+                k_flip_end   = obj.ManeuverParams.N_approach;
+                L_flip       = max(2, k_flip_end - k_flip_start);
+                T_flip       = L_flip * dt_sim;
                 
-                % Prescribe continuous smooth pitch profile 0 -> -pi -> 0
+                % Prescribe continuous smooth 360-deg pitch profile 0 -> -pi -> -2*pi
                 for k = 1:N_nodes
                     if k <= k_flip_start
                         quat_sim(:, k)  = obj.q0;
                         omega_sim(:, k) = [0; 0; 0];
-                    elseif k <= k_flip
-                        tau1 = (k - k_flip_start) / L1;
-                        th_p = -pi * sin(0.5 * pi * tau1)^2;
-                        dth_p = -(0.5 * pi^2 / T1) * sin(pi * tau1);
-                        quat_sim(:, k)  = [cos(th_p / 2); 0; sin(th_p / 2); 0];
-                        omega_sim(:, k) = [0; dth_p; 0];
                     elseif k <= k_flip_end
-                        tau2 = (k - k_flip) / L2;
-                        th_p = -pi * cos(0.5 * pi * tau2)^2;
-                        dth_p = (0.5 * pi^2 / T2) * sin(pi * tau2);
+                        tau = (k - k_flip_start) / L_flip;
+                        th_p = -2 * pi * (tau - (1 / (2 * pi)) * sin(2 * pi * tau));
+                        dth_p = -(2 * pi / T_flip) * (1 - cos(2 * pi * tau));
                         quat_sim(:, k)  = [cos(th_p / 2); 0; sin(th_p / 2); 0];
                         omega_sim(:, k) = [0; dth_p; 0];
                     else
-                        quat_sim(:, k)  = obj.q0;
+                        quat_sim(:, k)  = -obj.q0;
                         omega_sim(:, k) = [0; 0; 0];
                     end
                 end
@@ -356,13 +383,8 @@ classdef TrajectoryOptimizer < handle
                         % During flip: minimum thrust and pitch gimbal torque
                         T_cmd = min_thrust;
                         J_yy = obj.constants.J(2, 2);
-                        if k <= k_flip
-                            tau1 = (k - k_flip_start) / L1;
-                            ddth_p = -(0.5 * pi^3 / (T1^2)) * cos(pi * tau1);
-                        else
-                            tau2 = (k - k_flip) / L2;
-                            ddth_p = (0.5 * pi^3 / (T2^2)) * cos(pi * tau2);
-                        end
+                        tau = (k - k_flip_start) / L_flip;
+                        ddth_p = -(4 * pi^2 / (T_flip^2)) * sin(2 * pi * tau);
                         M_pitch = J_yy * ddth_p;
                         gimbal_phi = -M_pitch / (max(obj.constants.rTB * T_cmd, 1e-2));
                         max_g = (1 - obj.gimbal_margin) * obj.max_gimbal_angle;
@@ -670,7 +692,11 @@ classdef TrajectoryOptimizer < handle
             opti.subject_to(X(:, 1) == [obj.q0; obj.r0; obj.v0; obj.w0; m_lox0; m_ipa0]);
             
             % Final State Constraints (Landing Zone)
-            opti.subject_to(X(1:4, end) == obj.q0);
+            if obj.Maneuver == "Backflip"
+                opti.subject_to(X(1:4, end) == -obj.q0);
+            else
+                opti.subject_to(X(1:4, end) == obj.q0);
+            end
             opti.subject_to(X(5:7, end) == obj.r_f);
             opti.subject_to(sum(X(8:10, end).^2) <= obj.v_f_tol^2);
             
@@ -736,10 +762,32 @@ classdef TrajectoryOptimizer < handle
                     opti.subject_to(X(10, 1:N_ascent) >= 0);
                     opti.subject_to(sqrt(pos_asc(1,:).^2 + pos_asc(2,:).^2 + 1e-4) <= pos_asc(3,:) * Glideslope + 0.05);
                     
-                    % Flip Maneuver Target Attitude (Convex linear inner product)
+                    % Altitude envelope: strictly enforce ceiling based on commanded apex_alt
+                    alt_cushion = 2.5; % [m] Allowable cushion above commanded apex
+                    opti.subject_to(X(7, :) <= p.apex_alt + alt_cushion);
+                    
+                    % Apex Altitude Target: guarantee flip occurs at target apex altitude
+                    opti.subject_to(X(7, N_flip) >= p.apex_alt - 2.0);
+                    
+                    % Prompt Ascent: require vehicle to climb directly without lingering near pad
+                    opti.subject_to(X(7, N_ascent) >= 0.50 * p.apex_alt);
+                    
+                    % Flip Maneuver Apex Attitude (Inverted at N_flip)
                     att_tol = cos(p.theta_tol / 2);
                     q_flip = X(1:4, N_flip);
                     opti.subject_to(p.q_inverted' * q_flip >= att_tol);
+                    
+                    % Flip Maneuver Completion Attitude (Completed -360 deg flip by N_approach)
+                    q_app = X(1:4, N_approach);
+                    opti.subject_to([-1; 0; 0; 0]' * q_app >= att_tol);
+                    
+                    % Monotonic negative pitch rate during flip maneuver (prevents flip reversal)
+                    opti.subject_to(X(12, N_ascent:N_approach) <= 0.05);
+                    
+                    % Descent attitude hold: remain upright (within 25 deg of vertical)
+                    R33_desc = X(1, N_approach:end).^2 - X(2, N_approach:end).^2 - ...
+                               X(3, N_approach:end).^2 + X(4, N_approach:end).^2;
+                    opti.subject_to(R33_desc >= cosd(25));
                     
                     % Descent glideslope cone (Second-order cone formulation)
                     pos_desc = X(5:7, N_approach:end);
@@ -816,7 +864,7 @@ classdef TrajectoryOptimizer < handle
             J_qz = sum((Xhat(4, :)).^2);
             
             opti.minimize( ...
-                1.0                * J_marginGimbal  + ...
+                0.3                * J_marginGimbal  + ...
                 obj.w_rate         * J_rate          + ...
                 obj.w_qz           * J_qz            + ...
                 obj.w_time         * T_total);
@@ -832,8 +880,8 @@ classdef TrajectoryOptimizer < handle
                             'constr_viol_tol', obj.ConstrViolTol, ...
                             'acceptable_tol', 1e-3, ...
                             'acceptable_constr_viol_tol', 1e-3, ...
-                            'acceptable_iter', 10, ...
-                            'print_level', 0);
+                            'acceptable_iter', 5, ...
+                            'print_level', obj.PrintLevel);
             opti.solver('ipopt', p_opts, s_opts);
             
             Xhat = obj.OptiVars.Xhat;
@@ -854,6 +902,7 @@ classdef TrajectoryOptimizer < handle
                 
             catch ME
                 disp('Solver did not achieve full convergence. Retrieving debug trajectory...');
+                fprintf('Solver return message: %s\n', ME.message);
                 status = 'Debug';
                 X_res = obj.Sx .* opti.debug.value(Xhat);
                 U_res = obj.Su .* opti.debug.value(Uhat);

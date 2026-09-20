@@ -80,6 +80,12 @@ function [X, U, K, LA, LT] = TrajectoryManager(t, X_est, constantsTOAD)
     X_up  = States(n_high,:);
     X(:) = X_low + (X_up - X_low) .* ratio;
     
+    % Quaternion normalization to eliminate norm shrinkage and DCM defect
+    q_norm = norm(X(1:4));
+    if q_norm > 1e-6
+        X(1:4) = X(1:4) / q_norm;
+    end
+    
     U_low = Inputs(n_low,:);
     U_up  = Inputs(n_high,:);
     U(:) = U_low + (U_up - U_low) .* ratio;
