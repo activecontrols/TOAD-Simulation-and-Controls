@@ -44,6 +44,9 @@ constantsTOAD.R = p2.obsv_cov_mat;
 constantsTOAD.BSigma = 5e-2;
 constantsTOAD.BBias = 1e-8;
 
+constantsTOAD.sigma_df   = 5.0;   % force disturbance intensity
+constantsTOAD.sigma_dtau = 1.0;   % torque disturbance intensity
+
 % Magnetometer
 constantsTOAD.mag = [0.385202; 0.030609; -0.922324];
 dM_xx = 0.035;      % 3.5% Scaling from SS Rods
