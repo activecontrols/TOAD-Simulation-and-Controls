@@ -2,38 +2,115 @@ function LiveSim_Runner(varargin)
 % LIVESIM_RUNNER Real-Time Hardware-in-the-Loop Simulation Runner for TOAD
 % Interfaces the MATLAB Lumped Parameter model with the Ground Control UI via UDP.
 %
-% Ports:
-%   - Telemetry Stream (Sim -> UI): UDP 127.0.0.1:9000 (100-byte EC_FMT packet)
-%   - Valve Command (UI -> Sim):   UDP 127.0.0.1:9001 (12-byte command packet)
+% Features:
+%   - Automated C++ MEX Dependency Tracking: Checks if core source files have been
+%     modified since last compilation. Recompiles automatically if changes are detected;
+%     otherwise reuses last available compiled binary.
+%   - Telemetry Stream (Sim -> UI): UDP 127.0.0.1:9000 (100-byte EC_FMT packet at 20 Hz)
+%   - Valve Command (UI -> Sim):   UDP 127.0.0.1:9001 (12-byte packet via NIO channel)
+%   - Real-Time Pacing: 100 Hz (dt = 0.010 s) synchronized with wall-clock time.
 %
-% Real-Time Pacing: 100 Hz (dt = 0.010 s) synchronized with wall-clock time.
+% Optional Name-Value Arguments:
+%   'ForceCompile' - Logical (true to force C++ MEX recompile, default false)
+%   'MaxSteps'     - Numeric (maximum steps to execute, default Inf for continuous run)
+%   'Quiet'        - Logical (suppress routine step printouts, default false)
+
+    % Parse optional input arguments
+    p = inputParser;
+    addParameter(p, 'ForceCompile', false, @islogical);
+    addParameter(p, 'MaxSteps', Inf, @isnumeric);
+    addParameter(p, 'Quiet', false, @islogical);
+    parse(p, varargin{:});
+    opts = p.Results;
 
     fprintf('=====================================================\n');
-    fprintf('   TOAD Lumped Parameter Real-Time Simulation Runner\n');
+    fprintf('   TOAD Lumped Parameter Real-Time Simulation Runner \n');
     fprintf('=====================================================\n');
 
-    % Setup paths
+    % Setup paths robustly
     baseDir = fileparts(mfilename('fullpath'));
-    addpath(fullfile(baseDir, '..', 'Core'));
-    addpath(fullfile(baseDir, '..', 'Config'));
-    addpath(fullfile(baseDir, '..', 'Thermal'));
-    addpath(fullfile(baseDir, '..', 'Fluid Properties'));
-    addpath(baseDir);
+    
+    coreCandidates = {
+        fullfile(baseDir, '..', 'Core'), ...
+        fullfile(baseDir, 'Core'), ...
+        fullfile(pwd, 'sandbox', 'experiments', 'Core'), ...
+        fullfile(pwd, 'TOAD_LumpedParam', 'Core')
+    };
+    coreDir = '';
+    for c = 1:numel(coreCandidates)
+        if exist(coreCandidates{c}, 'dir')
+            coreDir = coreCandidates{c};
+            break;
+        end
+    end
 
-    % Build Flight-Ready Unified System
+    configCandidates = {
+        fullfile(baseDir, '..', 'Config'), ...
+        fullfile(baseDir, 'Config'), ...
+        fullfile(pwd, 'sandbox', 'experiments', 'Config'), ...
+        fullfile(pwd, 'TOAD_LumpedParam', 'Config')
+    };
+    configDir = '';
+    for c = 1:numel(configCandidates)
+        if exist(configCandidates{c}, 'dir')
+            configDir = configCandidates{c};
+            break;
+        end
+    end
+
+    thermalDir = fullfile(baseDir, '..', 'Thermal');
+    propsDir   = fullfile(baseDir, '..', 'Fluid Properties');
+
+    % Also find root TOAD_LumpedParam for FluidProperties and tables
+    repoCandidates = {
+        fullfile(baseDir, '..'), ...
+        fullfile(baseDir, '..', '..', '..', 'TOAD_LumpedParam'), ...
+        fullfile(pwd, 'TOAD_LumpedParam')
+    };
+    for r = 1:numel(repoCandidates)
+        rp = repoCandidates{r};
+        if exist(fullfile(rp, 'Core'), 'dir'), addpath(fullfile(rp, 'Core')); end
+        if exist(fullfile(rp, 'Fluid Properties'), 'dir'), addpath(fullfile(rp, 'Fluid Properties')); end
+    end
+
+    if ~isempty(coreDir), addpath(coreDir, '-begin'); end
+    if ~isempty(configDir), addpath(configDir, '-begin'); end
+    if exist(thermalDir, 'dir'), addpath(thermalDir); end
+    if exist(propsDir, 'dir'), addpath(propsDir); end
+    addpath(baseDir, '-begin');
+
+    %% --- 1. Check & Conditional C++ MEX Compilation ---
+    if ~isempty(coreDir)
+        checkAndCompileMEX(coreDir, opts.ForceCompile);
+    end
+
+    %% --- 2. Initialize System Topology ---
     fprintf('Initializing Flight-Ready System Topology...\n');
-    [System, State] = BuildTOADSystem_Merged();
-    dt = 0.010; % 100 Hz
+    if exist('BuildTOADSystem', 'file')
+        [System, State] = BuildTOADSystem();
+        useUniversal = true;
+    else
+        [System, State] = BuildTOADSystem_Merged();
+        useUniversal = false;
+    end
+
+    dt = 0.010; % 100 Hz simulation rate
     psi2Pa = 6894.757;
 
-    % Setup Zero-Toolbox Java UDP Sockets
+    %% --- 3. Setup Zero-Toolbox Java UDP Sockets ---
     fprintf('Configuring UDP Sockets (Telemetry: 9000, Commands: 9001)...\n');
-    sendSocket = java.net.DatagramSocket();
-    destAddr   = java.net.InetAddress.getByName('127.0.0.1');
-    destPort   = 9000;
-
+    sendSocket = [];
     cmdChannel = [];
-    cmdBuf = [];
+    cmdBuf     = [];
+
+    try
+        sendSocket = java.net.DatagramSocket();
+        destAddr   = java.net.InetAddress.getByName('127.0.0.1');
+        destPort   = 9000;
+    catch ME
+        warning('LiveSim_Runner:SocketInit', 'Could not open telemetry socket: %s', ME.message);
+    end
+
     try
         cmdChannel = java.nio.channels.DatagramChannel.open();
         cmdChannel.configureBlocking(false);
@@ -41,10 +118,10 @@ function LiveSim_Runner(varargin)
         cmdBuf = java.nio.ByteBuffer.allocate(64);
         fprintf('Command receiver listening on UDP port 9001 (non-blocking NIO channel).\n');
     catch ME
-        warning('Could not bind UDP port 9001 (%s). Running in broadcast-only mode.', ME.message);
+        warning('LiveSim_Runner:CmdBind', 'Could not bind UDP port 9001 (%s). Running in broadcast-only mode.', ME.message);
     end
 
-    % Cleanup on exit
+    % Cleanup sockets reliably on exit / Ctrl+C
     cleanupObj = onCleanup(@() cleanupSockets(sendSocket, cmdChannel));
 
     % Initial Link States
@@ -55,16 +132,21 @@ function LiveSim_Runner(varargin)
         LinkStates.(fn) = System.Links.(fn).State;
     end
 
-    fprintf('Ready! Starting 100 Hz Real-Time Execution Loop. Press Ctrl+C to stop.\n');
+    if isinf(opts.MaxSteps)
+        fprintf('Ready! Starting 100 Hz Real-Time Execution Loop. Press Ctrl+C to stop.\n');
+    else
+        fprintf('Ready! Executing test batch (%d steps)...\n', opts.MaxSteps);
+    end
+
     tStart = tic;
     simTime = 0.0;
     stepCount = 0;
 
     try
-        while true
+        while stepCount < opts.MaxSteps
             stepCount = stepCount + 1;
 
-            %% 1. Non-blocking Receive: Drain UI Valve Commands
+            %% A. Non-blocking Receive: Drain UI Valve Commands
             if ~isempty(cmdChannel)
                 while true
                     cmdBuf.clear();
@@ -87,91 +169,42 @@ function LiveSim_Runner(varargin)
                 end
             end
 
-            %% 2. Step Physics Simulation
-            [State, FlowRates, System] = StepSimulation_Live(State, dt, System, LinkStates);
+            %% B. Step Physics Simulation
+            if useUniversal
+                [State, ~, System] = StepSimulation(State, dt, System, LinkStates);
+            else
+                [State, ~, System] = StepSimulation_Live(State, dt, System, LinkStates);
+            end
             simTime = simTime + dt;
 
-            %% 3. Pack 100-byte EC_FMT Telemetry Packet
-            % Offset 0x00: uint8 CRC (1 byte) + 3 bytes padding
-            hdr = uint8([mod(stepCount, 256), 0, 0, 0]);
-
-            % Offset 0x04: 12 floats Pressures in psia
-            pt_vals = single(zeros(1, 12));
-            pt_vals(1) = single(State.Nodes.TK_N2.P / psi2Pa);             % PT-N2-01 (COPV)
-            pt_vals(2) = single(State.Nodes.TK_O2_01.P / psi2Pa);          % PT-O2-01 (LOX Tank)
-            pt_vals(3) = single(State.Nodes.TK_FU_01.P / psi2Pa);          % PT-FU-01 (Fuel Tank)
-            pt_vals(4) = single(State.Nodes.Purge_Manifold.P / psi2Pa);    % PT-N2-02 (Purge Manifold)
-            pt_vals(5) = single(State.Nodes.OX_Manifold.P / psi2Pa);       % PT-O2-02 (LOX Inj Manifold)
-            pt_vals(6) = single(State.Nodes.FU_Manifold.P / psi2Pa);       % PT-FU-02 (Fuel Inj Manifold)
-            pt_vals(7) = single(State.Nodes.DART_Chamber.P / psi2Pa);      % PT-FU-04 (DART Igniter Pc)
-            if isfield(State.Nodes, 'TK_N2_BULK')
-                pt_vals(8) = single(State.Nodes.TK_N2_BULK.P / psi2Pa);     % PT-N2-BULK
-            end
-            pt_vals(9) = single(State.Nodes.DART_Chamber.P / psi2Pa);      % PT-DART-CHAM (Mirror)
-            pt_vals(10) = single(State.Nodes.SKIPPER.P / psi2Pa);          % PT-FU-03 (SKIPPER Chamber Pc)
-
-            % Offset 0x34: 6 floats Temperatures in Kelvin
-            tc_vals = single(zeros(1, 6));
-            tc_vals(1) = single(State.Nodes.TK_N2.T);                      % TC-N2-01
-            tc_vals(2) = single(State.Nodes.TK_O2_01.Liquid.T);            % TC-O2-01
-            tc_vals(3) = single(State.Nodes.OX_Manifold.T);                % TC-O2-02
-            tc_vals(4) = single(State.Nodes.FU_Manifold.T);                % TC-FU-01
-            if isfield(State.Thermal, 'Regen')
-                tc_vals(5) = single(State.Thermal.Regen.T_wall);           % TC-REGEN-WALL
-            end
-
-            % Offset 0x4C: uint32 valve_state_mask
-            vMask = buildValveMask(System);
-
-            % Offset 0x50: 2 floats valve angles (throttle 0.0 to 1.0)
-            ox_ang = 0.0; fu_ang = 0.0;
-            if isfield(System.Links, 'BV_02_04'), ox_ang = System.Links.BV_02_04.State;
-            elseif isfield(System.Links, 'BV_O2_04'), ox_ang = System.Links.BV_O2_04.State;
-            end
-            if isfield(System.Links, 'BV_FU_04'), fu_ang = System.Links.BV_FU_04.State; end
-            vAngles = single([ox_ang, fu_ang]);
-
-            % Offset 0x58: 3 floats fill levels (0.0 to 1.0)
-            fill_levels = single([ ...
-                State.Nodes.TK_N2.P / (4500 * psi2Pa), ...
-                State.Nodes.TK_O2_01.Liquid.V / State.Nodes.TK_O2_01.V, ...
-                State.Nodes.TK_FU_01.Liquid.V / State.Nodes.TK_FU_01.V]);
-
-            % Send UDP datagram to UI at 20 Hz (every 5th 100 Hz physics step)
-            if mod(stepCount, 5) == 0
-                % Assemble 100-byte buffer
-                pktBytes = [ ...
-                    hdr, ...
-                    typecast(pt_vals, 'uint8'), ...
-                    typecast(tc_vals, 'uint8'), ...
-                    typecast(vMask, 'uint8'), ...
-                    typecast(vAngles, 'uint8'), ...
-                    typecast(fill_levels, 'uint8') ];
-
-                % Must use typecast(..., 'int8') to preserve bit patterns!
-                % (int8() in MATLAB saturates any byte >= 128 to 127, corrupting floats)
+            %% C. Pack 100-byte EC_FMT Telemetry Packet
+            if ~isempty(sendSocket) && mod(stepCount, 5) == 0
+                % Assemble telemetry at 20 Hz
+                pktBytes = assembleTelemetryPacket(State, System, stepCount, psi2Pa);
                 sendPkt = java.net.DatagramPacket(typecast(pktBytes, 'int8'), 100, destAddr, destPort);
                 sendSocket.send(sendPkt);
             end
 
-            %% 4. Real-Time Pacing
+            %% D. Real-Time Pacing (Wall-clock synchronization)
             elapsed = toc(tStart);
-            % Catch-up runaway protection: clamp simTime if lagging > 50 ms
             if elapsed > simTime + 0.050
-                simTime = elapsed;
+                simTime = elapsed; % Runaway catch-up protection
             end
 
             sleepSec = simTime - elapsed;
             if sleepSec > 0.001
                 java.lang.Thread.sleep(int64(sleepSec * 1000));
             else
-                % Yield thread briefly to prevent socket starvation and UI freeze
                 java.lang.Thread.yield();
             end
 
-            if mod(stepCount, 500) == 0 % Every 5 seconds
+            if ~opts.Quiet && mod(stepCount, 500) == 0 % Periodic 5-second status update
+                pt_n2  = State.Nodes.TK_N2.P / psi2Pa;
+                pt_ox  = State.Nodes.TK_O2_01.P / psi2Pa;
+                pt_fu  = State.Nodes.TK_FU_01.P / psi2Pa;
+                pt_pc  = State.Nodes.SKIPPER.P / psi2Pa;
                 fprintf('t = %.1f s | COPV: %.0f psi | LOX: %.1f psi | FU: %.1f psi | Pc: %.1f psi\n', ...
-                    simTime, pt_vals(1), pt_vals(2), pt_vals(3), pt_vals(7));
+                    simTime, pt_n2, pt_ox, pt_fu, pt_pc);
             end
         end
     catch ME
@@ -183,25 +216,158 @@ function LiveSim_Runner(varargin)
     end
 end
 
+%% =========================================================================
+%% --- HELPER: Check and Conditional MEX Compilation ---
+%% =========================================================================
+function checkAndCompileMEX(coreDir, force)
+    if nargin < 2, force = false; end
+
+    mexBinaryName = ['CalculateLinkFlow_mex.' mexext];
+    mexFile = fullfile(coreDir, mexBinaryName);
+    cppFile = fullfile(coreDir, 'CalculateLinkFlow_mex.cpp');
+
+    if ~exist(cppFile, 'file')
+        % C++ source not present in coreDir
+        return;
+    end
+
+    needsCompile = force;
+    triggerReason = '';
+
+    if force
+        triggerReason = 'User forced recompile via ForceCompile=true';
+    elseif ~exist(mexFile, 'file')
+        needsCompile = true;
+        triggerReason = sprintf('Compiled binary "%s" not found', mexBinaryName);
+    else
+        mexInfo = dir(mexFile);
+        mexDate = mexInfo.datenum;
+
+        % Check core source files that dictate the kernel implementation
+        srcFiles = {
+            cppFile, ...
+            fullfile(coreDir, 'CalculateLinkFlow.m')
+        };
+
+        for k = 1:numel(srcFiles)
+            srcPath = srcFiles{k};
+            if exist(srcPath, 'file')
+                srcInfo = dir(srcPath);
+                if srcInfo.datenum > mexDate
+                    needsCompile = true;
+                    triggerReason = sprintf('Source file "%s" is newer than binary (%s vs %s)', ...
+                        srcInfo.name, srcInfo.date, mexInfo.date);
+                    break;
+                end
+            end
+        end
+    end
+
+    if needsCompile
+        fprintf('\n-----------------------------------------------------\n');
+        fprintf('  [C++ MEX Kernel Update Check: RECOMPILE TRIGGERED]\n');
+        fprintf('  Reason: %s\n', triggerReason);
+        fprintf('  Compiling %s with MSVC 2022...\n', mexBinaryName);
+        tStartComp = tic;
+        try
+            mex('-O', cppFile, '-outdir', coreDir);
+            tComp = toc(tStartComp);
+            fprintf('  Compilation successful in %.2f s -> %s\n', tComp, mexFile);
+            % Clear in-memory symbol handles so MATLAB reloads the newly compiled binary
+            clear CalculateLinkFlow_mex;
+            clear CalculateLinkFlow;
+        catch ME
+            warning('LiveSim_Runner:MEXCompilationFailed', ...
+                'MEX compilation failed: %s\nFalling back to existing binary or interpreted MATLAB solver.', ME.message);
+        end
+        fprintf('-----------------------------------------------------\n\n');
+    else
+        fprintf('C++ MEX kernel is up to date (%s). Using last available compile.\n', mexBinaryName);
+    end
+end
+
+%% =========================================================================
+%% --- HELPER: Assemble 100-Byte EC_FMT Telemetry Packet ---
+%% =========================================================================
+function pktBytes = assembleTelemetryPacket(State, System, stepCount, psi2Pa)
+    % Header (4 bytes)
+    hdr = uint8([mod(stepCount, 256), 0, 0, 0]);
+
+    % Pressures (12 floats, 48 bytes)
+    pt_vals = single(zeros(1, 12));
+    pt_vals(1)  = single(State.Nodes.TK_N2.P / psi2Pa);
+    pt_vals(2)  = single(State.Nodes.TK_O2_01.P / psi2Pa);
+    pt_vals(3)  = single(State.Nodes.TK_FU_01.P / psi2Pa);
+    pt_vals(4)  = single(State.Nodes.Purge_Manifold.P / psi2Pa);
+    pt_vals(5)  = single(State.Nodes.OX_Manifold.P / psi2Pa);
+    pt_vals(6)  = single(State.Nodes.FU_Manifold.P / psi2Pa);
+    pt_vals(7)  = single(State.Nodes.DART_Chamber.P / psi2Pa);
+    if isfield(State.Nodes, 'TK_N2_BULK')
+        pt_vals(8) = single(State.Nodes.TK_N2_BULK.P / psi2Pa);
+    end
+    pt_vals(9)  = single(State.Nodes.DART_Chamber.P / psi2Pa);
+    pt_vals(10) = single(State.Nodes.SKIPPER.P / psi2Pa);
+
+    % Temperatures (6 floats, 24 bytes)
+    tc_vals = single(zeros(1, 6));
+    tc_vals(1) = single(State.Nodes.TK_N2.T);
+    if isfield(State.Nodes.TK_O2_01, 'Liquid')
+        tc_vals(2) = single(State.Nodes.TK_O2_01.Liquid.T);
+    else
+        tc_vals(2) = single(State.Nodes.TK_O2_01.T);
+    end
+    tc_vals(3) = single(State.Nodes.OX_Manifold.T);
+    tc_vals(4) = single(State.Nodes.FU_Manifold.T);
+    if isfield(State, 'Thermal') && isfield(State.Thermal, 'Regen')
+        tc_vals(5) = single(State.Thermal.Regen.T_wall);
+    elseif isfield(State.Nodes, 'SKIPPER')
+        tc_vals(5) = single(State.Nodes.SKIPPER.T);
+    end
+
+    % Valve State Mask (1 uint32, 4 bytes)
+    vMask = buildValveMask(System);
+
+    % Throttle Angles (2 floats, 8 bytes)
+    ox_ang = 0.0; fu_ang = 0.0;
+    if isfield(System.Links, 'BV_02_04'), ox_ang = System.Links.BV_02_04.State;
+    elseif isfield(System.Links, 'BV_O2_04'), ox_ang = System.Links.BV_O2_04.State;
+    end
+    if isfield(System.Links, 'BV_FU_04'), fu_ang = System.Links.BV_FU_04.State; end
+    vAngles = single([ox_ang, fu_ang]);
+
+    % Fill Levels (3 floats, 12 bytes)
+    v_lox_frac = 0.0; v_fu_frac = 0.0;
+    if isfield(State.Nodes.TK_O2_01, 'Liquid') && isfield(State.Nodes.TK_O2_01, 'V') && State.Nodes.TK_O2_01.V > 0
+        v_lox_frac = State.Nodes.TK_O2_01.Liquid.V / State.Nodes.TK_O2_01.V;
+    end
+    if isfield(State.Nodes.TK_FU_01, 'Liquid') && isfield(State.Nodes.TK_FU_01, 'V') && State.Nodes.TK_FU_01.V > 0
+        v_fu_frac = State.Nodes.TK_FU_01.Liquid.V / State.Nodes.TK_FU_01.V;
+    end
+
+    fill_levels = single([ ...
+        State.Nodes.TK_N2.P / (4500 * psi2Pa), ...
+        v_lox_frac, ...
+        v_fu_frac]);
+
+    % Assemble 100-byte packet
+    pktBytes = [ ...
+        hdr, ...
+        typecast(pt_vals, 'uint8'), ...
+        typecast(tc_vals, 'uint8'), ...
+        typecast(vMask, 'uint8'), ...
+        typecast(vAngles, 'uint8'), ...
+        typecast(fill_levels, 'uint8') ];
+end
+
+%% =========================================================================
+%% --- HELPER: Valve Mask Decoding & Encoding ---
+%% =========================================================================
 function LinkStates = applyValveMask(LinkStates, mask, oxThrt, fuThrt)
-% Maps 32-bit valve mask to individual link states
     bitMap = {
-        0,  'SV_N2_01';
-        1,  'SV_N2_02';
-        2,  'SV_N2_03';
-        3,  'SV_N2_04';
-        4,  'SV_N2_05';
-        5,  'SV_N2_06';
-        6,  'SV_N2_07';
-        7,  'SV_DART_OX';
-        8,  'SV_DART_FU';
-        9,  'BV_N2_01';
-        10, 'BV_N2_02';
-        11, 'BV_O2_01';
-        12, 'BV_O2_02';
-        13, 'BV_02_03';
-        14, 'BV_FU_01';
-        15, 'BV_FU_03';
+        0,  'SV_N2_01';  1,  'SV_N2_02';  2,  'SV_N2_03';  3,  'SV_N2_04';
+        4,  'SV_N2_05';  5,  'SV_N2_06';  6,  'SV_N2_07';  7,  'SV_DART_OX';
+        8,  'SV_DART_FU';9,  'BV_N2_01';  10, 'BV_N2_02';  11, 'BV_O2_01';
+        12, 'BV_O2_02';  13, 'BV_02_03';  14, 'BV_FU_01';  15, 'BV_FU_03';
         16, 'BV_N2_FILL';
     };
 
@@ -224,24 +390,11 @@ function LinkStates = applyValveMask(LinkStates, mask, oxThrt, fuThrt)
 end
 
 function vMask = buildValveMask(System)
-% Constructs 32-bit valve status mask from System.Links
     bitMap = {
-        0,  'SV_N2_01';
-        1,  'SV_N2_02';
-        2,  'SV_N2_03';
-        3,  'SV_N2_04';
-        4,  'SV_N2_05';
-        5,  'SV_N2_06';
-        6,  'SV_N2_07';
-        7,  'SV_DART_OX';
-        8,  'SV_DART_FU';
-        9,  'BV_N2_01';
-        10, 'BV_N2_02';
-        11, 'BV_O2_01';
-        12, 'BV_O2_02';
-        13, 'BV_02_03';
-        14, 'BV_FU_01';
-        15, 'BV_FU_03';
+        0,  'SV_N2_01';  1,  'SV_N2_02';  2,  'SV_N2_03';  3,  'SV_N2_04';
+        4,  'SV_N2_05';  5,  'SV_N2_06';  6,  'SV_N2_07';  7,  'SV_DART_OX';
+        8,  'SV_DART_FU';9,  'BV_N2_01';  10, 'BV_N2_02';  11, 'BV_O2_01';
+        12, 'BV_O2_02';  13, 'BV_02_03';  14, 'BV_FU_01';  15, 'BV_FU_03';
         16, 'BV_N2_FILL';
     };
 

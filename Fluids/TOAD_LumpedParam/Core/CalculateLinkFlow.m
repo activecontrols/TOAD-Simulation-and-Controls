@@ -1,207 +1,236 @@
-function [mdot, isChoked, flowDir] = CalculateLinkFlow(Link, P_up, P_down, UpProps, DownProps, dt)
-% CALCULATELINKFLOW Computes quasi-steady mass flow rate for a single link
-% (Valve, Orifice, Pipe, Check, or Regulator).
+function [mdot, isChoked, flowDir, Qdot] = CalculateLinkFlow(Link, P_up, P_down, UpProps, DownProps, dt)
+% CALCULATELINKFLOW Computes mass flow rate and heat transfer for fluid & thermal links.
+% Unified vectorized formulation:
+% - Exact compressible gas dynamics (subsonic & choked) for gas-dominated flows
+% - Incompressible hydraulic formulation with pipe friction for liquid-dominated flows
+% - Dynamic dome regulator Supply Pressure Effect (SPE) and droop throttling
+% - Smooth tanh check valve opening mask
+% - Unified 'Thermal' link handling returning Qdot = G * (T_up - T_down)
 %
-% Inputs:
-%   Link      - Struct defining link properties (Type, Cv, A, Cd, Zeta, P_set, SPE, Droop, etc.)
-%   P_up      - Upstream node pressure [Pa]
-%   P_down    - Downstream node pressure [Pa]
-%   UpProps   - Thermodynamic properties struct of upstream node
-%   DownProps - Thermodynamic properties struct of downstream node
-%   dt        - (Optional) Current timestep [s] for Courant limiter (default: 0.005)
-%
-% Outputs:
-%   mdot      - Net mass flow rate [kg/s] (positive = Up -> Down)
-%   isChoked  - Boolean indicating choked compressible flow
-%   flowDir   - +1 for forward (Up -> Down), -1 for reverse (Down -> Up)
+% Calling Signatures:
+%   Scalar:     [mdot, isChoked, flowDir, Qdot] = CalculateLinkFlow(Link, P_up, P_down, UpProps, DownProps, dt)
+%   Vectorized: [mdot_vec, isChoked_vec, flowDir_vec, Qdot_vec] = CalculateLinkFlow(Links, P_up_vec, P_down_vec, UpProps, DownProps, dt)
 
     if nargin < 6 || isempty(dt), dt = 0.005; end
 
-    DeltaP = P_up - P_down;
-    if abs(DeltaP) < 1.0 % Less than 1 Pa difference
-        mdot = 0.0;
-        isChoked = false;
-        flowDir = 1;
+    N = numel(Link);
+    P_up = reshape(P_up, [N, 1]);
+    P_down = reshape(P_down, [N, 1]);
+
+    % Fast-path: Native C++ MEX accelerator if available
+    persistent hasMex;
+    if isempty(hasMex)
+        hasMex = (exist('CalculateLinkFlow_mex', 'file') == 3);
+    end
+    if hasMex
+        [mdot, isChoked, flowDir, Qdot] = CalculateLinkFlow_mex(Link, P_up, P_down, UpProps, DownProps, dt);
         return;
     end
 
-    if DeltaP >= 0
-        flowDir = 1;
-        P_in = P_up;
-        P_out = P_down;
-        Props_in = UpProps;
-    else
-        flowDir = -1;
-        P_in = P_down;
-        P_out = P_up;
-        Props_in = DownProps;
+    % Pre-allocate outputs
+    mdot     = zeros(N, 1);
+    isChoked = false(N, 1);
+    flowDir  = ones(N, 1);
+    Qdot     = zeros(N, 1);
+
+    % Extract link classification flags
+    linkTypes = lower({Link.Type});
+    isThermal   = strcmp(linkTypes, 'thermal')';
+    isRegulator = strcmp(linkTypes, 'regulator')';
+    isCheck     = strcmp(linkTypes, 'check')';
+    isPipe      = strcmp(linkTypes, 'pipe')';
+
+    %% 1. Handle Thermal Links (Qdot = G * (T_up - T_down), mdot = 0)
+    if any(isThermal)
+        thIdx = find(isThermal);
+        T_up_th = [UpProps(thIdx).T]';
+        T_down_th = [DownProps(thIdx).T]';
+        
+        G_vec = zeros(numel(thIdx), 1);
+        for k = 1:numel(thIdx)
+            idx = thIdx(k);
+            if isfield(Link(idx), 'G') && ~isempty(Link(idx).G)
+                G_vec(k) = Link(idx).G;
+            elseif isfield(Link(idx), 'UA') && ~isempty(Link(idx).UA)
+                G_vec(k) = Link(idx).UA;
+            elseif isfield(Link(idx), 'Conductance') && ~isempty(Link(idx).Conductance)
+                G_vec(k) = Link(idx).Conductance;
+            end
+        end
+        Qdot(thIdx) = G_vec .* (T_up_th - T_down_th);
     end
 
-    rho_in = max(Props_in.rho, 0.01);
-    gamma  = max(Props_in.gamma, 1.1);
-    T_in   = max(Props_in.T, 50);
-
-    % Determine if flow is gas-dominated or liquid-dominated
-    isGasFlow = (rho_in < 200); % Gas or vapor density (< 200 kg/m^3)
-
-    isChoked = false;
-    linkType = lower(Link.Type);
-
-    switch linkType
-        case 'regulator'
-            % Forward-flow only
-            if flowDir == -1
-                mdot = 0.0;
-                return;
-            end
-
-            % Supply pressure effect (SPE) and droop throttling
-            P_set_Pa = Link.P_set;
-            SPE = 0.0;
-            if isfield(Link, 'SPE'), SPE = Link.SPE; end
-
-            % Supply pressure effect
-            if isfield(Link, 'P_tank0')
-                P_target = P_set_Pa + SPE * (Link.P_tank0 - P_up);
-            elseif isfield(Link, 'P_up0')
-                P_target = P_set_Pa + SPE * (Link.P_up0 - P_up);
-            else
-                P_target = P_set_Pa - SPE * (P_up - P_set_Pa);
-            end
-
-            if isfield(Link, 'P_band') && Link.P_band > 0
-                Droop_Pa = Link.P_band;
-            elseif isfield(Link, 'Droop') && Link.Droop > 0
-                Droop_Pa = Link.Droop;
-            else
-                Droop_Pa = 0.03 * P_target;
-            end
-            Droop_Pa = max(Droop_Pa, 100);
-
-            P_error  = P_target - P_down;
-            openFrac = max(0.0, min(1.0, P_error / Droop_Pa));
-
-            if openFrac <= 0.0 || P_up <= P_down
-                mdot = 0.0;
-                return;
-            end
-
-            % Base CdA from CdA_MAX or Cv
-            if isfield(Link, 'CdA_MAX') && Link.CdA_MAX > 0
-                CdA_base = Link.CdA_MAX;
-            elseif isfield(Link, 'CdA') && Link.CdA > 0
-                CdA_base = Link.CdA;
-            else
-                CdA_base = Link.Cv * 2.402e-5 * sqrt(1.0 / 2.0);
-            end
-
-            % Modulate by valve opening (Cv if used as a valve fraction, default 1.0)
-            actuatorFrac = 1.0;
-            if isfield(Link, 'Cv') && isfield(Link, 'CdA_MAX')
-                actuatorFrac = max(0.0, min(1.0, Link.Cv));
-            end
-
-            CdA = CdA_base * openFrac * actuatorFrac;
-
-            [mdot, isChoked] = calcGasOrificeFlow(CdA, P_up, P_down, rho_in, T_in, gamma);
-
-        case 'check'
-            % Forward flow only with cracking pressure
-            P_crack = 0.0;
-            if isfield(Link, 'P_crack'), P_crack = Link.P_crack; end
-
-            if flowDir == -1 || DeltaP < P_crack
-                mdot = 0.0;
-                return;
-            end
-
-            effectiveDP = DeltaP - P_crack;
-            if isfield(Link, 'Cv') && ~isempty(Link.Cv) && Link.Cv > 0
-                mdot = Link.Cv * 2.402e-5 * sqrt(rho_in * effectiveDP);
-            else
-                CdA = Link.A * 0.6;
-                mdot = CdA * sqrt(2 * rho_in * effectiveDP);
-            end
-
-        case 'orifice'
-            A = Link.A;
-            Cd = 0.7;
-            if isfield(Link, 'Cd') && ~isempty(Link.Cd), Cd = Link.Cd; end
-            CdA = Cd * A;
-
-            % Injectors and nozzles are directional forward flow only
-            isOneWay = contains(lower(Link.Name), 'inj') || contains(lower(Link.Name), 'nozzle');
-            if isOneWay && flowDir == -1
-                mdot = 0.0;
-                isChoked = false;
-                return;
-            end
-
-            if isGasFlow
-                [mdot_mag, isChoked] = calcGasOrificeFlow(CdA, P_in, P_out, rho_in, T_in, gamma);
-                mdot = flowDir * mdot_mag;
-            else
-                mdot = flowDir * CdA * sqrt(2 * rho_in * abs(DeltaP));
-            end
-
-        case {'solenoid', 'throttle', 'valve'}
-            Cv = Link.Cv;
-            if Cv <= 1e-6
-                mdot = 0.0;
-                return;
-            end
-
-            if isGasFlow
-                % Convert Cv to equivalent CdA for compressible gas flow
-                CdA = Cv * 2.402e-5 * sqrt(1.0 / 2.0);
-                [mdot_mag, isChoked] = calcGasOrificeFlow(CdA, P_in, P_out, rho_in, T_in, gamma);
-                mdot = flowDir * mdot_mag;
-            else
-                mdot = flowDir * Cv * 2.402e-5 * sqrt(rho_in * abs(DeltaP));
-            end
-
-        case 'pipe'
-            % Frictional line pressure drop: DeltaP = zeta * (mdot^2) / (2 * rho * A^2)
-            A = Link.A;
-            zeta = max(Link.Zeta, 0.1);
-            mdot = flowDir * A * sqrt((2 * rho_in * abs(DeltaP)) / zeta);
-
-        otherwise
-            % Default orifice
-            CdA = 1e-6;
-            if isfield(Link, 'A'), CdA = Link.A; end
-            mdot = flowDir * CdA * sqrt(2 * rho_in * abs(DeltaP));
-    end
-
-    % Physical Courant mass-flux limiter: cannot drain > 50% of source mass per step
-    if isfield(Props_in, 'm') && Props_in.m > 0
-        maxFlow = 0.5 * Props_in.m / max(dt, 1e-4);
-        mdot = sign(mdot) * min(abs(mdot), maxFlow);
-    end
-end
-
-%% --- Helper: Compressible Gas Orifice Flow with Choking ---
-function [mdot, isChoked] = calcGasOrificeFlow(CdA, P_in, P_out, rho_in, T_in, gamma)
-    if P_out >= P_in
-        mdot = 0.0;
-        isChoked = false;
+    fluidIdx = find(~isThermal);
+    if isempty(fluidIdx)
         return;
     end
 
-    % Specific gas constant
-    R_gas = P_in / (rho_in * T_in);
-    PR = P_out / P_in;
-    PR_crit = (2 / (gamma + 1))^(gamma / (gamma - 1));
+    %% 2. Vectorized Fluid Link Hydraulics
+    N_fl = numel(fluidIdx);
+    P_u = P_up(fluidIdx);
+    P_d = P_down(fluidIdx);
+    
+    DeltaP_Vec = P_u - P_d;
+    flowDir(fluidIdx) = sign(DeltaP_Vec + 1e-12);
 
-    if PR <= PR_crit
-        % Choked Flow
-        isChoked = true;
-        mdot = CdA * P_in * sqrt(gamma / (R_gas * T_in)) * ...
-               (2 / (gamma + 1))^((gamma + 1) / (2 * (gamma - 1)));
-    else
-        % Subsonic Compressible Flow
-        isChoked = false;
-        mdot = CdA * sqrt(2 * P_in * rho_in * (gamma / (gamma - 1)) * ...
-               (PR^(2 / gamma) - PR^((gamma + 1) / gamma)));
+    % Determine flow direction and upwind properties
+    isForward = (DeltaP_Vec >= 0);
+    P_in  = P_u .* isForward + P_d .* (~isForward);
+    P_out = P_d .* isForward + P_u .* (~isForward);
+
+    T_u_all = [UpProps(fluidIdx).T]';
+    T_d_all = [DownProps(fluidIdx).T]';
+    T_in = T_u_all .* isForward + T_d_all .* (~isForward);
+    T_in = max(T_in, 50.0);
+
+    rho_u_all = [UpProps(fluidIdx).rho]';
+    rho_d_all = [DownProps(fluidIdx).rho]';
+    Rho_in = max(rho_u_all .* isForward + rho_d_all .* (~isForward), 0.01);
+
+    gamma_u_all = [UpProps(fluidIdx).gamma]';
+    gamma_d_all = [DownProps(fluidIdx).gamma]';
+    Gamma_in = max(gamma_u_all .* isForward + gamma_d_all .* (~isForward), 1.05);
+
+    % Determine active Cv, Area, and Type properties
+    Cv_Vec = zeros(N_fl, 1);
+    CdA_Vec = zeros(N_fl, 1);
+    isReg_sub   = isRegulator(fluidIdx);
+    isCheck_sub = isCheck(fluidIdx);
+    isPipe_sub  = isPipe(fluidIdx);
+
+    for k = 1:N_fl
+        idx = fluidIdx(k);
+        L = Link(idx);
+        
+        % Read Cv
+        if isfield(L, 'Cv') && ~isempty(L.Cv)
+            Cv_Vec(k) = L.Cv;
+        elseif isfield(L, 'MaxCv') && ~isempty(L.MaxCv)
+            st = 1.0;
+            if isfield(L, 'State'), st = L.State; end
+            Cv_Vec(k) = L.MaxCv * st;
+        end
+
+        % Read Area
+        if isfield(L, 'A') && ~isempty(L.A) && L.A > 0
+            cd_val = 0.70;
+            if isfield(L, 'Cd') && ~isempty(L.Cd) && L.Cd > 0, cd_val = L.Cd; end
+            CdA_Vec(k) = L.A * cd_val;
+        end
     end
+
+    % 2a. Dynamic Regulator Stroke & SPE Calculation
+    if any(isReg_sub)
+        regIdx = find(isReg_sub);
+        for r = 1:numel(regIdx)
+            k = regIdx(r);
+            idx = fluidIdx(k);
+            L = Link(idx);
+            
+            P_Set_val = 550 * 6894.757;
+            if isfield(L, 'P_set'), P_Set_val = L.P_set; end
+            
+            SPE_val = 0.003;
+            if isfield(L, 'SPE'), SPE_val = L.SPE; end
+            
+            Droop_val = 30 * 6894.757;
+            if isfield(L, 'Droop'), Droop_val = L.Droop; end
+
+            % Target pressure adjusted by Supply Pressure Effect (Unbalanced Poppet)
+            P_Target = P_Set_val - SPE_val * P_u(k);
+            
+            % Pressure Error (How far below target are we?)
+            P_Error = P_Target - P_d(k);
+            
+            % Calculate Stroke: 0 = closed (P_down >= P_Target), 1 = open (P_Error >= Droop)
+            Norm_Err = P_Error / (Droop_val + 1e-6);
+            Open_Fraction = max(0.0, min(1.0, Norm_Err));
+            
+            % Dynamically modulate regulator Cv
+            max_cv = Cv_Vec(k);
+            if max_cv <= 0 && isfield(L, 'MaxCv'), max_cv = L.MaxCv; end
+            Cv_Vec(k) = max_cv * Open_Fraction;
+        end
+    end
+
+    % Convert Cv to equivalent CdA for gas flow: CdA = Cv * 2.402e-5 * sqrt(0.5)
+    for k = 1:N_fl
+        if Cv_Vec(k) > 0
+            CdA_Vec(k) = Cv_Vec(k) * 2.402e-5 * sqrt(0.5);
+        end
+    end
+
+    % 2b. Flow evaluation: Gas (< 600 kg/m^3) vs Liquid (>= 600 kg/m^3)
+    isGas = (Rho_in < 600.0);
+    raw_mdot = zeros(N_fl, 1);
+    choked_flags = false(N_fl, 1);
+
+    if any(isGas)
+        gIdx = find(isGas);
+        P_i = P_in(gIdx);
+        P_o = P_out(gIdx);
+        T_i = T_in(gIdx);
+        rho_i = Rho_in(gIdx);
+        gam = Gamma_in(gIdx);
+        cda = CdA_Vec(gIdx);
+
+        R_spec = P_i ./ (rho_i .* T_i);
+        PR = min(1.0, max(0.0, P_o ./ max(P_i, 1.0)));
+        PR_crit = (2.0 ./ (gam + 1.0)) .^ (gam ./ (gam - 1.0));
+
+        is_chk = (PR <= PR_crit);
+        choked_flags(gIdx) = is_chk;
+
+        % Choked flow rate
+        choke_term = sqrt(gam ./ (R_spec .* T_i)) .* (2.0 ./ (gam + 1.0)) .^ ((gam + 1.0) ./ (2.0 * (gam - 1.0)));
+        mdot_chk = cda .* P_i .* choke_term;
+
+        % Subsonic compressible flow rate
+        pr_pow1 = PR .^ (2.0 ./ gam);
+        pr_pow2 = PR .^ ((gam + 1.0) ./ gam);
+        sub_term = sqrt(max(0.0, 2.0 .* P_i .* rho_i .* (gam ./ (gam - 1.0)) .* (pr_pow1 - pr_pow2)));
+        mdot_sub = cda .* sub_term;
+
+        raw_mdot(gIdx) = is_chk .* mdot_chk + (~is_chk) .* mdot_sub;
+    end
+
+    if any(~isGas)
+        lIdx = find(~isGas);
+        dp_raw = abs(DeltaP_Vec(lIdx));
+        rho_l  = Rho_in(lIdx);
+        
+        for p = 1:numel(lIdx)
+            k = lIdx(p);
+            idx = fluidIdx(k);
+            L = Link(idx);
+            if isPipe_sub(k)
+                zeta = 20.0;
+                if isfield(L, 'Zeta') && L.Zeta > 0, zeta = L.Zeta; end
+                A_p = 5e-4;
+                if isfield(L, 'A') && L.A > 0, A_p = L.A; end
+                raw_mdot(k) = A_p * sqrt((2.0 * rho_l(p) * dp_raw(p)) / zeta);
+            elseif Cv_Vec(k) > 0
+                raw_mdot(k) = Cv_Vec(k) * 2.402e-5 * sqrt(rho_l(p) * dp_raw(p));
+            else
+                raw_mdot(k) = CdA_Vec(k) * sqrt(2.0 * rho_l(p) * dp_raw(p));
+            end
+        end
+    end
+
+    % 2c. Direction & Check Valve Masking
+    sign_flow = 2.0 * isForward - 1.0;
+    isOneWay = isCheck_sub | isReg_sub;
+    for k = 1:N_fl
+        idx = fluidIdx(k);
+        if isfield(Link(idx), 'IsOneWay') && Link(idx).IsOneWay
+            isOneWay(k) = true;
+        end
+    end
+
+    Check_Open_Factor = 0.5 + 0.5 * tanh(50.0 * DeltaP_Vec);
+    CheckMask = (~isOneWay) + (isOneWay .* Check_Open_Factor);
+    FinalMassflow = sign_flow .* raw_mdot .* CheckMask;
+
+    mdot(fluidIdx)     = FinalMassflow;
+    isChoked(fluidIdx) = choked_flags;
 end
