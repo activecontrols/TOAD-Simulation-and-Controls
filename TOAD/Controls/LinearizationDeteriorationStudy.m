@@ -12,11 +12,6 @@
 % Inputs (4)        : [gimbal1; gimbal2; thrust; roll torque]
 % Rotational loop   : states [1:3, 10:12], inputs [1, 2, 4]
 %
-% ASSUMPTIONS (edit the setup block if wrong):
-%   - Quaternions are scalar-first
-%   - X = [q(4); pos(3); vel(3); omega(3); fuel masses(2)]
-%   - JacobianX(X,U) -> 15x15, JacobianU(X,U) -> 15x4
-%   - XiMat(q) -> 4x3
 
 
 %% ------------------------- USER SETUP ---------------------------------
@@ -40,13 +35,6 @@ axes_names = {'Roll (x)', 'Pitch (y)', 'Yaw (z)', 'Diagonal (x+y)'};
 % true -> m*g/cos(tilt), clamped, to mimic a hover-holding thrust.
 compensateThrust = true;
 
-% LQR weights (continuous time). Replace with the weights used to build K.
-Q_trans = constants6DoF.Q_trans;
-R_trans = constants6DoF.R_trans;
-Q_rot   = constants6DoF.Q_rot;
-R_rot   = constants6DoF.R_rot;
-
-
 %% ----------------------------------------------------------------------
 
 m_tot = constants6DoF.m_dry + sum(X_fuel);
@@ -57,26 +45,41 @@ rotIn  = [1, 2, 4];
 % Base state at upright
 X0 = zeros(15,1);
 X0(1:4) = [1; 0; 0; 0];
-X0(11:13) = [0;1.5931;0];
 X0(14:15) = X_fuel;
 U0 = [0; 0; m_tot * g; 0];
 
+
+
+% Translational model: fixed analytic double integrator (matches RicattiRecursion).
+A_trans_c = [zeros(3,3), eye(3,3); zeros(3,3), zeros(3,3)];
+B_trans_c = [zeros(3,3); eye(3,3)];
+M_c_trans     = [A_trans_c, B_trans_c; zeros(3,6), zeros(3,3)];
+M_d_trans     = expm(M_c_trans * dT);
+A_trans_d_ref = M_d_trans(1:6, 1:6);
+B_trans_d_ref = M_d_trans(1:6, 7:9);
+
+
+% Rotational model: attitude+rate rows/cols; B uses theta/phi/roll cols only (thrust excluded).
 %% Upright reference linearization
 [Ar0, Br0] = reduceLin(X0, U0);
-Arot0 = Ar0(rotIdx, rotIdx);
-Brot0 = Br0(rotIdx, rotIn);
+A_rot_c = Ar0(rotIdx, rotIdx);
+B_rot_c = Br0(rotIdx, rotIn);
+M_c_rot     = [A_rot_c, B_rot_c; zeros(3,6), zeros(3,3)];
+M_d_rot     = expm(M_c_rot * dT);
+A_rot_d_ref = M_d_rot(1:6, 1:6);
+B_rot_d_ref = M_d_rot(1:6, 7:9);
 
-%% Gains from the upright linearization
+Q_trans = constants6DoF.Q_trans; R_trans = constants6DoF.R_trans;
+Q_rot   = constants6DoF.Q_rot;   R_rot   = constants6DoF.R_rot;
 
-K_rot0 = SolveLQR(Arot0, Brot0, Q_rot, R_rot);
-A_tr = [zeros(3), eye(3); zeros(3), zeros(3)];
-B_tr = [zeros(3); eye(3)];
-K_trans0 = SolveLQR(A_tr, B_tr, Q_trans, R_trans);
+P_trans_ref = idare(A_trans_d_ref, B_trans_d_ref, Q_trans, R_trans);
+P_rot_ref   = idare(A_rot_d_ref,   B_rot_d_ref,   Q_rot,   R_rot);
+K_trans_ref = (B_trans_d_ref'*P_trans_ref*B_trans_d_ref + R_trans) \ (B_trans_d_ref'*P_trans_ref*A_trans_d_ref);
+%K_rot_ref   = (B_rot_d_ref'*P_rot_ref*B_rot_d_ref     + R_rot)   \ (B_rot_d_ref'*P_rot_ref*A_rot_d_ref);
+K_rot_ref = SolveLQR(A_rot_d_ref, B_rot_d_ref, Q_rot, R_rot);
 
-
-[Ad0, Bd0] = c2dExpm(Arot0, Brot0, dT);
-SR0     = max(abs(eig(Ad0 - Bd0 * K_rot0)));
-SigMax0 = max(real(eig(Arot0 - Brot0 * K_rot0)));
+SR0     = max(abs(eig(A_rot_d_ref - B_rot_d_ref * K_rot_ref)));
+SigMax0 = max(real(eig(A_rot_c - B_rot_c * K_rot_ref)));
 fprintf('Upright reference: rot spec. radius = %.5f, max Re(eig) = %.4f\n\n', ...
         SR0, SigMax0);
 
@@ -86,12 +89,11 @@ nX = numel(axes_list);
 
 dA_rot   = nan(nA, nX);   % relative change in rot-subsystem A
 dB_rot   = nan(nA, nX);   % relative change in rot-subsystem B
-dA_full  = nan(nA, nX);   % relative change in full 12x12 A
-dB_full  = nan(nA, nX);   % relative change in full 12x4 B
 coupling = nan(nA, nX);   % ||dvel/dtheta|| block (thrust-direction sensitivity)
 SR_rot   = nan(nA, nX);   % closed-loop spectral radius, fixed upright K
 Sig_rot  = nan(nA, nX);   % closed-loop max Re(eig), fixed upright K
 dK_rot   = nan(nA, nX);   % ||K(re-solved at tilt) - K0|| / ||K0||
+dK_trans = nan(nA, nX);   % ||K_trans - K0|| / ||K0||
 
 for j = 1:nX
     ax = axes_list{j};
@@ -115,21 +117,24 @@ for j = 1:nX
         Arot = Ar(rotIdx, rotIdx);
         Brot = Br(rotIdx, rotIn);
 
-        dA_rot(i,j)  = norm(Arot - Arot0, 'fro') / norm(Arot0, 'fro');
-        dB_rot(i,j)  = norm(Brot - Brot0, 'fro') / norm(Brot0, 'fro');
-        dA_full(i,j) = norm(Ar - Ar0, 'fro') / norm(Ar0, 'fro');
-        dB_full(i,j) = norm(Br - Br0, 'fro') / norm(Br0, 'fro');
+        dA_rot(i,j)  = norm(Arot - A_rot_c, 'fro') / norm(A_rot_c, 'fro');
+        dB_rot(i,j)  = norm(Brot - B_rot_c, 'fro') / norm(B_rot_c, 'fro');
+        
         coupling(i,j) = norm(Ar(7:9, 1:3), 'fro');
 
         % Fixed upright gain on the tilted linearization
         [Ad, Bd] = c2dExpm(Arot, Brot, dT);
-        SR_rot(i,j)  = max(abs(eig(Ad - Bd * K_rot0)));
-        Sig_rot(i,j) = max(real(eig(Arot - Brot * K_rot0)));
+        SR_rot(i,j)  = max(abs(eig(Ad - Bd * K_rot_ref)));
+        Sig_rot(i,j) = max(real(eig(Arot - Brot * K_rot_ref)));
 
         % Gain that LQR would pick if re-linearized at this attitude
         try
-            K_t = SolveLQR(Arot, Brot, Q_rot, R_rot);
-            dK_rot(i,j) = norm(K_t - K_rot0, 'fro') / norm(K_rot0, 'fro');
+            
+ 
+        P_rot   = idare(Ad,   Bd,   Q_rot,   R_rot);
+        K_rot   = (Bd'*P_rot*Bd    + R_rot)   \ (Bd'*P_rot*Ad);
+
+            dK_rot(i,j) = norm(K_rot - K_rot_ref, 'fro') / norm(K_rot_ref, 'fro');
         catch
             dK_rot(i,j) = NaN;
         end
