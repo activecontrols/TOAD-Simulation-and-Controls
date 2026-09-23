@@ -1,8 +1,8 @@
 %% Load in parameters
-if ~exist("constantsTOAD", "var")
+if ~exist("constants6DoF", "var")
     LoadTOADSim;
 end
-trajectoryName = "ASTRA_Backflip_v002";
+trajectoryName = "ASTRA_Circle_v002";
 % ReadGains now returns the cascaded gain set (4 outputs), not the old
 % single [K_List, ~] pair.
 [K_trans_List, K_rot_List, LA_List, LT_List] = ReadGains(trajectoryName);
@@ -53,8 +53,8 @@ M_d_rot     = expm(M_c_rot * dT);
 A_rot_d_ref = M_d_rot(1:6, 1:6);
 B_rot_d_ref = M_d_rot(1:6, 7:9);
 
-Q_trans = constantsTOAD.Q_trans; R_trans = constantsTOAD.R_trans;
-Q_rot   = constantsTOAD.Q_rot;   R_rot   = constantsTOAD.R_rot;
+Q_trans = constants6DoF.Q_trans; R_trans = constants6DoF.R_trans;
+Q_rot   = constants6DoF.Q_rot;   R_rot   = constants6DoF.R_rot;
 
 P_trans_ref = idare(A_trans_d_ref, B_trans_d_ref, Q_trans, R_trans);
 P_rot_ref   = idare(A_rot_d_ref,   B_rot_d_ref,   Q_rot,   R_rot);
@@ -76,8 +76,8 @@ pos_traj   = x(5:7, :);
 vel_traj   = x(8:10, :);
 
 % LESO Bandwidth (using explicit constants to avoid reverse-calculation flaws)
-omega_att_nom = constantsTOAD.OmegaAtt;
-omega_thr_nom = constantsTOAD.OmegaThr;
+omega_att_nom = constants6DoF.OmegaAtt;
+omega_thr_nom = constants6DoF.OmegaThr;
 
 % Crossover tracking (gain crossover frequency per actuator/channel)
 wc_trans = nan(N, 3); % [X, Y, Z]

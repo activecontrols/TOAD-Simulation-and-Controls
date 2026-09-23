@@ -23,7 +23,6 @@ if ~exist('constants6DoF', 'var')
 end
 
 X_fuel  = [0; 0];            % X(14:15) fuel/prop masses used for the study
-                             % (set to match your flight condition)
 dT      = 0.01;              % discretization step used for spectral radius
 
 angles_deg = 0:5:180;        % tilt sweep
@@ -47,8 +46,6 @@ X0 = zeros(15,1);
 X0(1:4) = [1; 0; 0; 0];
 X0(14:15) = X_fuel;
 U0 = [0; 0; m_tot * g; 0];
-
-
 
 % Translational model: fixed analytic double integrator (matches RicattiRecursion).
 A_trans_c = [zeros(3,3), eye(3,3); zeros(3,3), zeros(3,3)];
@@ -79,7 +76,7 @@ K_trans_ref = (B_trans_d_ref'*P_trans_ref*B_trans_d_ref + R_trans) \ (B_trans_d_
 K_rot_ref = SolveLQR(A_rot_d_ref, B_rot_d_ref, Q_rot, R_rot);
 
 SR0     = max(abs(eig(A_rot_d_ref - B_rot_d_ref * K_rot_ref)));
-SigMax0 = max(real(eig(A_rot_c - B_rot_c * K_rot_ref)));
+SigMax0 = max(real(log(eig(A_rot_d_ref - B_rot_d_ref*K_rot_ref)) / dT));
 fprintf('Upright reference: rot spec. radius = %.5f, max Re(eig) = %.4f\n\n', ...
         SR0, SigMax0);
 

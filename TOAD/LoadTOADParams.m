@@ -1,6 +1,8 @@
 function constants6DoF = LoadTOADParams(Vehicle)
 
 constants6DoF.Vehicle = Vehicle;
+this_dir = fileparts(mfilename('fullpath'));
+addpath(genpath(fullfile(this_dir, 'Navigation')));
 MEKF_Constants;
 %% Create constants struct for vehicle (Approximate values, all metric)
 if constants6DoF.Vehicle == 1
@@ -33,4 +35,33 @@ elseif constants6DoF.Vehicle == 0
     constants6DoF.m_wet = constants6DoF.m_dry; 
 end
 
+%% Controller params (Gains and Tuning)
+% Outer Loop
+if constants6DoF.Vehicle == 1
+    % TOAD Tuning
+    max_x_trans = 1.4 * ones(1,6);
+else
+    % ASTRA Tuning
+    max_x_trans = 1.5 * ones(1,6);
+end
+constants6DoF.Q_trans = diag(1 ./ max_x_trans.^2);
+max_a_trans = 1.2; 
+constants6DoF.R_trans = eye(3) .* (1 / max_a_trans^2);
+constants6DoF.OmegaThr = 2.2;
 
+% Inner Loop
+if constants6DoF.Vehicle == 1
+    % TOAD Tuning
+    max_x_rot = [0.12, 0.12, 0.12, 0.22, 0.22, 0.21];
+    constants6DoF.R_rot = diag([35, 35, 1/4^2]);
+else
+    % ASTRA Tuning
+    max_x_rot = [0.15, 0.15, 0.12, 0.5, 0.5, 0.7];
+    constants6DoF.R_rot = diag([60, 60, 1/0.1^2]);
+end
+
+constants6DoF.Q_rot = diag(1 ./ max_x_rot.^2);
+constants6DoF.OmegaAtt = 3.2;
+
+
+end

@@ -8,12 +8,12 @@
 clear; clc; close all;
 %% Mission Configuration
 Vehicle     = 0;                % Vehicle model: 1 for TOAD, 0 for ASTRA (legacy strings "TOAD", "ASTRAv2" also supported)
-Maneuver    = "Backflip";            % Maneuver preset: "Backflip", "Circle", "Hop", "Custom"
-Version     = 3;                % Version integer: formats as v001, v002, etc.
+Maneuver    = "Circle";       % Maneuver preset: "Backflip", "Circle", "Hop", "Custom"
+Version     = 2;                % Version integer: formats as v001, v002, etc.
 
 % Discretization & Mesh
 N_nodes     = 150;              % Number of control intervals (80 - 200 recommended)
-T_initial   = 35;               % Initial duration guess [s]
+T_initial   = 10;               % Initial duration guess [s]
 
 % Position Boundaries [m] (East, North, Up)
 r_launch    = [0; 0; 0];        % Launch pad position
@@ -44,8 +44,8 @@ opt = TrajectoryOptimizer(constants6DoF, ...
     'N',         N_nodes, ...
     'T_initial', T_initial, ...
     'SaveDir',   save_dir, ...
-    'max_iter',  500, ...
-    'tol', 1e-3);
+    'max_iter',  1500, ...
+    'tol', 1e-2);
 
 opt.setBoundaries(r_launch, r_target);
 
@@ -64,7 +64,7 @@ switch Maneuver
         if isTOAD
             opt.setManeuver('Circle', 'circle_radius', 15.0, 'circle_alt', 35.0);
         else
-            opt.setManeuver('Circle', 'circle_radius', 5.0, 'circle_alt', 12.0);
+            opt.setManeuver('Circle', 'circle_radius', 5.0, 'circle_alt', 7.0);
         end
         
     case "Hop"
