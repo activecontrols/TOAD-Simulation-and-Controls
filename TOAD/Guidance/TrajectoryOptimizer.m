@@ -34,13 +34,12 @@ classdef TrajectoryOptimizer < handle
         InitialGuessMode string = "FlatnessDynamic"
 
         % Multi-Objective Cost Function Weights (Non-Dimensionalized)
-        w_time double   = 0.20      % Minimal mission duration weight
+        w_time double   = 1.00      % Minimal mission duration weight
         w_length double = 0.50      % Minimal 3D spatial path length weight
-        w_effort double = 0.15      % Control effort weight (hover deviation)
+        w_effort double = 0.10      % Control effort weight (hover deviation)
         w_slew double   = 0.05      % Actuator slew rate regularization (jerk)
-        w_rate double   = 0.025     % Body angular rate penalty weight
-        w_qz double     = 0.025     % Yaw deflection penalty weight
-        ParetoAlpha double = 0.5    % Optional balance between time and effort
+        w_rate double   = 0.050     % Body angular rate penalty weight
+        w_qz double     = 0.050     % Yaw deflection penalty weight
 
         % Maneuver Definition
         Maneuver string = "Circle"  % "Circle", "Backflip", "Hop", "Custom"
@@ -154,7 +153,6 @@ classdef TrajectoryOptimizer < handle
             addParameter(p, 'w_slew', obj.w_slew, @isnumeric);
             addParameter(p, 'w_rate', obj.w_rate, @isnumeric);
             addParameter(p, 'w_qz', obj.w_qz, @isnumeric);
-            addParameter(p, 'ParetoAlpha', obj.ParetoAlpha, @isnumeric);
             addParameter(p, 'PrintLevel', obj.PrintLevel, @isnumeric);
             addParameter(p, 'PlotResults', obj.PlotResults, @islogical);
             addParameter(p, 'AutoExport', obj.AutoExport, @islogical);
@@ -178,7 +176,7 @@ classdef TrajectoryOptimizer < handle
 
             flds = {'Maneuver','Version','N','T_initial','T_bounds','TimeParamMode', ...
                     'CircleMode','CircleTightness','w_time','w_length','w_effort', ...
-                    'w_slew','w_rate','w_qz','ParetoAlpha','PrintLevel','PlotResults', ...
+                    'w_slew','w_rate','w_qz','PrintLevel','PlotResults', ...
                     'AutoExport','SaveDir','Filename','MaxIter','Tol','ConstrViolTol'};
             for i = 1:numel(flds)
                 f = flds{i}; val = p.Results.(f);
@@ -710,14 +708,8 @@ classdef TrajectoryOptimizer < handle
             J_rate = sum(sum(Xhat(11:13, 1:end-1).^2, 1)) / N;
             J_qz   = sum(Xhat(4, :).^2) / (N + 1);
 
-            if isfield(obj.constants, 'UseParetoAlpha') && obj.constants.UseParetoAlpha
-                a = obj.ParetoAlpha;
-                J = (1 - a) * J_time + a * J_effort + ...
-                    obj.w_length * J_length + obj.w_slew * J_slew + obj.w_rate * J_rate + obj.w_qz * J_qz;
-            else
-                J = obj.w_time * J_time + obj.w_length * J_length + ...
+            J = obj.w_time * J_time + obj.w_length * J_length + ...
                     obj.w_effort * J_effort + obj.w_slew * J_slew + obj.w_rate * J_rate + obj.w_qz * J_qz;
-            end
             opti.minimize(J);
         end
 

@@ -55,7 +55,7 @@ ValveOpenCount = 0;
 LastFillMode = 0;
 while ~isFilled
     % Pause fill if temps exceed the level
-    if COPV_Temps(1) < COPV.TMax - 3 
+    if COPV_Temps(1) < COPV.TMax - 3
         % Calculate regulator massflow
         fillMode = 1; 
         gamma = double(py.CoolProp.CoolProp.PropsSI('isentropic_expansion_coefficient', ...

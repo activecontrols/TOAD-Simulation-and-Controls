@@ -9,7 +9,7 @@ clear; clc; close all;
 %% Mission Configuration
 Vehicle     = 0;                % Vehicle model: 1 for TOAD, 0 for ASTRA (legacy strings "TOAD", "ASTRAv2" also supported)
 Maneuver    = "Circle";       % Maneuver preset: "Backflip", "Circle", "Hop", "Custom"
-Version     = 2;                % Version integer: formats as v001, v002, etc.
+Version     = 1;                % Version integer: formats as v001, v002, etc.
 
 % Discretization & Mesh
 N_nodes     = 150;              % Number of control intervals (80 - 200 recommended)
