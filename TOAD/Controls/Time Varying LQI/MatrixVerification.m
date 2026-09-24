@@ -2,7 +2,7 @@
 if ~exist("constants6DoF", "var")
     LoadTOADSim;
 end
-trajectoryName = "ASTRA_Circle_v002";
+trajectoryName = "ASTRA_Circle_v001";
 % ReadGains now returns the cascaded gain set (4 outputs), not the old
 % single [K_List, ~] pair.
 [K_trans_List, K_rot_List, LA_List, LT_List] = ReadGains(trajectoryName);

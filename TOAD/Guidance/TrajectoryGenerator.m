@@ -7,8 +7,8 @@
 
 clear; clc; close all;
 %% Mission Configuration
-Vehicle     = 0;                % Vehicle model: 1 for TOAD, 0 for ASTRA (legacy strings "TOAD", "ASTRAv2" also supported)
-Maneuver    = "Circle";       % Maneuver preset: "Backflip", "Circle", "Hop", "Custom"
+Vehicle     = 1;                % Vehicle model: 1 for TOAD, 0 for ASTRA (legacy strings "TOAD", "ASTRAv2" also supported)
+Maneuver    = "Hop";       % Maneuver preset: "Backflip", "Circle", "Hop", "Custom"
 Version     = 1;                % Version integer: formats as v001, v002, etc.
 
 % Discretization & Mesh

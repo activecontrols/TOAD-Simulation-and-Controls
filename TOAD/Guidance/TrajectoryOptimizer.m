@@ -31,15 +31,19 @@ classdef TrajectoryOptimizer < handle
         % Formulation Settings
         CircleMode string = "AngleSweep"      % "AngleSweep" or "Corridor"
         CircleTightness double = 0.10         % Radial tolerance band [m]
+        GlideslopeAngle double = 10           % Takeoff and landing cone half-angle [deg] (10-15 deg)
+        FunnelCurvature double = 0.015        % Flaring curvature for landing funnel [1/m] (0 for pure cone)
         InitialGuessMode string = "FlatnessDynamic"
 
         % Multi-Objective Cost Function Weights (Non-Dimensionalized)
-        w_time double   = 1.00      % Minimal mission duration weight
+        w_time double   = 0.20      % Minimal mission duration weight
         w_length double = 0.50      % Minimal 3D spatial path length weight
-        w_effort double = 0.10      % Control effort weight (hover deviation)
+        w_effort double = 0.12      % Control effort weight (hover deviation)
         w_slew double   = 0.05      % Actuator slew rate regularization (jerk)
-        w_rate double   = 0.050     % Body angular rate penalty weight
-        w_qz double     = 0.050     % Yaw deflection penalty weight
+        w_smooth double = 0.02      % Velocity step smoothness regularization
+        w_rate double   = 0.025     % Body angular rate penalty weight
+        w_qz double     = 0.025     % Yaw deflection penalty weight
+        ParetoAlpha double = 0.5    % Optional balance between time and effort
 
         % Maneuver Definition
         Maneuver string = "Circle"  % "Circle", "Backflip", "Hop", "Custom"
@@ -69,7 +73,7 @@ classdef TrajectoryOptimizer < handle
 
         % Solver Configuration
         MaxIter double = 1500
-        Tol double = 1e-3
+        Tol double = 1e-2
         ConstrViolTol double = 1e-3
         PrintLevel double = 0
 
@@ -147,12 +151,16 @@ classdef TrajectoryOptimizer < handle
             addParameter(p, 'TimeParamMode', obj.TimeParamMode, @(x) ischar(x)||isstring(x));
             addParameter(p, 'CircleMode', obj.CircleMode, @(x) ischar(x)||isstring(x));
             addParameter(p, 'CircleTightness', obj.CircleTightness, @isnumeric);
+            addParameter(p, 'GlideslopeAngle', obj.GlideslopeAngle, @isnumeric);
+            addParameter(p, 'FunnelCurvature', obj.FunnelCurvature, @isnumeric);
             addParameter(p, 'w_time', obj.w_time, @isnumeric);
             addParameter(p, 'w_length', obj.w_length, @isnumeric);
             addParameter(p, 'w_effort', obj.w_effort, @isnumeric);
             addParameter(p, 'w_slew', obj.w_slew, @isnumeric);
+            addParameter(p, 'w_smooth', obj.w_smooth, @isnumeric);
             addParameter(p, 'w_rate', obj.w_rate, @isnumeric);
             addParameter(p, 'w_qz', obj.w_qz, @isnumeric);
+            addParameter(p, 'ParetoAlpha', obj.ParetoAlpha, @isnumeric);
             addParameter(p, 'PrintLevel', obj.PrintLevel, @isnumeric);
             addParameter(p, 'PlotResults', obj.PlotResults, @islogical);
             addParameter(p, 'AutoExport', obj.AutoExport, @islogical);
@@ -175,9 +183,9 @@ classdef TrajectoryOptimizer < handle
             end
 
             flds = {'Maneuver','Version','N','T_initial','T_bounds','TimeParamMode', ...
-                    'CircleMode','CircleTightness','w_time','w_length','w_effort', ...
-                    'w_slew','w_rate','w_qz','PrintLevel','PlotResults', ...
-                    'AutoExport','SaveDir','Filename','MaxIter','Tol','ConstrViolTol'};
+                    'CircleMode','CircleTightness','GlideslopeAngle','FunnelCurvature', ...
+                    'w_time','w_length','w_effort','w_slew','w_smooth','w_rate','w_qz','ParetoAlpha', ...
+                    'PrintLevel','PlotResults','AutoExport','SaveDir','Filename','MaxIter','Tol','ConstrViolTol'};
             for i = 1:numel(flds)
                 f = flds{i}; val = p.Results.(f);
                 if ischar(val) || isstring(val), obj.(f) = string(val);
@@ -215,12 +223,12 @@ classdef TrajectoryOptimizer < handle
 
             if obj.Vehicle == 0
                 dR = 5.0;  dA = 7.0;  dDR = 2.5; dCB = [14.0, 35.0]; dCI = 22.0;
-                dBA = 20.0; dBB = [10.0, 22.0]; dBI = 16.0;
+                dBA = 20.0; dBB = [10.0, 28.0]; dBI = 18.0;
                 dHA = 15.0; dHB = [12.0, 30.0]; dHI = 18.0;
             else
                 dR = 15.0; dA = 25.0; dDR = 5.0; dCB = [16.0, 45.0]; dCI = 26.0;
-                dBA = 50.0; dBB = [15.0, 35.0]; dBI = 24.0;
-                dHA = 50.0; dHB = [15.0, 40.0]; dHI = 25.0;
+                dBA = 50.0; dBB = [15.0, 45.0]; dBI = 28.0;
+                dHA = 50.0; dHB = [20.0, 50.0]; dHI = 38.0;
             end
 
             switch obj.Maneuver
@@ -265,7 +273,7 @@ classdef TrajectoryOptimizer < handle
                         'N_ascent', round(p.Results.flip_start_frac * obj.N), ...
                         'N_flip', round(0.50 * obj.N), ...
                         'N_approach', round(p.Results.flip_end_frac * obj.N), ...
-                        'q_inverted', [0; 0; 1; 0]);
+                        'q_inverted', [0; 0; -1; 0]);
 
                 case "Hop"
                     addParameter(p, 'apex_alt', dHA, @isnumeric);
@@ -419,6 +427,18 @@ classdef TrajectoryOptimizer < handle
                 T_cmd = max(min(norm(F_req), thr_hi), thr_lo);
                 U_p(:,k) = [0; 0; T_cmd; 0];
             end
+            if obj.Maneuver == "Backflip"
+                ks = obj.ManeuverParams.N_ascent; ke = obj.ManeuverParams.N_approach;
+                Lf = max(2, ke - ks); Tf = Lf * dt_vec(1);
+                Jyy = obj.constants.J(2, 2); cgz = max(0.2, obj.constants.rTB);
+                for k = ks:min(ke, Nc)
+                    tau = (k - ks) / Lf;
+                    ddth = -(4*pi^2 / Tf^2) * sin(2*pi*tau);
+                    sin_phi = (Jyy * ddth) / max(1.0, cgz * U_p(3, k));
+                    phi_lim = 0.8 * sin(obj.max_gimbal_angle);
+                    U_p(2, k) = asin(max(-phi_lim, min(phi_lim, sin_phi)));
+                end
+            end
             q_s(:,1) = obj.q0; w_s(:,1) = [0; 0; 0]; w_s(:,end) = [0; 0; 0];
 
             Xp = [q_s; r_s; v_s; w_s; ml; mi];
@@ -520,7 +540,7 @@ classdef TrajectoryOptimizer < handle
             opti.subject_to(-obj.max_roll_rate * dts <= dU(4, :));   opti.subject_to(dU(4, :) <= obj.max_roll_rate * dts);
 
             % 5. Maneuver Constraints & Multi-Objective Cost
-            obj.applyManeuverConstraints(opti, X);
+            obj.applyManeuverConstraints(opti, X, U, dt_row);
             obj.applyCostFunction(opti, X, Xhat, U, Uhat, T_total, dt_row);
 
             % 6. Initial Guess Seeding
@@ -536,8 +556,9 @@ classdef TrajectoryOptimizer < handle
             % 7. Solver Setup & Execution
             p_opts = struct('expand', true);
             s_opts = struct('max_iter', obj.MaxIter, 'tol', obj.Tol, ...
-                'constr_viol_tol', obj.ConstrViolTol, 'acceptable_tol', 1e-3, ...
-                'acceptable_constr_viol_tol', 1e-3, 'acceptable_iter', 5, 'print_level', obj.PrintLevel);
+                'constr_viol_tol', obj.ConstrViolTol, 'acceptable_tol', 1e-2, ...
+                'acceptable_constr_viol_tol', 1e-3, 'acceptable_iter', 5, ...
+                'mu_strategy', 'adaptive', 'print_level', obj.PrintLevel);
             opti.solver('ipopt', p_opts, s_opts);
 
             if obj.PrintLevel > 0
@@ -583,11 +604,44 @@ classdef TrajectoryOptimizer < handle
             CE = sum(dt_r .* esq);
             dr_r = diff(X_r(5:7, :), 1, 2); LP = sum(sqrt(sum(dr_r.^2, 1)));
             dUr = diff(U_r, 1, 2); dtsr = 0.5 * (dt_r(1:end-1) + dt_r(2:end));
+            dUh_r = diff(U_r ./ obj.Su, 1, 2);
+            J_slew_norm = sum(sum(dUh_r.^2, 1)) / (N - 1);
             ES = sum(sum((dUr ./ dtsr).^2, 1));
+
+            switch obj.Maneuver
+                case "Circle"
+                    Nto_v = max(3, round(0.12 * N)); Nland_v = min(N - 2, round(0.88 * N));
+                case "Backflip"
+                    Nto_v = min(max(3, round(0.12 * N)), obj.ManeuverParams.N_ascent);
+                    Nland_v = max(min(N - 2, round(0.80 * N)), obj.ManeuverParams.N_approach);
+                case "Hop"
+                    Nto_v = min(max(3, round(0.12 * N)), obj.ManeuverParams.N_ascent);
+                    Nland_v = min(min(N - 2, round(0.88 * N)), obj.ManeuverParams.N_approach);
+                otherwise
+                    Nto_v = max(3, round(0.12 * N)); Nland_v = min(N - 2, round(0.88 * N));
+            end
+            GSA = tand(obj.GlideslopeAngle);
+            cf = obj.FunnelCurvature;
+
+            dz_to_r = X_r(7, 1:Nto_v) - obj.r0(3);
+            rxy_to_m = sqrt((X_r(5, 1:Nto_v) - obj.r0(1)).^2 + (X_r(6, 1:Nto_v) - obj.r0(2)).^2 + 1e-4);
+            to_viol = max(rxy_to_m - (dz_to_r * GSA + 0.15));
+            t_to_dur = sum(dt_r(1:Nto_v-1));
+
+            dz_land_r = X_r(7, Nland_v:end) - obj.r_f(3);
+            rxy_land_m = sqrt((X_r(5, Nland_v:end) - obj.r_f(1)).^2 + (X_r(6, Nland_v:end) - obj.r_f(2)).^2 + 1e-4);
+            land_viol = max(rxy_land_m - (dz_land_r * GSA + cf * dz_land_r.^2 + 0.15));
+            t_land_dur = sum(dt_r(Nland_v:end));
+
+            max_gim_rate = max(max(abs(rad2deg(dUr(1:2, :)) ./ dtsr)));
+            max_thr_rate = max(abs(dUr(3, :) ./ dtsr));
 
             obj.Solution = struct( ...
                 'Time', t_r, 't', t_r, 'X', X_r, 'x', X_r, 'U', U_r, 'u', U_r, ...
-                'T_total', T_r, 'L_path', LP, 'ControlEnergy', CE, 'E_slew', ES, ...
+                'T_total', T_r, 'L_path', LP, 'ControlEnergy', CE, 'E_slew', ES, 'J_slew', J_slew_norm, ...
+                'MaxGimbalRate_deg', max_gim_rate, 'MaxThrustRate', max_thr_rate, ...
+                'TakeoffGlideslopeViol', to_viol, 'TakeoffDuration', t_to_dur, ...
+                'LandingGlideslopeViol', land_viol, 'LandingDuration', t_land_dur, ...
                 'Var_u', var(U_r, 0, 2)', 'Var_omega', var(X_r(11:13, :), 0, 2)', ...
                 'SwitchSpots', obj.SwitchSpots, 'TimeParamMode', obj.TimeParamMode, ...
                 'CircleMode', obj.CircleMode, 'Status', status, 'stats', stats, 'sol', so);
@@ -599,34 +653,82 @@ classdef TrajectoryOptimizer < handle
 
         %% ═══════════════════ CONSTRAINTS & COST ═══════════════════
 
-        function applyManeuverConstraints(obj, opti, X)
-            %% APPLYMANEUVERCONSTRAINTS  Maneuver-tailored constraint injection.
+        function applyManeuverConstraints(obj, opti, X, ~, dt_row)
+            %% APPLYMANEUVERCONSTRAINTS  Maneuver-tailored and universal glideslope constraints.
             p = obj.ManeuverParams;
+            N = obj.N;
+            GSA = tand(obj.GlideslopeAngle);
+            cf = obj.FunnelCurvature;
 
+            % 1. Universal Takeoff & Landing Corridor Nodes (Guaranteed >= 2.0 s duration)
+            switch obj.Maneuver
+                case "Circle"
+                    N_to   = max(3, round(0.12 * N));
+                    N_land = min(N - 2, round(0.88 * N));
+                case "Backflip"
+                    N_to   = min(max(3, round(0.12 * N)), p.N_ascent);
+                    N_land = max(min(N - 2, round(0.80 * N)), p.N_approach);
+                case "Hop"
+                    N_to   = min(max(3, round(0.12 * N)), p.N_ascent);
+                    N_land = min(min(N - 2, round(0.88 * N)), p.N_approach);
+                otherwise
+                    N_to   = max(3, round(0.12 * N));
+                    N_land = min(N - 2, round(0.88 * N));
+            end
+
+            % Enforce at least 2.0s duration on takeoff and landing glideslopes
+            opti.subject_to(sum(dt_row(1:N_to-1)) >= 2.0);
+            opti.subject_to(sum(dt_row(N_land:end)) >= 2.0);
+
+            % 2. Universal Takeoff Glideslope Cone (Initial >= 2.0 s off launch pad, strict climb >= 0)
+            r0_p = obj.r0;
+            dz_to = X(7, 1:N_to) - r0_p(3);
+            rxy_to = sqrt((X(5, 1:N_to) - r0_p(1)).^2 + (X(6, 1:N_to) - r0_p(2)).^2 + 1e-4);
+            opti.subject_to(rxy_to <= dz_to * GSA + 0.12);
+            opti.subject_to(X(10, 1:N_to) >= 0.0);
+
+            % Dedicated Liftoff Vertical Column (eliminates takeoff S-curves & sideways tilt)
+            N_liftoff = max(2, round(0.06 * N));
+            opti.subject_to(rxy_to(1:N_liftoff) <= 0.15);
+            opti.subject_to(abs(X(8, 1:N_liftoff)) <= 0.25);
+            opti.subject_to(abs(X(9, 1:N_liftoff)) <= 0.25);
+
+            % 3. Universal Landing Funnel (Final >= 2.0 s into touchdown, strict descent <= 0)
+            rf_p = obj.r_f;
+            dz_land = X(7, N_land:end) - rf_p(3);
+            rxy_land = sqrt((X(5, N_land:end) - rf_p(1)).^2 + (X(6, N_land:end) - rf_p(2)).^2 + 1e-4);
+            opti.subject_to(rxy_land <= dz_land * GSA + cf * dz_land.^2 + 0.10);
+            opti.subject_to(X(10, N_land:end) <= 0.0);
+            v_desc_lim = 2.5 * (obj.Vehicle == 0) + 5.0 * (obj.Vehicle == 1);
+            opti.subject_to(X(10, N_land:end) >= -v_desc_lim);
+            R33_land = X(1, N_land:end).^2 - X(2, N_land:end).^2 - X(3, N_land:end).^2 + X(4, N_land:end).^2;
+            opti.subject_to(R33_land >= cosd(20));
+
+            % Dedicated Terminal Landing Alignment (Zero tight maneuvers on terminal descent)
+            opti.subject_to(abs(X(8, end-2:end)) <= 0.25);
+            opti.subject_to(abs(X(9, end-2:end)) <= 0.25);
+            R33_term = X(1, end-2:end).^2 - X(2, end-2:end).^2 - X(3, end-2:end).^2 + X(4, end-2:end).^2;
+            opti.subject_to(R33_term >= cosd(10));
+
+            % 4. Maneuver-Specific Ingress, Transit, and Apex Constraints
             switch obj.Maneuver
                 case "Circle"
                     cx = p.circle_center(1); cy = p.circle_center(2);
                     R  = p.circle_radius;     h  = p.circle_alt;
                     Nos = p.N_orbit_start;   Noe = p.N_orbit_end; Norb = Noe - Nos;
 
-                    % Stage 1: Ascent glideslope cone
-                    kc = max(2, round(0.08 * obj.N));
-                    opti.subject_to(sqrt(X(5, 1:kc).^2 + X(6, 1:kc).^2 + 1e-4) <= X(7, 1:kc) * tand(5) + 0.15);
-                    opti.subject_to(X(5, 1:Nos) >= min(obj.r0(1), cx + R) - 0.10);
-                    opti.subject_to(X(10, 1:Nos) >= -0.10);
+                    opti.subject_to(X(5, 1:Nos) >= min(r0_p(1), cx + R) - 0.10);
+                    opti.subject_to(X(10, 1:Nos) >= 0.0);
 
-                    % Stage 2: Circle Orbit
                     if obj.CircleMode == "AngleSweep"
                         rsq = (X(5, Nos:Noe) - cx).^2 + (X(6, Nos:Noe) - cy).^2; tr = obj.CircleTightness;
                         opti.subject_to((R - tr)^2 <= rsq); opti.subject_to(rsq <= (R + tr)^2);
                         opti.subject_to(abs(X(7, Nos:Noe) - h) <= 0.20);
 
-                        % Bilinear cross-product angle progression
                         rx = X(5, Nos:Noe) - cx; ry = X(6, Nos:Noe) - cy;
                         cprog = rx(1:end-1) .* ry(2:end) - ry(1:end-1) .* rx(2:end);
                         opti.subject_to(cprog >= (R^2) * sin(2 * pi / Norb * 0.70));
 
-                        % Quadrants & terminal closure
                         kq1 = Nos + round(0.25*Norb); kq2 = Nos + round(0.50*Norb); kq3 = Nos + round(0.75*Norb);
                         opti.subject_to(X(6, kq1) - cy >= 0);
                         opti.subject_to(X(5, kq2) - cx <= 0);
@@ -642,36 +744,64 @@ classdef TrajectoryOptimizer < handle
                         opti.subject_to(X(6, kq1) - cy >= 0); opti.subject_to(X(5, kq2) - cx <= 0); opti.subject_to(X(6, kq3) - cy <= 0);
                         opti.subject_to((X(5, Noe) - (cx + R))^2 + (X(6, Noe) - cy)^2 <= 0.25^2);
                     end
-
-                    % Stage 3: Descent glideslope
-                    rf = obj.r_f;
-                    rxy = sqrt((X(5, Noe:end) - rf(1)).^2 + (X(6, Noe:end) - rf(2)).^2 + 1e-4);
-                    opti.subject_to(rxy <= (X(7, Noe:end) - rf(3)) * p.descent_glideslope + 0.50);
-                    opti.subject_to(X(5, Noe:end) >= min(rf(1), cx + R) - 0.10);
-                    opti.subject_to(-p.max_descent_rate <= X(10, Noe:end)); opti.subject_to(X(10, Noe:end) <= 0.10);
-                    R33d = X(1, Noe:end).^2 - X(2, Noe:end).^2 - X(3, Noe:end).^2 + X(4, Noe:end).^2;
-                    opti.subject_to(R33d >= cosd(30));
+                    opti.subject_to(X(5, Noe:end) >= min(rf_p(1), cx + R) - 0.10);
+                    opti.subject_to(X(10, Noe:end) <= 0.0);
 
                 case "Backflip"
-                    Na = p.N_ascent; Nf = p.N_flip; Nap = p.N_approach; GS = p.Glideslope;
-                    opti.subject_to(X(10, 1:Na) >= 0);
-                    opti.subject_to(sqrt(X(5, 1:Na).^2 + X(6, 1:Na).^2 + 1e-4) <= X(7, 1:Na) * GS + 0.05);
+                    Na = p.N_ascent; Nf = p.N_flip; Nap = p.N_approach;
+
+                    % 1. Clean Vertical Ascent (strict climb >= 0, eliminates pre-flip loops)
+                    opti.subject_to(X(10, 1:Na) >= 0.0);
+                    opti.subject_to(abs(X(5, 1:Na) - r0_p(1)) <= 0.35);
+                    opti.subject_to(abs(X(8, 1:Na)) <= 0.60);
+                    R33_asc = X(1, 1:Na).^2 - X(2, 1:Na).^2 - X(3, 1:Na).^2 + X(4, 1:Na).^2;
+                    opti.subject_to(R33_asc >= cosd(15));
+                    opti.subject_to(abs(X(12, 1:Na)) <= 0.35);
+
+                    % 2. Apex & Flip Profile
                     opti.subject_to(X(7, :) <= p.apex_alt + 2.5);
                     opti.subject_to(X(7, Nf) >= p.apex_alt - 2.0); opti.subject_to(X(7, Na) >= 0.50 * p.apex_alt);
                     att_tol = cos(p.theta_tol / 2);
                     opti.subject_to(p.q_inverted' * X(1:4, Nf) >= att_tol);
                     opti.subject_to([-1; 0; 0; 0]' * X(1:4, Nap) >= att_tol);
                     opti.subject_to(X(12, Na:Nap) <= 0.05);
-                    R33d = X(1, Nap:end).^2 - X(2, Nap:end).^2 - X(3, Nap:end).^2 + X(4, Nap:end).^2;
-                    opti.subject_to(R33d >= cosd(45));
+
+                    % 3. Pure-Plane Motion Constraints (suppress out-of-plane corkscrewing)
+                    opti.subject_to(-0.25 <= X(6, :));  opti.subject_to(X(6, :) <= 0.25);
+                    opti.subject_to(-0.50 <= X(9, :));  opti.subject_to(X(9, :) <= 0.50);
+                    opti.subject_to(-0.35 <= X(11, :)); opti.subject_to(X(11, :) <= 0.35);
+                    opti.subject_to(-0.35 <= X(13, :)); opti.subject_to(X(13, :) <= 0.35);
+
+                    % 4. Descent Monotonicity & Direct Funnel Corridor (eliminates 10m hover shelf & zig-zags)
+                    opti.subject_to(X(10, Nap:end) <= 0.0);
+                    opti.subject_to(X(7, Nap+1:end) <= X(7, Nap:end-1));
+                    if Nap + 1 <= N_land
+                        opti.subject_to(X(10, Nap+1:N_land) <= -0.20);
+                    end
+                    dz_app = X(7, Nap:N_land) - rf_p(3);
+                    rxy_app = sqrt((X(5, Nap:N_land) - rf_p(1)).^2 + (X(6, Nap:N_land) - rf_p(2)).^2 + 1e-4);
+                    opti.subject_to(rxy_app <= dz_app * tand(12) + 0.40);
+                    opti.subject_to(abs(X(8, Nap:end)) <= 0.50);
+                    opti.subject_to(abs(X(12, Nap:end)) <= 0.50);
 
                 case "Hop"
-                    Na = p.N_ascent; Nap = p.N_approach; GS = p.Glideslope;
-                    opti.subject_to(X(10, 1:Na) >= 0); opti.subject_to(X(10, Nap:end) <= 0.10);
+                    Na = p.N_ascent;
+                    Nap_h = round(0.50 * N);
+                    opti.subject_to(X(10, 1:Na) >= 0.0);
+                    opti.subject_to(X(10, Nap_h:end) <= 0.0);
+                    opti.subject_to(X(7, :) <= p.apex_alt + 2.5);
+                    opti.subject_to(X(7, Nap_h) >= p.apex_alt - 2.5);
                     R33 = X(1, :).^2 - X(2, :).^2 - X(3, :).^2 + X(4, :).^2; opti.subject_to(R33 >= cosd(35));
-                    pd = X(5:7, Nap:end);
-                    opti.subject_to(sqrt((pd(1,:) - obj.r_f(1)).^2 + (pd(2,:) - obj.r_f(2)).^2 + 1e-4) <= ...
-                        (pd(3,:) - obj.r_f(3)) * GS + 0.50);
+
+                    % 1. Pure-Plane Motion (eliminate out-of-plane corkscrewing & 86s Hessian stall)
+                    opti.subject_to(-0.35 <= X(6, :)); opti.subject_to(X(6, :) <= 0.35);
+                    opti.subject_to(-0.50 <= X(9, :)); opti.subject_to(X(9, :) <= 0.50);
+
+                    % 2. Direct In-Plane Corridor (eliminate landing funnel dog-leg/kink)
+                    x_min = min(r0_p(1), rf_p(1)) - 0.35;
+                    x_max = max(r0_p(1), rf_p(1)) + 0.35;
+                    opti.subject_to(x_min <= X(5, :)); opti.subject_to(X(5, :) <= x_max);
+                    opti.subject_to(abs(X(8, N_land:end)) <= 0.50);
             end
 
             for i = 1:length(obj.CustomWaypoints)
@@ -701,15 +831,25 @@ classdef TrajectoryOptimizer < handle
             uh = mv * g / MT; gb = max(1e-3, (1 - obj.gimbal_margin) * obj.max_gimbal_angle);
             esq = (U(3, :) / MT - uh).^2 + (U(1, :) / gb).^2 + (U(2, :) / gb).^2 + ...
                   (U(4, :) / max(1e-3, (1 - obj.thrust_margin) * obj.max_roll_rate)).^2;
-            J_effort = sum(dt_row .* esq) / (0.20 * obj.T_initial);
+            J_effort = sum(dt_row .* esq) / (0.50 * obj.T_initial);
 
             dUh = Uhat(:, 2:end) - Uhat(:, 1:end-1);
             J_slew = sum(sum(dUh.^2, 1)) / (N - 1);
+            dVh = Xhat(8:10, 2:end) - Xhat(8:10, 1:end-1);
+            J_smooth = sum(sum(dVh.^2, 1)) / (N - 1);
             J_rate = sum(sum(Xhat(11:13, 1:end-1).^2, 1)) / N;
             J_qz   = sum(Xhat(4, :).^2) / (N + 1);
 
-            J = obj.w_time * J_time + obj.w_length * J_length + ...
-                    obj.w_effort * J_effort + obj.w_slew * J_slew + obj.w_rate * J_rate + obj.w_qz * J_qz;
+            if isfield(obj.constants, 'UseParetoAlpha') && obj.constants.UseParetoAlpha
+                a = obj.ParetoAlpha;
+                J = (1 - a) * J_time + a * J_effort + ...
+                    obj.w_length * J_length + obj.w_slew * J_slew + obj.w_smooth * J_smooth + ...
+                    obj.w_rate * J_rate + obj.w_qz * J_qz;
+            else
+                J = obj.w_time * J_time + obj.w_length * J_length + ...
+                    obj.w_effort * J_effort + obj.w_slew * J_slew + obj.w_smooth * J_smooth + ...
+                    obj.w_rate * J_rate + obj.w_qz * J_qz;
+            end
             opti.minimize(J);
         end
 
