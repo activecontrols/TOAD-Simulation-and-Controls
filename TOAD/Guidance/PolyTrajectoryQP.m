@@ -47,8 +47,6 @@ classdef PolyTrajectoryQP < handle
     methods
         %% ------------------------------------------------------------ construction
         function obj = PolyTrajectoryQP(Fix, T, varargin)
-            %   obj = PolyTrajectoryQP(Fix, T)
-            %   obj = PolyTrajectoryQP(Fix, T, 'Tag', tags, 'MinSegTime', 0.25)
             obj.Fix = Fix;
             obj.R   = size(Fix, 2);
             K = size(Fix, 3);

@@ -7,38 +7,33 @@
 %            actuator chatter suppression and takeoff/landing flight corridors.
 %
 % Supported Vehicles:
-%   - TOAD    (Vehicle = 1): High-thrust liquid bipropellant lander
-%   - ASTRAv2 (Vehicle = 0): Precision electric ducted-fan / TVC testbed
+%   - TOAD    (Vehicle = 1)
+%   - ASTRAv2 (Vehicle = 0)
 %
 % Supported Maneuver Presets:
 %   - "Hop":      Point-to-point parabolic trajectory with vertical liftoff/touchdown
 %   - "Circle":   Climb, horizontal orbit inspection loop, and flared descent
 %   - "Backflip": High-altitude 360-degree pitch inversion maneuver
 %   - "Waypoint": Multi-target 3D survey route with intermediate corridor gates
-%   - "Custom":   Arbitrary user-defined 3D boundary conditions & waypoints
 %
 % Authors: PSP Active Controls (Pablo Plata, Andrew Lullo, & Antigravity)
 
 clear; clc; close all;
 
-%% =========================================================================
-%% 1. Mission Configuration
-%% =========================================================================
-Vehicle     = 1;            % 1 = TOAD, 0 = ASTRA
-Maneuver    = "Backflip";     % "Hop", "Circle", "Backflip", "Waypoint", "Custom"
+%% Mission Config
+Vehicle     = 0;            % 1 = TOAD, 0 = ASTRA
+Maneuver    = "Backflip";   % "Hop", "Circle", "Backflip", "Waypoint
 Version     = 1;            % Output version integer: formats as v001, v002, etc.
 
 % Discretization & Mesh
-N_nodes     = 60;           % Control intervals (60-80 recommended for Hybrid engine)
+N_nodes     = 60;           % Control intervals (60-80 recommended, pretty sensitive)
 T_initial   = [];           % Optional duration guess [s] (leave empty [] for auto-physics)
 
 % Position Boundaries [m] (East, North, Up)
 r_launch    = [0; 0; 0];    % Launch pad position
 r_target    = [0; 0; 0];    % Target touchdown position (set per maneuver below)
 
-%% =========================================================================
-%% 2. Vehicle Constants & Project Paths
-%% =========================================================================
+%% Ensure paths and constants are loaded
 % Ensure CasADi optimization suite is available on search path
 if exist('C:\MATLAB Tools\casadi-3.7.2-windows64-matlab2018b', 'dir') && isempty(which('casadi.Opti'))
     addpath('C:\MATLAB Tools\casadi-3.7.2-windows64-matlab2018b');
@@ -64,17 +59,15 @@ fprintf('  Vehicle: %s | Maneuver: %s | Version: v%03d | Nodes: %d              
         veh_name, Maneuver, Version, N_nodes);
 fprintf('================================================================================\n\n');
 
-%% =========================================================================
-%% 3. Instantiate & Configure Optimizer
-%% =========================================================================
+%% Configure optimizer
 opt = TrajectoryOptimizerHybrid(constants6DoF, ...
     'Vehicle',         Vehicle, ...
     'Maneuver',        Maneuver, ...
     'Version',         Version, ...
     'N',               N_nodes, ...
     'SaveDir',         save_dir, ...
-    'GlideslopeAngle', 10, ...
-    'FunnelCurvature', 0.015, ...
+    'GlideslopeAngle', 5.0, ...
+    'FunnelCurvature', 0.04, ...
     'MaxIter',         150, ...
     'Tol',             1.5e-2, ...
     'PrintLevel',      0);
@@ -83,9 +76,7 @@ if ~isempty(T_initial)
     opt.T_initial = T_initial;
 end
 
-%% =========================================================================
-%% 4. Configure Maneuver-Specific Waypoints & Goals
-%% =========================================================================
+%% Configure specific manouvers
 switch Maneuver
     case "Hop"
         % Parabolic hop: vertical climb, lateral translation, flared descent
@@ -140,17 +131,13 @@ switch Maneuver
         error('TrajectoryGeneratorHybrid:UnknownManeuver', 'Unrecognized maneuver: %s', Maneuver);
 end
 
-%% =========================================================================
-%% 5. Solve Optimal Trajectory (Stage 1 QP -> Stage 2 Collocation)
-%% =========================================================================
+%% Solve
 fprintf('Starting two-stage optimization pipeline...\n');
 tic;
 sol = opt.solve();
 t_solve = toc;
 
-%% =========================================================================
-%% 6. Post-Processing, Figures, & Data Export
-%% =========================================================================
+%% Plots
 if strcmp(sol.Status, 'Success')
     fprintf('\n>>> OPTIMAL TRAJECTORY FOUND in %.2f s! <<<\n', t_solve);
     fprintf('    Stage 1 (QP Polynomial): %.2f ms\n', sol.stats.t_stage1_ms);
