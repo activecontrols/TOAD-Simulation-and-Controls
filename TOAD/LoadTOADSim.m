@@ -5,77 +5,133 @@
 % or others.
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-%% Initialize parameters and clear functions
-% Initial conditions for state
-clear ref_generator3;
-clear inputfcn3;
-clear EstimateStateFCN;
-clear SensorSimulation;
-clear GPS_Sim;
-clear DigitalNF;
-clear slBus1
-MEKF_Constants;
+%% Clean reset of Simulink models, cached buses, and workspace
+% if bdIsLoaded('TOAD_Simulation')
+%     bdclose('TOAD_Simulation');
+% end
+% bdclose('all');
+% clear classes;
+% clear functions;
+% clear slBus* Vehicle_Bus;
 
-%% Create constants struct for TOAD (Approximate values, all metric)
-% Vehicle Parameters
-constantsTOAD.m_dry = 141.521;
-constantsTOAD.g = 9.80145; 
-constantsTOAD.rTB = 0.75;
-constantsTOAD.J = diag([110 110 20]);
-constantsTOAD.MaxThrust = 2446.52;
-constantsTOAD.MaxMdot = 1.3204;
-constantsTOAD.OF = 1;
-constantsTOAD.OxMass = 20.78;   constantsTOAD.FuMass = 19.79;
-constantsTOAD.OxHeight = 0.377; constantsTOAD.FuHeight = 0.495;
-constantsTOAD.OxRadius = 0.146; constantsTOAD.FuRadius = 0.146;
-constantsTOAD.Ox_Z = 0.85;      constantsTOAD.Fu_Z = 1.35;
-constantsTOAD.m_wet = constantsTOAD.m_dry + constantsTOAD.OxMass + constantsTOAD.FuMass;
+%% Select vehicle (1 for TOAD, 0 for ASTRA)
+Vehicle = 0; % 1 for TOAD, 0 for ASTRA (default ASTRA)
+constants6DoF = LoadTOADParams(Vehicle);
+FlightDynamicsGen(constants6DoF);
+x0 = [1; zeros(12,1); constants6DoF.OxMass; constants6DoF.FuMass];
+u0 = [0; 0; constants6DoF.g * constants6DoF.m_wet; 0];
 
-% Dynamic Files Generation & Control
-% FlightDynamicsGen(constantsTOAD);
-[K_Att_Wet, ~] = TOAD_Controller_Gen(constantsTOAD, constantsTOAD.OxMass, constantsTOAD.FuMass);
-[K_Att_Dry, ~] = TOAD_Controller_Gen(constantsTOAD, 0, 0);
-x0 = [1; zeros(12,1); constantsTOAD.OxMass; constantsTOAD.FuMass];
-u0 = [0; 0; constantsTOAD.g * constantsTOAD.m_wet; 0];
+%% Guidance, Navigation, Control parameters
 
-% Kalman Filter & Control Parameters
-constantsTOAD.Q = p2.Q;
-constantsTOAD.R = p2.obsv_cov_mat;
-constantsTOAD.BSigma = 5e-2;
-constantsTOAD.BBias = 1e-8;
+%% Kalman Filter params
+    MEKF_Constants;
+    % Kalman Filter & Control Parameters
+    constants6DoF.Q = p2.Q;
+    constants6DoF.R = p2.obsv_cov_mat;
+    constants6DoF.BSigma = 5e-2;
+    constants6DoF.BBias = 1e-8;
+    
+    % Magnetometer base measurement
+    constants6DoF.mag = [0.385202; 0.030609; -0.922324];
 
-% Magnetometer
-constantsTOAD.mag = [0.385202; 0.030609; -0.922324];
-dM_xx = 0.035;      % 3.5% Scaling from SS Rods
-dM_zz = 0.060;      % 6.0% Scaling from crown
-dM_xz = 0.010;      % 1.00% Coupling
-dM_xy = 0.005;      % 0.50% Coupling
-magDistMatrix = [dM_xx, dM_xy, dM_xz;
-                 dM_xy, dM_xx, dM_xz;
-                 dM_xz, dM_xz, dM_zz] + eye(3);
+%% Controller params
+    % Outer Loop
+    if Vehicle == 1
+        % TOAD Tuning
+        max_x_trans = 1.4 * ones(1,6);
+    else
+        % ASTRAv2 Tuning
+        max_x_trans = 1.5 * ones(1,6);
+    end
+    constants6DoF.Q_trans = diag(1 ./ max_x_trans.^2);
+    max_a_trans = 1.2; 
+    constants6DoF.R_trans = eye(3) .* (1 / max_a_trans^2);
+    constants6DoF.OmegaThr = 2.2;
+    
+    % Inner Loop
+    if Vehicle == 1
+        % TOAD Tuning
+        max_x_rot = [0.12, 0.12, 0.12, 0.22, 0.22, 0.21];
+        constants6DoF.R_rot = diag([35, 35, 1/4^2]);
+    else
+        % ASTRAv2 Tuning
+        max_x_rot = [0.15, 0.15, 0.12, 0.5, 0.5, 0.7];
+        constants6DoF.R_rot = diag([60, 60, 1/0.1^2]);
+    end
 
-constantsTOAD.K_Att_Wet = K_Att_Wet;
-constantsTOAD.K_Att_Dry = K_Att_Dry;
-covar_vec = [accel_proc_cov; gyro_cov; mag_proc_cov];
-IMU_Rate = 1000;
-Checkpoints =  [0, 5, 5,  5;
-                0, 5, 10, 10;
-                0, 50, 0, 0];
-HoldTimeReqs = [20, 10, 2, 3];
-dt_SIM = 1/1000;
+    constants6DoF.Q_rot = diag(1 ./ max_x_rot.^2);
+    constants6DoF.OmegaAtt = 3.2;
 
-% Create slBus
-TOAD = Simulink.Bus.createObject(constantsTOAD);
+%% Trajectory Params
+    % Pick a trajectory filename (e.g. "TOAD_Backflip_v001",
+    % "ASTRA_Circle_v001")
+    filename = "ASTRA_Backflip_v003";
+    
+    % Resolve trajectory CSV file path
+    traj_dir = fullfile(pwd, 'Guidance', 'Trajectories');
+    [~, name_stem, ext] = fileparts(filename);
+    if isempty(ext)
+        traj_file = fullfile(traj_dir, name_stem + ".csv");
+        if ~exist(traj_file, 'file')
+            traj_file = fullfile(traj_dir, filename);
+        end
+    else
+        traj_file = fullfile(traj_dir, filename) + '.csv';
+    end
+    
+    % Check existance
+    if ~exist(traj_file, 'file')
+        warning('LoadTOADSim:TrajectoryNotFound', ...
+            ['Trajectory file not found: %s\n' ...
+             'Please generate the trajectory using TrajectoryGenerator.m.'], traj_file);
+    end
+    
+    % Load trajectory matrices into constants6DoF.Traj
+    if exist(traj_file, 'file')
+        Data = readmatrix(traj_file);
+        constants6DoF.Traj.Time   = Data(:, 1);
+        constants6DoF.Traj.States = Data(:, 2:16);
+        constants6DoF.Traj.Inputs = Data(:, 17:20);
+
+        % Always regenerate gains, even if a file exists.
+        SaveGains(name_stem, constants6DoF);
+        [constants6DoF.Traj.KTGain, constants6DoF.Traj.KRGain, ...
+            constants6DoF.Traj.LAGain, constants6DoF.Traj.LTGain] = ReadGains(name_stem);
+        fprintf('Gain files successfully generated for %s.\n', name_stem);
+    end
+    
+clear slBus* 
+busInfo = Simulink.Bus.createObject(constants6DoF);
+topLevelBusName = busInfo(end).busName;
+Vehicle_Bus = evalin('base', topLevelBusName);
+
 Waypoints = TrajectoryBuilder;
-J_d = zeros(3);
+J_d = constants6DoF.J * 0.1;
 MaxMdot_d = 0;
-TB_d = zeros(3,1);
+TB_d = [0.01, 0.01, 0]';
 
 % Constant vars (varied usage)
 [windMerid, windZonal] = atmoshwm(40.4258686, -86.9080655, 186 + 50);
-accelBias = 0.09 * ones(3,1);
+accelBias = 0.02 * ones(3,1);
 gyroBias = 0.0 * ones(3, 1);
 distMode = 0;
+
+% Sim parameters
+dM_xx = 0.015;      % 3.5% Scaling from SS Rods
+dM_zz = 0.010;      % 6.0% Scaling from crown
+dM_xz = 0.010;      % 1.00% Coupling
+dM_xy = 0.005;      % 0.50% Coupling
+magDistMatrix = [dM_xx, dM_xy, dM_xz;
+    dM_xy, dM_xx, dM_xz;
+    dM_xz, dM_xz, dM_zz] * 0.1 + eye(3);
+
+covar_vec = [accel_proc_cov; gyro_cov; mag_proc_cov];
+IMU_Rate = 500;
+Checkpoints =  [0, 5, 5,  5;
+    0, 5, 10, 10;
+    0, 50, 0, 0];
+HoldTimeReqs = [20, 10, 2, 3];
+dt_SIM = 1/500;
 
 % MC Variables
 gyroNoisePower = 10^-6;
@@ -86,14 +142,7 @@ kGrom = G.K;
 bGrom = G.C / (2 * sqrt(kGrom * m_FC));
 Kg2 = 0.03;
 G_RMAX = 4;
-Wind_Gain = 1;
-Wind_Covar = 1;
+Wind_Gain = 0.3;
+Wind_Covar = 7;
 lowEnd = 50;
 highEnd = 800;
-
-% %% Load the data dictionary
-% dictObj = Simulink.data.dictionary.open('Model_Vars.sldd');
-% importFromBaseWorkspace(dictObj, 'varList', {'accelBias', 'constantsTOAD', 'distMode', 'dt', 'dt_SIM', 'gyroBias', ...
-%     'gyroNoisePower', 'IMU_Rate', 'J_d', 'magDistMatrix', 'MaxMdot_d', 'slBus1', 'TB_d', 'u0', 'x0', 'Waypoints', ...
-%     'windMerid', 'windZonal'}, 'existingVarsAction', 'overwrite');
-% saveChanges(dictObj);

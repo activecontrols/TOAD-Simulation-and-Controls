@@ -38,3 +38,9 @@ codegen/
 # SimBiology backup files
 *.sbproj.backup
 *.sbproj.bak
+
+*.csv
+
+# Antigravity Sandbox
+sandbox/
+TOAD/sandbox/

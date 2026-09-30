@@ -83,9 +83,9 @@ for i = 1:num_sims
 
     % Trajectory logging on, unused datalogs off to save RAM
     simIn(i) = simIn(i).setBlockParameter('TOAD_Simulation/state_log', 'Commented', 'off');
-    simIn(i) = simIn(i).setBlockParameter('TOAD_Simulation/state_log', 'SampleTime', '0.1');
+    simIn(i) = simIn(i).setBlockParameter('TOAD_Simulation/state_log', 'SampleTime', '0.5');
     simIn(i) = simIn(i).setBlockParameter('TOAD_Simulation/target_pos_log', 'Commented', 'off');
-    simIn(i) = simIn(i).setBlockParameter('TOAD_Simulation/target_pos_log', 'SampleTime', '0.1');
+    simIn(i) = simIn(i).setBlockParameter('TOAD_Simulation/target_pos_log', 'SampleTime', '0.5');
     
     simIn(i) = simIn(i).setBlockParameter('TOAD_Simulation/meas_log', 'Commented', 'on');
     simIn(i) = simIn(i).setBlockParameter('TOAD_Simulation/Subsystem Reference2/Multiplicative Extended Kalman Filter [M-EKF]/MEKF_state', 'Commented', 'on');

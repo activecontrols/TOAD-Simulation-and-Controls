@@ -5,14 +5,14 @@
 % Includes axial heat transfer via tracking mean wall temp and solving via
 % a tridiagonal matrix. Uses legacy regen code for initial guess 
 
-function [Lifespan, PressDrop, MaxChamberTemp] = SKRegen2_ElectricBoogalo(Data, NumChannels, WallThickness, AspectRatio, ChannelWidth, DisplayMode)
+function [Lifespan, PressDrop, TempArray] = SKRegen2_ElectricBoogalo(Data, NumChannels, WallThickness, AspectRatio, ChannelWidth, DisplayMode, FitCoef)
 New_CEA = false;
 fclose all;
 close all;
 u = convertUnits;
 CEA_input_name = 'regrendysCEA';
 dfTol = 5e-6;
-optionsMoody = optimset('TolX', dfTol, 'Display', 'off');
+optionsMoody = optimset('TolX', dfTol, 'Display', 'off', 'MaxIter', 100);
 tic
 
 %% SIMULATION PARAMETERS
@@ -24,7 +24,7 @@ FEA_outputs = 0; % 1 = yes, 0 = no
 dogleg = 0; % 1 = yes, 0 = no, supertadpole regen channel dogleg at injector
 traditional = 1;  % 1 = yes, 0 = no, changes how channel dimensions are interpolated for a traditonal vs. printed chamber
 
-throttle = 1; % throttle percent - e.g. 1 = 100%, 0.5 = 50%
+throttle = 0.5; % throttle percent - e.g. 1 = 100%, 0.5 = 50%
 num_channels = round(NumChannels); % number of regenerative cooling channels      
 coolant = "isopropyl alcohol"; % coolant definition ("isopropyl alcohol", "water", "methanol", "ethanol")
 fuel = {'C3H8O,2propanol'}; % fuel definition
@@ -40,7 +40,7 @@ Isp_min = 166.629; % Isp at Minimum Throttle (50%) [s]
 Isp_eff = Isp_min + 2 * (throttle - 0.5) * (Isp_max - Isp_min); % linear interpolated Isp (min throttle assumed 50%)
 P_c = throttle * 250; % chamber pressure [psi] 
 P_e = throttle * 17; % exit pressure [psi]
-P_inlet = 192.08 * throttle + 257.47; % Regen inlet pressure [psi]  
+P_inlet = 515.04 * throttle - 65.04; % Regen inlet pressure [psi]  
 total_OF = 1.2; % Total oxidizer/fuel ratio
 total_mdot = (throttle * Ft / Isp_eff) / 2.205; % Total chamber mass flow [kg/s]  
 mdot_coolant = total_mdot / (1 + total_OF); % Coolant/fuel mass flow [kg/s]
@@ -51,7 +51,11 @@ t_w = WallThickness .* 0.0254; % channel wall thickness [1 min 2] [m]
 w_c = ChannelWidth .* 0.0254; % channel width [1 min] [m] 
 h_c = [w_c(1) .* AspectRatio(1), w_c(2) .* AspectRatio(2:3)]; % channel height [1 min 2] [m]
 
-heatflux_factor = -0.10833 * throttle + 0.6433; % Scaling factor [0 to 1], Linear Fit to Tadpole Data 
+if nargin() == 7
+    heatflux_factor = FitCoef;
+else
+    heatflux_factor = -0.10833 * throttle + 0.6433; % Scaling factor [0 to 1], Linear Fit to Tadpole Data 
+end
 
 %% CALCULATIONS
 %----------------------------------%
@@ -158,7 +162,6 @@ else
     % Channel Interior Surface Roughness
     roughness_table = readmatrix(pwd + "/Material Data/surface_roughness.xlsx",'Range','A20:B24'); % High-End Roughness
     roughness_abs = roughness_table(2,2) * 10^-6; % Surface roughness [m] [45, 90]
-    
     
     PressureLoss_factor = 5; % Scaling factor for coolant pressure loss (fit to tadpole data)
     P_minor_coefs = [4.5, 1, 2];  % Minor Loss Coefficients [Inlet Cv Manifold, Throat Bend, Injector Turnaround]
@@ -412,7 +415,7 @@ elseif ~coolant_direction
     points = steps + 1 - points; %reverses direction - i.e from [1 2 3] to [3 2 1]
 end
 
-while ~global_converged
+while ~global_converged && global_counter < 500
     % Previous guess
     T_m_old = T_m;
 
@@ -606,6 +609,12 @@ while ~global_converged
         fprintf('Iteration %d: Max Temp Change = %.4f K\n', global_counter, error_max);
     end
 end
+if ~global_converged
+    Lifespan = NaN;
+    PressDrop = NaN;
+    TempArray = NaN;
+    return;
+end
 Qtot = sum(Qdot_l) * num_channels; 
 heatflux = Qdot_g ./ A_hot;
 heatflux_fin = (eta_fin .* h_l .* (T_wl - T_coolant)); 
@@ -617,9 +626,11 @@ for i = 1:steps
     CTE_current(i) = interp1(CTE(:,1), CTE(:,2), T_wg(i), 'linear', 'extrap');
     CTE_liq_side(i) = interp1(CTE(:,1), CTE(:,2), T_wl(i), 'linear', 'extrap');
     elong(i) = interp1(elongation_break(:,1), elongation_break(:,2), T_wg(i),'linear','extrap');
-    if elong(i) > .25
-        elong(i) = .25;
+    
+    if ((elong(i) > 0.25) && (materialchoice == 0)) % cap elongation to break at 25% if running with AL6061-RAM2 (weird material property superplasticity shenanigans, somewhat arbitrary cap that tracked with LCF data in MSFC pre-print)
+        elong(i) = 0.25;
     end
+    
     epsilon_emax(i) = ((yield(i)*1000000)/ E_current(i));
 
     deltaT1(i) = T_wg(i) - T_wl(i);
@@ -695,13 +706,13 @@ chamber_CDA = mdot_coolant / sqrt(2 * mean(rho_coolant) * (max(P_coolant) - min(
 plastic_deformation_cyclic = sum(dx * epsilon_pa); %Permanent axial deformation per hot fire [in]
 
 %% Output
-chamber_indices = x_interpolated <= -converging_length;
-MaxChamberTemp = max(T_wg(chamber_indices));
+TempArray = T_wg;
 Lifespan = Engine_life;
 PressDrop = (max(P_coolant) - min(P_coolant)) / 6894.76;
 if DisplayMode == 1
     %% FORMATTED OUTPUT
     fprintf("\nEngine Throttle: %.1f", throttle * 100)
+    fprintf("\nMaterial Number: %.0f", materialchoice)
     fprintf("\n\nMargin of safety for engine life of %0.0f hot fires: %.02f", N/8, overall_MS)
     fprintf("\nEngine life (hot fires): %.02f", Engine_life)
     fprintf("\nLowcycle Margin of safety for engine life of %0.0f hot fires: %.02f", N/8, overall_MS_lowcycle)
@@ -714,6 +725,7 @@ if DisplayMode == 1
     fprintf("\nMax Hotwall Temp: %.2f K", max(T_wg))
     fprintf("\nCoolant Exit Temp: %.2f K", max(T_coolant))
     fprintf("\nCoolant Temp Rise: %.2f K", max(T_coolant) - min(T_coolant))
+    fprintf("\nMinimum Fin Thickness: %.4f in.", min(fin_w) * 3.281 * 12)
     fprintf("\nChamber CdA: %.2f*10^-5 m^2", chamber_CDA * 10^5)
     
     %% FEA INPUTS
@@ -882,7 +894,7 @@ if DisplayMode == 1
     plot(x_interpolated / 0.0254, h_c_x ./ w_c_x);
     title("Channel Aspect Ratio");
     xlabel("Location [in]");
-    ylim([0, 4])
+    ylim([0, 5.2])
     grid on
     subplot(2,3,[4,5]);
     hold on

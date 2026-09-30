@@ -1,11 +1,15 @@
-function u = inputfcn(K, x, t, thrust_max)
+function u = inputfcn(K, x, t, thrust_max, AscentVEL)
     
     maxU = [thrust_max;0.122];
     minU = [thrust_max * 0.5;-0.122];
     MaxDeltaThrottle = 0.6 / 1.2;  %throttle change per sec
 
     % Input Saturation
-    u = -K*ref_generator(x, t);
+    if nargin() <= 4
+        u = -K*ref_generator(x, t);
+    else
+         u = -K*ref_generator(x, t, AscentVEL);
+    end
     u = max(minU, u);
     u = min(maxU, u);
 
