@@ -137,14 +137,17 @@ if any(lastZ(10:15) ~= zRaw(10:15))
     dx = dx + inn;
 end
 
-lastP = P;
 
-%%  Inject error state 
-dq = [1; dx(1:3)/2];
+% Output
+lastP = P;
+ 
+% Update full-state estimates
+dq = [1; dx(1:3) / 2];
 dq = dq / norm(dq);
+ 
 q_nom = quatmultiply(q', dq');
 q_nom = q_nom / norm(q_nom);
-x_est(1:4)  = q_nom';
-x_est(5:22) = x_est(5:22) + dx(4:21);   % pos, vel, b_g, b_a, b_m, d_f
-lastZ = zRaw;
+x_est(1:4) = q_nom';
+x_est(5:16) = x_est(5:16) + dx(4:15);   % pos, vel, b_g, b_a
+lastZ = z;
 end
