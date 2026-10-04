@@ -1,20 +1,20 @@
-function PSIToImperial()
-
+function psi = PaToImperial(Pa)
+    psi = Pa * 0.0001450377;
 end
 
 % rho is kg/m^3 to lb/in^3
-function rhoToImperial()
-    
+function imprho = rhoToImperial(rho)
+    imprho = rho * 13/360000;
 end
 
 % cstar is m/s to ft/s
-function cstarToImperial()
-
+function impcstar = cstarToImperial(cstar)
+    impcstar = cstar * 3.28084;
 end
 
 % cda is m^2 to in^2
-function cdaToImperial()
-
+function impcda = cdaToImperial(cda)
+    impcda = cda * 39.37007874^2;
 end
 
 function impcv = cvToImperial(cv)
