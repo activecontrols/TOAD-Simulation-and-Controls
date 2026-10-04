@@ -8,8 +8,8 @@ constantsSTADPOLE.init_cond = [1e-6; 1e-6; 1e5; 1e5; 1e5; 1e5; 1e5]; % initial c
 constantsSTADPOLE.c_f = 1.1; % thrust coefficient
 constantsSTADPOLE.a_t = 1.07 * 1e-3; % [m^2], throat area
 
-constantsSTADPOLE.dens_o = 1141; % [kg/m^3], liquid oxygen density, at 90 K and 1 atm
-constantsSTADPOLE.dens_f = 786; % [kg/m^3], fuel density, at 293 K and 1 atm
+constantsSTADPOLE.dens_o = 1130; % [kg/m^3], liquid oxygen density, at 90 K and 1 atm
+constantsSTADPOLE.dens_f = 785; % [kg/m^3], fuel density, at 293 K and 1 atm
 constantsSTADPOLE.dens_w = 1000; % [kg/m^3], water density
 constantsSTADPOLE.g = 9.81; % [m/s^2], acceleration due to gravity
 constantsSTADPOLE.a_i_o = 3.14577787810908e-5; % [m^2] area injector ox
