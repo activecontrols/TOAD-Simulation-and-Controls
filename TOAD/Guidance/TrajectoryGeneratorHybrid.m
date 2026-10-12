@@ -21,12 +21,17 @@
 clear; clc; close all;
 
 %% Mission Config
-Vehicle     = 0;            % 1 = TOAD, 0 = ASTRA
-Maneuver    = "Backflip";   % "Hop", "Circle", "Backflip", "Waypoint
+Vehicle     = 1;            % 1 = TOAD, 0 = ASTRA
+Maneuver    = "Waypoint";     % "Hop", "Circle", "Backflip", "Waypoint"
 Version     = 1;            % Output version integer: formats as v001, v002, etc.
 
+% Progressive Trajectory Build Visualization Trigger
+AnimateProgression = true;   % Animate progressive QP -> Collocation build process
+SaveProgressionGIF = false;  % Export animated GIF of trajectory molding
+ProgressionDelay   = 0.25;   % Playback delay per frame [s]
+
 % Discretization & Mesh
-N_nodes     = 60;           % Control intervals (60-80 recommended, pretty sensitive)
+N_nodes     = 150;           % Control intervals (60-80 recommended, pretty sensitive)
 T_initial   = [];           % Optional duration guess [s] (leave empty [] for auto-physics)
 
 % Position Boundaries [m] (East, North, Up)
@@ -67,7 +72,8 @@ opt = TrajectoryOptimizerHybrid(constants6DoF, ...
     'N',               N_nodes, ...
     'SaveDir',         save_dir, ...
     'GlideslopeAngle', 5.0, ...
-    'FunnelCurvature', 0.04, ...
+    'FunnelCurvature', 0.03, ...
+    'RecordProgression', AnimateProgression, ...
     'MaxIter',         150, ...
     'Tol',             1.5e-2, ...
     'PrintLevel',      0);
@@ -149,6 +155,12 @@ if strcmp(sol.Status, 'Success')
     % Generate publication dashboard figure with glideslope cones & landing funnels
     opt.plot();
 
+    % Launch Progressive Trajectory Build & Molding Animation
+    if AnimateProgression && isfield(sol, 'Progression') && ~isempty(sol.Progression)
+        fprintf('\nGenerating Progressive Trajectory Build & Molding Animation...\n');
+        opt.animateBuildProcess('SaveGIF', SaveProgressionGIF, 'Delay', ProgressionDelay);
+    end
+    
     % Export trajectory table to CSV
     [~, csv_path] = opt.exportCSV();
     [~, traj_stem] = fileparts(csv_path);
