@@ -43,7 +43,7 @@ constantsSTADPOLE.d_coeff_fu = 0.749;               % [unitless], fuel discharge
 % Other constants
 
 constantsSTADPOLE.c_f = 1.334;                      % [unitless], thrust coefficient
-constantsSTADPOLE.a_t = 1.2809e-3;                  % [m^2], throat area
+constantsSTADPOLE.a_t = 1.2809e-03;                  % [m^2], throat area
 constantsSTADPOLE.dens_w = 997;                     % [kg/m^3], water density
 constantsSTADPOLE.g = 9.8066;                       % [m/s^2], acceleration due to gravity
 constantsSTADPOLE.r = 442.234043;                   % [J/kg-K], specific gas constant of exhaust (molecular weight 18.8 g/mol)
