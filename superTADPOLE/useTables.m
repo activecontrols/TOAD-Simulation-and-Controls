@@ -3,17 +3,26 @@ function rho_ox = injOxDens(time)
 end
 
 function rho_fu = injFuDens(throttle)
-    throttle = [];
+    throttle_list = [];
     rho_list = [];
+
+    if throttle >= throttle_list(end)
+        rho_fu = rho_list(end);
+    elseif throttle <= throttle_list(0) || throttle == 1/0
+        rho_fu = rho_list(0);
+    else
+        rho_fu = interp1(throttle_list, rho_list, throttle);
+    end
 end
 
 function cv = angleToCv(angle)
     cv_list = [0, 0.01, 0.06, 0.21, 0.46, 0.83, 1.35, 2.04, 2.93];
     angle_list = [90*0.2, 90*0.3, 90*0.4, 90*0.5, 90*0.6, 90*0.7, 90*0.8, 90*0.9, 90*1];
-    if angle >= 90
-        cv = 2.93/(1.316e6);
-    elseif angle <= 18 || angle == 1/0
-        cv = 0;
+
+     if angle >= angle_list(end)
+        cv = cv_list(end);
+    elseif angle <= angle_list(0) || angle == 1/0
+        cv = cv_list(0);
     else
         cv = interp1(angle_list, cv_list, angle);
     end
@@ -22,9 +31,10 @@ end
 function angle = cvToAngle(cv)
     cv_list = [0, 0.01, 0.06, 0.21, 0.46, 0.83, 1.35, 2.04, 2.93];
     angle_list = [90*0.2, 90*0.3, 90*0.4, 90*0.5, 90*0.6, 90*0.7, 90*0.8, 90*0.9, 90*1];
-    if cv >= 2.93
-        angle = 90;
-    elseif cv < 0
+    
+    if cv >= cv_list(end)
+        angle = angle_list(end);
+    elseif cv < 0 || cv == 1/0
         angle = 0;
     else
         angle = interp1(cv_list, angle_list, cv);
