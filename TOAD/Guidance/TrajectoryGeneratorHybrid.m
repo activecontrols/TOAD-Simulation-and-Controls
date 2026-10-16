@@ -22,8 +22,8 @@ clear; clc; close all;
 
 %% Mission Config
 Vehicle     = 0;            % 1 = TOAD, 0 = ASTRA
-Maneuver    = "Backflip";   % "Hop", "Circle", "Backflip", "Waypoint"
-Version     = 3;            % Output version integer: formats as v001, v002, etc.
+Maneuver    = "Circle";   % "Hop", "Circle", "Backflip", "Waypoint"
+Version     = 4;            % Output version integer: formats as v001, v002, etc.
 
 % Progressive Trajectory Build Visualization Trigger
 AnimateProgression = true;   % Animate progressive QP -> Collocation build process
@@ -31,7 +31,7 @@ SaveProgressionGIF = true;  % Export animated GIF of trajectory molding
 ProgressionDelay   = 0.3;   % Playback delay per frame [s]
 
 % Discretization & Mesh
-N_nodes     = 70;           % Control intervals (60-80 recommended, pretty sensitive)
+N_nodes     = 100;           % Control intervals (60-80 recommended, pretty sensitive)
 T_initial   = [];           % Optional duration guess [s] (leave empty [] for auto-physics)
 
 % Position Boundaries [m] (East, North, Up)

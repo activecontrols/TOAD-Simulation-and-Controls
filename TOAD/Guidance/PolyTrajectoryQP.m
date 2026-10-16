@@ -45,8 +45,10 @@ classdef PolyTrajectoryQP < handle
     end
 
     methods
-        %% Construction
+        %% ------------------------------------------------------------ construction
         function obj = PolyTrajectoryQP(Fix, T, varargin)
+            %   obj = PolyTrajectoryQP(Fix, T)
+            %   obj = PolyTrajectoryQP(Fix, T, 'Tag', tags, 'MinSegTime', 0.25)
             obj.Fix = Fix;
             obj.R   = size(Fix, 2);
             K = size(Fix, 3);
@@ -129,7 +131,7 @@ classdef PolyTrajectoryQP < handle
 
         %% ------------------------------------------------------------ time allocation
         function info = optimizeTimes(obj, maxIter)
-            %% OPTIMIZETIMES  Redistribute segment durations (fixed total) to minimize the QP cost.
+            %% OPTIMIZETIMES  Redistribute segment durations (fixed total) to minimise the QP cost.
             %   Gradient descent on log-durations with finite-difference gradients and
             %   backtracking (Richter Sec. V). Total mission time is preserved.
             if nargin < 2, maxIter = 12; end
@@ -181,7 +183,7 @@ classdef PolyTrajectoryQP < handle
                     vmax = max(vmax, max(viol));
                     v2 = viol;  v2(gap < obj.MinSegTime) = -Inf;
                     [vm, i] = max(v2);
-                    if vm > 0, ins = [ins, [ts(i); tgt(:, i)]]; end 
+                    if vm > 0, ins = [ins, [ts(i); tgt(:, i)]]; end %#ok<AGROW>
                 end
                 info.max_violation = vmax;
                 if isempty(ins), break; end
@@ -203,33 +205,9 @@ classdef PolyTrajectoryQP < handle
             end
         end
 
-        %% ------------------------------------------------------------ diagnostic queries
-        function d = getDuration(obj)
-            d = sum(obj.T);
-        end
-
-        function len = getPathLength(obj, numSamples)
-            if nargin < 2 || isempty(numSamples), numSamples = 200; end
-            ts = linspace(0, sum(obj.T), numSamples);
-            vs = obj.evalAt(ts, 1);
-            dt = ts(2) - ts(1);
-            vmag = sqrt(sum(vs.^2, 1));
-            len = sum(0.5 * (vmag(1:end-1) + vmag(2:end))) * dt;
-        end
-
-        function amax = getPeakAcceleration(obj, numSamples)
-            if nargin < 2 || isempty(numSamples), numSamples = 200; end
-            ts = linspace(0, sum(obj.T), numSamples);
-            as = obj.evalAt(ts, 2);
-            amax = max(sqrt(sum(as.^2, 1)));
-        end
     end
 
     methods (Static)
-        function Fix = makeFix(D, K, R)
-            %% MAKEFIX  All-free D x R x K fixed-derivative array.
-            Fix = nan(D, R, K);
-        end
 
         function [coef, deriv, cost] = solveQP(Fix, T)
             %% SOLVEQP  Closed-form constrained QP (pure function, used inside time search).

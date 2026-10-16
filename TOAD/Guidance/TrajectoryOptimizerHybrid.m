@@ -17,19 +17,19 @@ classdef TrajectoryOptimizerHybrid < handle
         N double = 60                   % Number of control intervals
         T_bounds = [8, 35]              % Total duration bounds [s]
         T_initial double = 16           % Initial duration guess [s]
-        FixDuration logical = false      % Pin T to Stage-1 duration (auto-falls back if infeasible)
+        FixDuration logical = false     % When false, T is free within T_bounds guided by smooth J_T penalty
 
         % Flight Corridor Parameters
         CircleTightness double = 0.5    % Radial tolerance band [m]
-        GlideslopeAngle double = 5.0    % Takeoff and landing cone half-angle [deg]
-        FunnelCurvature double = 0.005  % Quadratic flaring parameter
+        GlideslopeAngle double = 3.0    % Takeoff and landing cone half-angle [deg]
+        FunnelCurvature double = 0.01  % Quadratic flaring parameter
         TakeoffClearanceAlt double = 0  % Liftoff clearance altitude [m] (0 = auto: 1.0m ASTRA, 2.5m TOAD)
         LandingFlareAlt double = 0      % Terminal descent flare altitude [m] (0 = auto: 1.2m ASTRA, 3.0m TOAD)
 
         % Stage-2 Projection Tolerances (1-sigma bounds)
         sig_pos  double = 0.30          % Position molding tolerance [m]
         sig_vel  double = 0.40          % Velocity molding tolerance [m/s]
-        sig_att  double = deg2rad(4)    % Attitude molding tolerance [rad]
+        sig_att  double = deg2rad(5)    % Attitude molding tolerance [rad]
         sig_T    double = 0.03          % Duration tolerance [fraction of Stage-1 T] (fallback mode)
         tight_factor double = 0.25      % sig_pos multiplier at takeoff/landing corridor nodes
 
@@ -37,10 +37,10 @@ classdef TrajectoryOptimizerHybrid < handle
         w_track_pos  double = 1.00      % Stage-1 position tracking
         w_track_vel  double = 0.50      % Stage-1 velocity tracking
         w_track_att  double = 0.25      % Stage-1 attitude tracking (invariant to q == -q)
-        w_track_time double = 0.50      % Duration deviation (only active if T is unpinned)
+        w_track_time double = 0.01      % Duration deviation (only active if T is unpinned)
         w_corridor   double = 1.00      % Soft takeoff cone / landing funnel violation penalty
-        w_slew       double = 0.50      % Actuator first difference / (rate limit * dt)
-        w_curv       double = 0.50      % Actuator second difference / (rate limit * dt)
+        w_slew       double = 0.2      % Actuator first difference / (rate limit * dt)
+        w_curv       double = 0.2      % Actuator second difference / (rate limit * dt)
 
         % Maneuver Definition & Boundary Conditions
         Maneuver string = "Circle"      % "Circle", "Backflip", "Hop", "Waypoint", "Custom"
@@ -57,9 +57,9 @@ classdef TrajectoryOptimizerHybrid < handle
         % Actuator Physical Limits & Margins
         thrust_margin = 0.05
         gimbal_margin = 0.15
-        max_gimbal_rate = deg2rad(30)   % Max gimbal slew rate [rad/s]
-        max_thrust_rate = 1000          % Max thrust rate [N/s]
-        max_roll_rate = 4               % Max roll torque rate [N*m/s]
+        max_gimbal_rate = deg2rad(35)   % Max gimbal slew rate [rad/s] (slightly relaxed to 35 deg/s)
+        max_thrust_rate = 1500          % Max thrust rate [N/s] (slightly relaxed to 1500 N/s)
+        max_roll_rate = 5               % Max roll torque rate [N*m/s] (slightly relaxed to 5 N*m/s)
         max_gimbal_angle = pi/15        % Max gimbal angle [rad] (12 deg)
 
         % Scaling & Solver Settings
@@ -88,15 +88,10 @@ classdef TrajectoryOptimizerHybrid < handle
     end
 
     properties (Dependent)
-        isElectric logical
         Progression struct
     end
 
     methods
-        function val = get.isElectric(obj)
-            val = (obj.Vehicle == 0);
-        end
-
         function val = get.Progression(obj)
             if ~isempty(obj.ProgressionLogger)
                 val = obj.ProgressionLogger.Progression;
@@ -163,12 +158,12 @@ classdef TrajectoryOptimizerHybrid < handle
                 d.accel_est   = 3.5;
                 d.t_base_pad  = 3.0;
             else
-                d.MinThrottle = 0.50;
+                d.MinThrottle = 0.50;  % Unchanged per user directive
                 d.v_desc_lim  = 6.0;
                 d.h_to_clear  = 2.5;
                 d.h_ld_clear  = 3.0;
                 d.dR = 15.0; d.dA = 25.0; d.dHA = 50.0; d.dBA = 45.0;
-                d.accel_est   = 3.0;
+                d.accel_est   = 2.2;   % Adjusted for 55% throttle floor descent dynamics
                 d.t_base_pad  = 4.0;
             end
         end
@@ -233,9 +228,9 @@ classdef TrajectoryOptimizerHybrid < handle
                 vd = obj.getVehicleDefaults();
                 t_phys = 2.0 * sqrt(2.0 * dh / vd.accel_est) + max(vd.t_base_pad, sqrt(d_h));
                 if obj.Vehicle == 1
-                    obj.T_initial = max(16.0, min(36.0, round(t_phys, 1)));
-                    obj.T_bounds  = [max(12.0, round(0.65 * obj.T_initial, 1)), ...
-                                     min(42.0, round(1.50 * obj.T_initial, 1))];
+                    obj.T_initial = max(20.0, min(36.0, round(t_phys, 1)));
+                    obj.T_bounds  = [max(14.0, round(0.65 * obj.T_initial, 1)), ...
+                                     min(45.0, round(1.60 * obj.T_initial, 1))];
                 else
                     obj.T_initial = max(10.0, min(24.0, round(t_phys, 1)));
                     obj.T_bounds  = [max(8.0, round(0.65 * obj.T_initial, 1)), ...
@@ -261,9 +256,9 @@ classdef TrajectoryOptimizerHybrid < handle
                         'circle_center', double(p.Results.circle_center(:)), ...
                         'f_orbit_start', 0.25, 'f_orbit_end', 0.75);
                     if obj.Vehicle == 0
-                        obj.T_bounds = [12, 26]; obj.T_initial = 18;
+                        obj.T_bounds = [16, 45]; obj.T_initial = 28;
                     else
-                        obj.T_bounds = [18, 38]; obj.T_initial = 26;
+                        obj.T_bounds = [20, 65]; obj.T_initial = 42;
                     end
 
                 case "Backflip"
@@ -426,12 +421,13 @@ classdef TrajectoryOptimizerHybrid < handle
             end
 
             % Enforce geometric flight corridors via iterative keyframe insertion
-            corridors = obj.makeCorridors();
-            if ~isempty(corridors)
-                obj.QPTraj.enforceCorridors(corridors, 20, 0.05);
-                if obj.RecordProgression
-                    obj.ProgressionLogger.recordQP('Stage 1C: Corridor-Enforced Spline', obj.QPTraj, Fix);
-                end
+            corridors = { ...
+                struct('fn', @(ts,rs,tg) obj.evalTakeoffCone(ts,rs,tg)), ...
+                struct('fn', @(ts,rs,tg) obj.evalLandingFunnel(ts,rs,tg)) ...
+            };
+            obj.QPTraj.enforceCorridors(corridors, 20, 0.05);
+            if obj.RecordProgression
+                obj.ProgressionLogger.recordQP('Stage 1C: Corridor-Enforced Spline', obj.QPTraj, Fix);
             end
 
             % Synchronize keyframe tags to ManeuverParams
@@ -442,13 +438,6 @@ classdef TrajectoryOptimizerHybrid < handle
             if isfield(tg, 'apex'),      obj.ManeuverParams.f_apex        = tg.apex / Ttot;      end
 
             obj.Stage1Diag = struct('t_qp_ms', toc(t0) * 1000);
-        end
-
-        function corridors = makeCorridors(obj)
-            corridors = { ...
-                struct('fn', @(ts,rs,tg) obj.evalTakeoffCone(ts,rs,tg)), ...
-                struct('fn', @(ts,rs,tg) obj.evalLandingFunnel(ts,rs,tg)) ...
-            };
         end
 
         function [viol, tgt] = evalTakeoffCone(obj, ts, rs, tg)
@@ -531,14 +520,13 @@ classdef TrajectoryOptimizerHybrid < handle
             else
                 m_chk = obj.constants.m_dry + obj.constants.OxMass + obj.constants.FuMass;
             end
-            for sizing = 1:3
-                Tq = sum(obj.QPTraj.T);
-                tv_c = linspace(0, Tq, 20);
-                a_c = obj.QPTraj.evalAt(tv_c, 2);
-                Fmag = m_chk * sqrt(sum((a_c + [0; 0; g]).^2, 1));
-                kap = sqrt(max(Fmag) / thr_allow);
-                if kap <= 1.03, break; end
-                obj.QPTraj.scaleTime(min(kap, 1.30));
+            Tq = sum(obj.QPTraj.T);
+            tv_c = linspace(0, Tq, 40);
+            a_c = obj.QPTraj.evalAt(tv_c, 2);
+            Fmag = m_chk * sqrt(sum((a_c + [0; 0; g]).^2, 1));
+            kap = sqrt(max(Fmag) / thr_allow);
+            if kap > 1.0
+                obj.QPTraj.scaleTime(kap);
             end
 
             % Sample QP trajectory at NLP grid points
@@ -552,17 +540,16 @@ classdef TrajectoryOptimizerHybrid < handle
 
             % Mass depletion profile
             m_dry = obj.constants.m_dry;
-            m_vec = m_dry * ones(1, Nn);
             ml = zeros(1, Nn); mi = zeros(1, Nn);
             if obj.Vehicle == 1
                 ml(1) = obj.constants.OxMass;
                 mi(1) = obj.constants.FuMass;
-                m_vec(1) = m_dry + ml(1) + mi(1);
             end
+            m_vec = (m_dry + ml(1) + mi(1)) * ones(1, Nn);
 
             q_s = zeros(4, Nn); w_s = zeros(3, Nn); U_s = zeros(4, Nc);
             Jyy = obj.constants.J(2,2);
-            cgz = max(0.15, obj.constants.rTB);
+            cgz = obj.constants.rTB;
             plim = sin((1 - obj.gimbal_margin) * obj.max_gimbal_angle);
             OF = obj.constants.OF;
             Mdot = obj.constants.MaxMdot;
@@ -570,7 +557,7 @@ classdef TrajectoryOptimizerHybrid < handle
             t_hi = (1.00 - obj.thrust_margin) * MT;
 
             if obj.Maneuver == "Backflip"
-                % Backflip attitude & pitch rate ramp
+                % Backflip cycloidal attitude & pitch rate ramp
                 mp = obj.ManeuverParams;
                 ks = max(3, round(mp.flip_start_frac * Nc)) + 1;
                 ke = min(Nc - 2, round(mp.flip_end_frac * Nc)) + 1;
@@ -605,19 +592,33 @@ classdef TrajectoryOptimizerHybrid < handle
                         sp = -(Jyy * ddth) / max(1.0, cgz * U_s(3,k));
                         U_s(2,k) = asin(max(-plim, min(plim, sp)));
                     end
+                    if obj.Vehicle == 1
+                        mdl_k = -(U_s(3,k)/MT) * (OF/(1+OF)) * Mdot;
+                        mdi_k = -(U_s(3,k)/MT) * (1/(1+OF))  * Mdot;
+                        ml(k+1) = max(0.02*obj.constants.OxMass, ml(k) + dt*mdl_k);
+                        mi(k+1) = max(0.02*obj.constants.FuMass, mi(k) + dt*mdi_k);
+                        m_vec(k+1) = m_dry + ml(k+1) + mi(k+1);
+                    end
                 end
             else
                 % Flatness inversion: thrust vector -> quaternion
                 for k = 1:Nc
                     F_req = m_vec(k) * (a_s(:,k) + [0; 0; g]);
                     U_s(3,k) = max(t_lo, min(t_hi, norm(F_req)));
+                    if obj.Vehicle == 1
+                        mdl_k = -(U_s(3,k)/MT) * (OF/(1+OF)) * Mdot;
+                        mdi_k = -(U_s(3,k)/MT) * (1/(1+OF))  * Mdot;
+                        ml(k+1) = max(0.02*obj.constants.OxMass, ml(k) + dt*mdl_k);
+                        mi(k+1) = max(0.02*obj.constants.FuMass, mi(k) + dt*mdi_k);
+                        m_vec(k+1) = m_dry + ml(k+1) + mi(k+1);
+                    end
                 end
 
                 for k = 1:Nn
                     F_req = m_vec(k) * (a_s(:,k) + [0; 0; g]);
                     T_mag = norm(F_req);
                     b3 = F_req / max(1e-3, T_mag);
-                    q_flat = obj.vectorToQuat(b3);
+                    q_flat = TrajectoryOptimizerHybrid.vectorToQuat(b3);
                     if k <= 4
                         alpha = (k - 1) / 4;
                         if dot(obj.q0, q_flat) < 0, q_flat = -q_flat; end
@@ -632,7 +633,7 @@ classdef TrajectoryOptimizerHybrid < handle
                         q_s(:,k) = q_flat;
                     end
                     b3_dot = (j_s(:,k) - b3*(b3'*j_s(:,k))) * m_vec(k) / max(1e-3, T_mag);
-                    R_IB = obj.quatToRot(q_s(:,k));
+                    R_IB = TrajectoryOptimizerHybrid.quatToRot(q_s(:,k));
                     b3d_B = R_IB' * b3_dot;
                     w_s(:,k) = [-b3d_B(2); b3d_B(1); 0];
                 end
@@ -640,7 +641,7 @@ classdef TrajectoryOptimizerHybrid < handle
                 w_s(:,1) = obj.w0; w_s(:,end) = [0; 0; 0];
 
                 % TVC gimbal synthesis
-                J_mat = obj.constants.J; rTB = max(0.15, obj.constants.rTB);
+                J_mat = obj.constants.J; rTB = obj.constants.rTB;
                 for k = 1:Nc
                     w_dot = (w_s(:,k+1) - w_s(:,k)) / dt;
                     w_mid = 0.5 * (w_s(:,k) + w_s(:,k+1));
@@ -649,17 +650,6 @@ classdef TrajectoryOptimizerHybrid < handle
                     U_s(1,k) = asin(max(-plim, min(plim, -tau_req(2)/denom)));
                     U_s(2,k) = asin(max(-plim, min(plim,  tau_req(1)/denom)));
                     U_s(4,k) = 0;
-                end
-            end
-
-            % Unified discrete mass depletion integration (Vehicle 1)
-            if obj.Vehicle == 1
-                for k = 1:Nc
-                    mdl_k = -(U_s(3,k)/MT) * (OF/(1+OF)) * Mdot;
-                    mdi_k = -(U_s(3,k)/MT) * (1/(1+OF))  * Mdot;
-                    ml(k+1) = max(0.02*obj.constants.OxMass, ml(k) + dt*mdl_k);
-                    mi(k+1) = max(0.02*obj.constants.FuMass, mi(k) + dt*mdi_k);
-                    m_vec(k+1) = m_dry + ml(k+1) + mi(k+1);
                 end
             end
 
@@ -680,11 +670,8 @@ classdef TrajectoryOptimizerHybrid < handle
             Xp = [q_s; r_s; v_s; w_s; ml; mi];
             obj.T_initial = T_total;
             if isempty(obj.T_bounds)
-                obj.T_bounds = [max(4.0, round(0.80 * T_total, 1)), ...
-                                min(70.0, round(1.20 * T_total, 1))];
-            else
-                obj.T_bounds = [max(3.0, min(obj.T_bounds(1), round(0.85 * T_total, 1))), ...
-                                min(80.0, max(obj.T_bounds(2), round(1.15 * T_total, 1)))];
+                obj.T_bounds = [max(4.0, round(0.70 * T_total, 1)), ...
+                                min(70.0, round(1.40 * T_total, 1))];
             end
 
             obj.Stage1Diag.T_total = T_total;
@@ -703,10 +690,6 @@ classdef TrajectoryOptimizerHybrid < handle
         end
 
         %% ======================== STAGE 2: DIRECT COLLOCATION ========================
-
-        function sol = optimize(obj)
-            sol = obj.solve();
-        end
 
         function sol = solve(obj)
             %% SOLVE  Two-Stage Pipeline: QP Polynomial Seed -> 6-DoF Direct Collocation
@@ -824,10 +807,10 @@ classdef TrajectoryOptimizerHybrid < handle
             s_opts = struct('max_iter', obj.MaxIter, 'tol', obj.Tol, ...
                 'constr_viol_tol', obj.ConstrViolTol, ...
                 'dual_inf_tol', 1.0, ...
-                'acceptable_tol', obj.Tol, ...
+                'acceptable_tol', max(obj.Tol, 2e-2), ...
                 'acceptable_constr_viol_tol', 1e-3, ...
                 'acceptable_dual_inf_tol', 1e5, ...
-                'acceptable_iter', 1, ...
+                'acceptable_iter', 2, ...
                 'max_cpu_time', obj.MaxCpuTime, ...
                 'mu_strategy', 'adaptive', 'mu_init', 1e-3, ...
                 'bound_push', 1e-6, 'bound_frac', 1e-6, ...
@@ -869,22 +852,6 @@ classdef TrajectoryOptimizerHybrid < handle
                         sprintf('Stage 2: Non-Converged (Iter %d)', it_cnt), ...
                         X_r, U_r, T_r, it_cnt);
                 end
-            end
-
-            % Fixed-duration fallback: retry with T free in [T_guess, 1.15*T_guess]
-            if strcmp(status, 'Infeasible') && obj.FixDuration
-                Tg_fb = obj.InitialGuess.T_total; Tb_saved = obj.T_bounds;
-                obj.FixDuration = false;
-                obj.T_bounds = [Tg_fb, 1.15 * Tg_fb];
-                try
-                    sol = obj.solve();
-                catch ME_fb
-                    obj.FixDuration = true; obj.T_bounds = Tb_saved;
-                    rethrow(ME_fb);
-                end
-                obj.FixDuration = true; obj.T_bounds = Tb_saved;
-                sol.stats.fixed_T_fallback = true;
-                return;
             end
 
             stats.t_stage1_ms = obj.Stage1Diag.t_stage1_ms;
@@ -951,7 +918,7 @@ classdef TrajectoryOptimizerHybrid < handle
                 opti.subject_to(-v_lo_max <= X(ch, 1:N_lo));
                 opti.subject_to(X(ch, 1:N_lo) <= v_lo_max);
             end
-            opti.subject_to(R33(X(1:4, 1:N_lo)) >= cosd(25));
+            opti.subject_to(R33(X(1:4, 1:N_lo)) >= cosd(28));
 
             % Touchdown alignment (terminal 3 nodes)
             for ch = 8:9
@@ -959,7 +926,7 @@ classdef TrajectoryOptimizerHybrid < handle
                 opti.subject_to(X(ch, end-2:end) <= 0.35);
             end
             opti.subject_to(X(10, end-2:end) >= -2.5);
-            opti.subject_to(R33(X(1:4, end-2:end)) >= cosd(20));
+            opti.subject_to(R33(X(1:4, end-2:end)) >= cosd(23));
 
             % Flared descent vertical velocity limit & funnel upright tilt
             vd = obj.getVehicleDefaults();
@@ -971,11 +938,11 @@ classdef TrajectoryOptimizerHybrid < handle
                 N_land = min(N_n - 2, round(0.85 * N_n));
             end
             opti.subject_to(X(10, N_land:end) >= -vd.v_desc_lim);
-            opti.subject_to(R33(X(1:4, N_land:end)) >= cosd(35));
+            opti.subject_to(R33(X(1:4, N_land:end)) >= cosd(38));
 
-            % Universal upright tilt envelope for non-Backflip maneuvers
+            % Universal upright tilt envelope for non-Backflip maneuvers (slightly relaxed to 55 deg)
             if obj.Maneuver ~= "Backflip"
-                opti.subject_to(R33(X(1:4,:)) >= cosd(50));
+                opti.subject_to(R33(X(1:4,:)) >= cosd(55));
             end
 
             % Maneuver-specific geometric constraints
@@ -1169,35 +1136,8 @@ classdef TrajectoryOptimizerHybrid < handle
             dyn_fnc = Function('dyn_fnc', {x_sym, u_sym, params}, {xdot});
         end
 
-        function qout = vectorToQuat(~, v_in)
-            v_in = v_in(:) / max(1e-6, norm(v_in));
-            z_body = [0; 0; 1]; c = cross(z_body, v_in); d = dot(z_body, v_in);
-            if d < -0.9999
-                qout = [0; 0; 1; 0];
-            else
-                s = sqrt(2*(1+d));
-                qout = [0.5*s; c/s];
-                qout = qout / norm(qout);
-            end
-        end
-
-        function R = quatToRot(~, q_in)
-            w = q_in(1); x = q_in(2); y = q_in(3); z = q_in(4);
-            R = [1-2*(y^2+z^2), 2*(x*y-w*z), 2*(x*z+w*y); ...
-                 2*(x*y+w*z), 1-2*(x^2+z^2), 2*(y*z-w*x); ...
-                 2*(x*z-w*y), 2*(y*z+w*x), 1-2*(x^2+y^2)];
-        end
-
         function name = getVehicleName(obj)
             if obj.Vehicle == 1, name = "TOAD"; else, name = "ASTRA"; end
-        end
-
-        function fn = getFormattedFilename(obj)
-            if obj.Filename ~= ""
-                fn = obj.Filename;
-            else
-                fn = sprintf('%s_%s_v%03d', obj.getVehicleName(), obj.Maneuver, obj.Version);
-            end
         end
 
         %% ======================== PUBLIC API & DELEGATIONS ========================
@@ -1205,11 +1145,6 @@ classdef TrajectoryOptimizerHybrid < handle
         function figHandles = plot(obj, varargin)
             %% PLOT  Delegate dashboard plotting to PlotTrajectoryHybrid.
             figHandles = PlotTrajectoryHybrid(obj, varargin{:});
-        end
-
-        function figHandle = plotInitialGuess(obj, varargin)
-            %% PLOTINITIALGUESS  Delegate initial guess plotting to PlotTrajectoryHybrid.
-            figHandle = PlotTrajectoryHybrid(obj, 'InitialGuess', true, varargin{:});
         end
 
         function ensureProgressionLogger(obj)
@@ -1237,7 +1172,12 @@ classdef TrajectoryOptimizerHybrid < handle
                     target_dir = fullfile(pwd, 'Guidance', 'Trajectories');
                 end
                 if ~exist(target_dir, 'dir'), mkdir(target_dir); end
-                filepath = fullfile(target_dir, obj.getFormattedFilename() + ".csv");
+                if obj.Filename ~= ""
+                    fn = obj.Filename;
+                else
+                    fn = sprintf('%s_%s_v%03d', obj.getVehicleName(), obj.Maneuver, obj.Version);
+                end
+                filepath = fullfile(target_dir, fn + ".csv");
             end
 
             ts = obj.Solution.Time(:);
@@ -1255,6 +1195,29 @@ classdef TrajectoryOptimizerHybrid < handle
                                   'GimbalTheta', 'GimbalPhi', 'ThrustMag', 'RollCmd'});
             writetable(tbl, filepath);
             fprintf('  [TrajectoryOptimizerHybrid] Exported trajectory to: %s\n', filepath);
+        end
+    end
+
+    methods (Static)
+        function qout = vectorToQuat(v_in)
+            %% VECTORTOQUAT  Compute unit quaternion rotating z_body [0;0;1] to v_in.
+            v_in = v_in(:) / max(1e-6, norm(v_in));
+            z_body = [0; 0; 1]; c = cross(z_body, v_in); d = dot(z_body, v_in);
+            if d < -0.9999
+                qout = [0; 0; 1; 0];
+            else
+                s = sqrt(2*(1+d));
+                qout = [0.5*s; c/s];
+                qout = qout / norm(qout);
+            end
+        end
+
+        function R = quatToRot(q_in)
+            %% QUATTOROT  Compute 3x3 direction cosine matrix from quaternion.
+            w = q_in(1); x = q_in(2); y = q_in(3); z = q_in(4);
+            R = [1-2*(y^2+z^2), 2*(x*y-w*z), 2*(x*z+w*y); ...
+                 2*(x*y+w*z), 1-2*(x^2+z^2), 2*(y*z-w*x); ...
+                 2*(x*z-w*y), 2*(y*z+w*x), 1-2*(x^2+y^2)];
         end
     end
 end
