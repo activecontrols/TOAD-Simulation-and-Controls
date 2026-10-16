@@ -45,7 +45,7 @@ classdef PolyTrajectoryQP < handle
     end
 
     methods
-        %% ------------------------------------------------------------ construction
+        %% Construction
         function obj = PolyTrajectoryQP(Fix, T, varargin)
             obj.Fix = Fix;
             obj.R   = size(Fix, 2);
@@ -129,7 +129,7 @@ classdef PolyTrajectoryQP < handle
 
         %% ------------------------------------------------------------ time allocation
         function info = optimizeTimes(obj, maxIter)
-            %% OPTIMIZETIMES  Redistribute segment durations (fixed total) to minimise the QP cost.
+            %% OPTIMIZETIMES  Redistribute segment durations (fixed total) to minimize the QP cost.
             %   Gradient descent on log-durations with finite-difference gradients and
             %   backtracking (Richter Sec. V). Total mission time is preserved.
             if nargin < 2, maxIter = 12; end
@@ -181,7 +181,7 @@ classdef PolyTrajectoryQP < handle
                     vmax = max(vmax, max(viol));
                     v2 = viol;  v2(gap < obj.MinSegTime) = -Inf;
                     [vm, i] = max(v2);
-                    if vm > 0, ins = [ins, [ts(i); tgt(:, i)]]; end %#ok<AGROW>
+                    if vm > 0, ins = [ins, [ts(i); tgt(:, i)]]; end 
                 end
                 info.max_violation = vmax;
                 if isempty(ins), break; end
