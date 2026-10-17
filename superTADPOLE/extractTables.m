@@ -1,7 +1,7 @@
-function extractTables(constantsTADPOLE)
+function extractTables(constantsSTADPOLE)
     att2 = readmatrix("Hotfire Data (from Throttle Box DAQ) - att5.csv");
 
-    help = att2(1:end, 4) * 360
+    help = att2(1:end, 4) * 360;
     startup = find(att2(1:end,2) > 1, 1); % bc tadpole is scuffed find((att2(1:end, 4)*360)> 20, 1)+1
     time = att2(startup:end,1);
 
@@ -24,15 +24,15 @@ function extractTables(constantsTADPOLE)
     mdot_fu = filtfilt(b,a, att2(startup:end, 30));
 
     p_tank = 550;
-    a_t = cdaToImperial(constantsTADPOLE.a_t)
+    a_t = cdaToImperial(constantsSTADPOLE.a_t);
 
-    g_0 = cstarToImperial(constantsTADPOLE.g)
+    g_0 = cstarToImperial(constantsSTADPOLE.g);
 
-    o_dens_valve = rhoToImperial(constantsTADPOLE.dens_o); % constant
-    fu_dens_valve = rhoToImperial(constantsTADPOLE.dens_f); % constant
+    o_dens_valve = rhoToImperial(constantsSTADPOLE.dens_o); % constant
+    fu_dens_valve = rhoToImperial(constantsSTADPOLE.dens_f); % constant
 
-    o_dens_inj = rhoToImperial(constantsTADPOLE.dens_o); % varying w.r.t. time
-    fu_dens_inj = rhoToImperial(constantsTADPOLE.dens_f); % varying w.r.t. throttle 
+    o_dens_inj = rhoToImperial(constantsSTADPOLE.dens_o); % varying w.r.t. time
+    fu_dens_inj = rhoToImperial(constantsSTADPOLE.dens_f); % varying w.r.t. throttle 
     % size(ox_valve_up)
     % size(ox_valve_down)
     % size(mdot_ox)
