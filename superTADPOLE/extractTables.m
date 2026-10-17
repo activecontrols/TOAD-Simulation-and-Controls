@@ -83,6 +83,12 @@ function extractTables(constantsSTADPOLE)
     find((I_sp) > 10, 50);
     mdot_ox(find((I_sp) > 10, 50));
 
+    figure;
+    scatter3(time, p_chamber, I_sp);
+    xlabel("time")
+    ylabel("chamber pressure")
+    zlabel("I_sp")
+
     figure
     hold on
     scatter(time, thrust_cmd)
