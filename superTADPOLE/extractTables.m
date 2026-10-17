@@ -82,6 +82,110 @@ function extractTables(constantsSTADPOLE)
     title("I_{sp} wrt thrust");
     find((I_sp) > 10, 50);
     mdot_ox(find((I_sp) > 10, 50));
+
+    figure
+    hold on
+    scatter(time, thrust_cmd)
+    title("Thrust Commanded vs. Time")
+    
+
+    % cstar = f(p_chamber)
+    % Fitted with a quadratic
+    figure
+    hold on
+    scatter3(time, p_chamber, cstar)
+    xlabel("time")
+    ylabel("chamber pressure")
+    zlabel("cstar")
+    matrix1 = [p_chamber, cstar];
+    matrix2 = matrix1;
+    exp_fit = fit(matrix2(:,1), matrix2(:,2), 'poly2');
+    t_range = linspace(min(time), max(time), 20);
+    p_range = linspace(min(p_chamber), max(p_chamber), 20);
+    [x, y] = meshgrid(t_range, p_range);
+    z_col = exp_fit(p_range(:));
+    z = repmat(z_col, 1, length(t_range));
+    surf(x,y,z)
+    hold off
+    view(3)
+    grid on
+    fprintf("\nCstar table\n")
+    fprintf("Cstar\tP chamber\n")
+    disp([z_col, p_range(:)])
+    
+    % CdA = constant
+    % Fitted with an average after truncating the data set, ignoring
+    % pressures less than or equal to 150 (or keeping pressures greater
+    % than 150)
+    figure
+    hold on
+    scatter3(time, p_chamber, CdA)
+    xlabel("time")
+    ylabel("chamber pressure")
+    zlabel("CdA")
+    t_range = linspace(min(time), max(time), 20);
+    p_range = linspace(min(p_chamber), max(p_chamber), 20);
+    [x, y] = meshgrid(t_range, p_range);
+    matrix1 = [p_chamber, CdA];
+    matrix2 = matrix1(matrix1(:,1) > 150, :);
+    CdA_avg = zeros(size(x)) + mean(matrix2(:,2));
+    surf(x,y,CdA_avg)
+    hold off
+    view(3)
+    grid on
+    fprintf("\nCdA constant\n")
+    disp(CdA_avg(1))
+
+    % CvOx = f(thetaOx)
+    % Fitted with an exponential after truncating the data set, ignoring
+    % CvOx greater than or equal 1.18 (or keeping CvOx less than 1.18)
+    figure
+    hold on
+    scatter3(time, ox_commanded, real(cvs_ox))
+    xlabel("time")
+    ylabel("angle ox")
+    zlabel("Cv ox")
+    matrix1 = [ox_commanded, real(cvs_ox)];
+    matrix2 = matrix1(matrix1(:,2) < 1.18, :);
+    exp_fit = fit(matrix2(:,1), matrix2(:,2), 'exp1');
+    t_range = linspace(min(time), max(time), 20);
+    p_range = linspace(min(ox_commanded), max(ox_commanded), 20);
+    [x, y] = meshgrid(t_range, p_range);
+    z_col = exp_fit(p_range(:));
+    z = repmat(z_col, 1, length(t_range));
+    surf(x,y,z)
+    hold off
+    view(3)
+    grid on
+    fprintf("\nCv Ox table\n")
+    fprintf("Cv Ox\tTheta Ox\n")
+    disp([z_col, p_range(:)])
+
+    % CvFu = f(thetaFu)
+    % Fitted with a linear fit
+    figure
+    hold on
+    scatter3(time, fu_pos, real(cvs_fu))
+    xlabel("time")
+    ylabel("angle fu")
+    zlabel("Cv fu")
+    matrix1 = [fu_pos, real(cvs_fu)];
+    matrix2 = matrix1;
+    lin_fit = fit(matrix2(:,1), matrix2(:,2), 'poly1');
+    t_range = linspace(min(time), max(time), 20);
+    p_range = linspace(min(fu_pos), max(fu_pos), 20);
+    [x, y] = meshgrid(t_range, p_range);
+    z_col = lin_fit(p_range(:));
+    z = repmat(z_col, 1, length(t_range));
+    surf(x,y,z)
+    hold off
+    view(3)
+    grid on
+    fprintf("\nCv Fu table\n")
+    fprintf("Cv Fu\tTheta Fu\n")
+    disp([z_col, p_range(:)])
+
+
 end
 
 function cv = extract_cv(P_tank, P_valve, mdot, rho)
