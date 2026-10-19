@@ -45,7 +45,7 @@ classdef TrajectoryProgressionLogger < handle
                 'MaxThrust', opt.constants.MaxThrust, ...
                 'm_dry', opt.constants.m_dry, ...
                 'g', opt.constants.g, ...
-                'max_gimbal_angle', opt.max_gimbal_angle);
+                'MaxGimbalAngle', opt.MaxGimbalAngle);
             obj.Progression.frames = {};
         end
 
@@ -55,16 +55,16 @@ classdef TrajectoryProgressionLogger < handle
             Nn = obj.N + 1;
             Ttot = sum(QPTraj.T);
             tv = linspace(0, Ttot, Nn);
-            rs = QPTraj.evalAt(tv, 0);
-            vs = QPTraj.evalAt(tv, 1);
-            as = QPTraj.evalAt(tv, 2);
+            rs = QPTraj.Eval(tv, 0);
+            vs = QPTraj.Eval(tv, 1);
+            as = QPTraj.Eval(tv, 2);
 
             g_vec = [0; 0; obj.opt.constants.g];
             m_dry = obj.opt.constants.m_dry;
             qs = zeros(4, Nn);
             for k = 1:Nn
                 F_est = m_dry * (as(:,k) + g_vec);
-                qs(:,k) = obj.opt.vectorToQuat(F_est);
+                qs(:,k) = vectorToQuat(F_est);
             end
 
             Us = zeros(4, obj.N);

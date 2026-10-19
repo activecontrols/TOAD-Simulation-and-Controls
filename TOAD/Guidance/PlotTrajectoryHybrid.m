@@ -167,8 +167,8 @@ function f1 = plotSolutionDashboard(opt)
     subplot(2, 2, 2);
     plot(tv(1:end-1), rad2deg(Us(1,:)), 'r-', 'LineWidth', 1.6); hold on;
     plot(tv(1:end-1), rad2deg(Us(2,:)), 'b-', 'LineWidth', 1.6);
-    yline(rad2deg(opt.max_gimbal_angle), 'k:', 'Max Gimbal', 'LabelHorizontalAlignment', 'left');
-    yline(-rad2deg(opt.max_gimbal_angle), 'k:', '-Max Gimbal', 'LabelHorizontalAlignment', 'left');
+    yline(rad2deg(opt.MaxGimbalAngle), 'k:', 'Max Gimbal', 'LabelHorizontalAlignment', 'left');
+    yline(-rad2deg(opt.MaxGimbalAngle), 'k:', '-Max Gimbal', 'LabelHorizontalAlignment', 'left');
     grid on; xlabel('Time [s]', 'FontWeight', 'bold');
     ylabel('Gimbal Angle [deg]', 'FontWeight', 'bold');
     legend({'\theta (Pitch)', '\phi (Yaw)'}, 'Location', 'best');

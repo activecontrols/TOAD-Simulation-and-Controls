@@ -12,13 +12,16 @@ classdef TrajectoryOptimizerHybrid < handle
     properties
         constants; Vehicle double = 0; N double = 60
         T_bounds = [8, 35]; T_initial double = 16
-        CircleTightness double = 0.5; GlideslopeAngle double = 3.0; FunnelCurvature double = 0.01
+        CircleTightness double = 0.5; GlideslopeAngle double = 5.0; FunnelCurvature double = 0.01
         TakeoffClearanceAlt double = 0; LandingFlareAlt double = 0
         SigPos double = 0.30; SigVel double = 0.40; SigAtt double = deg2rad(5)
         SigT double = 0.03; TightFactor double = 0.25
-        WeightTrackPos double = 1.00; WeightTrackVel double = 0.50; WeightTrackAtt double = 0.25
-        WeightTrackTime double = 0.01; WeightCorridor double = 1.00
-        WeightSlew double = 0.20; WeightCurv double = 0.20
+
+        %% Costs
+        WeightTrackPos double = 1.00; WeightTrackVel double = 0.50; WeightTrackAtt double = 0.1
+        WeightTrackTime double = 0; WeightCorridor double = 1.00
+        WeightSlew double = 0.1; WeightCurv double = 0.1
+
         Maneuver string = "Circle"; ManeuverParams struct = struct()
         Waypoints double = []; WaypointTolerances double = []
         q0 = [1; 0; 0; 0]; r0 = [0; 0; 0]; v0 = [0; 0; 0]; w0 = [0; 0; 0]; r_f = [0; 0; 0]
@@ -140,8 +143,8 @@ classdef TrajectoryOptimizerHybrid < handle
                         'circle_alt', double(p.Results.circle_alt), ...
                         'circle_center', double(p.Results.circle_center(:)), ...
                         'f_orbit_start', 0.25, 'f_orbit_end', 0.75);
-                    if obj.Vehicle == 0, obj.T_bounds = [16, 45]; obj.T_initial = 28;
-                    else,                obj.T_bounds = [20, 65]; obj.T_initial = 42; end
+                    if obj.Vehicle == 0, obj.T_bounds = [12, 50]; obj.T_initial = 20;
+                    else,                obj.T_bounds = [15, 60]; obj.T_initial = 30; end
                 case "Backflip"
                     addParameter(p, 'apex_alt', vd.dBA);
                     addParameter(p, 'flip_start_frac', 0.30);
@@ -152,8 +155,8 @@ classdef TrajectoryOptimizerHybrid < handle
                         'flip_start_frac', double(p.Results.flip_start_frac), ...
                         'flip_end_frac', double(p.Results.flip_end_frac), ...
                         'theta_tol', double(p.Results.theta_tol), 'q_inverted', [0; 0; -1; 0]);
-                    if obj.Vehicle == 0, obj.T_bounds = [10, 24]; obj.T_initial = 16;
-                    else,                obj.T_bounds = [16, 36]; obj.T_initial = 24; end
+                    if obj.Vehicle == 0, obj.T_bounds = [12, 50]; obj.T_initial = 20;
+                    else,                obj.T_bounds = [15, 60]; obj.T_initial = 30; end
                 case "Hop"
                     addParameter(p, 'apex_alt', vd.dHA);
                     parse(p, varargin{:});
@@ -315,6 +318,7 @@ classdef TrajectoryOptimizerHybrid < handle
                 'MaxThrustRate', obj.MaxThrustRate, 'MaxRollRate', obj.MaxRollRate, ...
                 'OptimizeTimes', do_opt_times);
 
+            %% Call polynomial optimizer
             [obj.InitialGuess, obj.QPTraj] = PolyQP(Fix, T_seg, obj.constants, opts);
 
             tg = obj.QPTraj.TagTimes; Ttot = obj.InitialGuess.T_total;

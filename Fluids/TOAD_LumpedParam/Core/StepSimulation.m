@@ -1,34 +1,21 @@
 function [State, FlowRates, System] = StepSimulation(State, dt, System, LinkStates)
-% STEPSIMULATION Universal, system-blind Control Volume network solver.
-% Operates strictly on Nodes, Links, and LinkMap defined by the system builder.
-% Features:
-% - Vectorized link hydraulics via CalculateLinkFlow (PhysicsEngine2 equations)
-% - Courant-bounded outflow mass limiter eliminating pressure chatter
-% - Vectorized mass and energy accumulation via single unified LinkMap
-% - Discrete (m, U) Control Volume conservation across all nodes
-% - Stratified TwoZoneTank and modular pluggable Combustor stepping
-% - Zero hardcoded component names; 100% C++ compileable data layout
-% - Backward-compatible named struct outputs for UI, telemetry, and scripts
+
+%% Physics Solver
+% Full, Universal, Fluids Network solver using the Links & Nodes definition setup.
+% Entirely vectorized, using internal energy and mass accounting for
+% everything. Stratified tanks, C++ compileable. Can run pre-planned
+% autosequences or live control loops.
 %
-% Inputs:
-%   State      - State struct (.Nodes, .Time, etc.)
-%   dt         - Discrete time step [s]
-%   System     - System struct (.Nodes, .Links, .LinkMap, .PortMap, etc.)
-%   LinkStates - (Optional) Commanded valve states (struct, cell, or vector U)
-%
-% Outputs:
-%   State      - Updated State struct
-%   FlowRates  - Struct of link mass flow rates [kg/s]
-%   System     - Updated System struct with synchronized actuator positions
+% Pablo Plata
 
     if nargin < 4, LinkStates = []; end
 
-    %% 1. Synchronize System Links & Nodes to Flat Arrays
+    %% Synchronize System Links & Nodes to Flat Arrays
     [Nodes, Links, LinkMap, PortMap, NodeNames, LinkNames, System] = unpackSystemTopology(System, State);
     N_N = numel(Nodes);
     N_L = numel(Links);
 
-    %% 2. Vectorized Actuator Dynamics (First-Order Lag Filter)
+    %% Vectorized Actuator Dynamics
     if ~isempty(LinkStates)
         Links = applyActuatorCommands(Links, LinkNames, LinkStates, dt);
     end
@@ -42,7 +29,7 @@ function [State, FlowRates, System] = StepSimulation(State, dt, System, LinkStat
         end
     end
 
-    %% 3. Extract Thermodynamic States for All Links via LinkMap & PortMap
+    %% Extract Thermodynamic States for All Links
     UpProps   = repmat(struct('P', 0, 'T', 293.15, 'rho', 1.18, 'gamma', 1.4, 'h', 0, 'u', 0, 'm', 0), N_L, 1);
     DownProps = UpProps;
     P_up      = zeros(N_L, 1);
@@ -61,24 +48,27 @@ function [State, FlowRates, System] = StepSimulation(State, dt, System, LinkStat
         [P_down(j), DownProps(j)] = extractPortState(Nodes(d_idx), d_port);
     end
 
-    %% 4. Vectorized Link Flow & Heat Transfer Evaluation
+    %% Vectorized Link Flow & Heat Transfer Evaluation
+    % Evals heat transfer between nodes & flow between nodes
     [mdot_links, isChoked_links, flowDir_links, Qdot_links] = CalculateLinkFlow(...
         Links, P_up, P_down, UpProps, DownProps, dt);
 
-    %% 5. Courant Stability / Dynamic Outflow Mass Limiter
+    %% Outflow Mass Limiter
     % Prevents any node or port from draining more than 50% of available mass in dt
-    mdot_links = applyCourantOutflowLimiter(mdot_links, Links, LinkMap, PortMap, Nodes, dt);
+    % numerical stability here 
+    mdot_links = applyFlowLimiter(mdot_links, Links, LinkMap, PortMap, Nodes, dt);
 
-    %% 6. Vectorized Flux Accumulation over Single Unified LinkMap
-    % Flow positive: Up -> Down (leaves Up, enters Down)
-    % Flow negative: Down -> Up (leaves Down, enters Up)
+    %% Vectorized Flux Accumulation over Single Unified LinkMap
+    % Convention for signs:
+    % Flow positive: Up -> Down
+    % Flow negative: Down -> Up
     mdot_pos = max(mdot_links, 0.0);
     mdot_neg = max(-mdot_links, 0.0);
 
     h_up_vec   = [UpProps.h]';
     h_down_vec = [DownProps.h]';
 
-    % Advected enthalpy and heat transfer
+    % Enthalpy and heat transfer
     Q_pos = max(Qdot_links, 0.0);
     Q_neg = max(-Qdot_links, 0.0);
 
@@ -95,26 +85,33 @@ function [State, FlowRates, System] = StepSimulation(State, dt, System, LinkStat
     dE_out_node = accumarray(u_nodes, E_pos,    [N_N, 1]) + accumarray(d_nodes, E_neg,    [N_N, 1]);
 
     % Separate port accumulation for TwoZoneTanks (Port 1 = Ullage, Port 2 = Liquid)
+    % Needed for stratified tanks 
     [dm_in_ull, dm_out_ull, dE_in_ull, dE_out_ull, ...
      dm_in_liq, dm_out_liq, dE_in_liq, dE_out_liq] = accumulateTwoZonePortFluxes(...
         LinkMap, PortMap, mdot_pos, mdot_neg, E_pos, E_neg, N_N);
 
-    %% 7. Discrete (m, U) Conservation Stepping for All Nodes (System-Blind)
+    %% Discrete (m, U) Conservation Stepping for All Nodes
     for i = 1:N_N
+        % Boundary node (fixed P, T)
         if isfield(Nodes(i), 'Fixed') && Nodes(i).Fixed
-            continue; % Boundary node (fixed P, T)
+            continue;
         end
 
         nodeType = lower(Nodes(i).Type);
-
+        
+        %% Need to switch between gas nodes, tanks, etc
         switch nodeType
             case {'gas', 'controlvolume'}
                 % Single-phase compressible gas control volume
                 dm = (dm_in_node(i) - dm_out_node(i)) * dt;
                 dE = (dE_in_node(i) - dE_out_node(i)) * dt;
 
+                q_node = 0.0;
+                if isfield(State, 'Q_nodes') && isfield(State.Q_nodes, NodeNames{i})
+                    q_node = State.Q_nodes.(NodeNames{i});
+                end
                 m_new = max(1e-5, Nodes(i).m + dm);
-                U_new = Nodes(i).U + dE;
+                U_new = Nodes(i).U + dE + q_node;
                 rho_new = m_new / Nodes(i).V;
                 u_new   = U_new / m_new;
 
@@ -152,6 +149,22 @@ function [State, FlowRates, System] = StepSimulation(State, dt, System, LinkStat
                 V_liq_new = m_liq_new / max(props_liq.rho, 100.0);
                 V_ull_new = max(Nodes(i).V - V_liq_new, 1e-5);
 
+                % Singular boundary work handling for varying-volume tank control volumes
+                if isfield(Nodes(i), 'Ullage') && isfield(Nodes(i), 'Liquid')
+                    dV_ull = V_ull_new - Nodes(i).Ullage.V;
+                    dV_liq = V_liq_new - Nodes(i).Liquid.V;
+                    U_ull_new = U_ull_new - Nodes(i).P * dV_ull;
+                    U_liq_new = U_liq_new - Nodes(i).P * dV_liq;
+                end
+
+                % Thermal network energy coupling
+                if isfield(State, 'Q_nodes')
+                    fn_u = [NodeNames{i}, '_ull'];
+                    fn_l = [NodeNames{i}, '_liq'];
+                    if isfield(State.Q_nodes, fn_u), U_ull_new = U_ull_new + State.Q_nodes.(fn_u); end
+                    if isfield(State.Q_nodes, fn_l), U_liq_new = U_liq_new + State.Q_nodes.(fn_l); end
+                end
+
                 % Ullage gas state
                 rho_ull_new = m_ull_new / V_ull_new;
                 u_ull_new   = U_ull_new / m_ull_new;
@@ -183,11 +196,7 @@ function [State, FlowRates, System] = StepSimulation(State, dt, System, LinkStat
                 Nodes(i).Liquid.h   = props_liq.h;
 
             case {'line', 'liquidline'}
-                % Universal Control Volume Line
-                % 1. Incompressible liquid hydraulic line (with dead-end lockup and flow-through)
-                % 2. Pneumatic gas purge displacement (N2 entering liquid line, expelling liquid)
-                % 3. Pure compressible gas flow
-                
+                % Universal Control Volume Line                
                 dm_out = dm_out_node(i);
                 dE_in  = dE_in_node(i);
                 dE_out = dE_out_node(i);
@@ -246,7 +255,9 @@ function [State, FlowRates, System] = StepSimulation(State, dt, System, LinkStat
                 V_liq = m_liq_new / rho_l_ref;
                 V_gas = max(1e-7, Nodes(i).V - V_liq);
                 
-                % State evaluation based on phase state:
+                % State evaluation based on phase state, need to handle
+                % purging lines, pure gas lines, pure liquid lines. Easier
+                % to do case by case here.
                 if m_liq_new < 1e-3
                     % Pure gas line (purged or N2 line)
                     props = FluidProperties('Nitrogen', 'From_u_rho', u_new, m_gas_new / Nodes(i).V);
@@ -438,10 +449,10 @@ function [State, FlowRates, System] = StepSimulation(State, dt, System, LinkStat
         end
     end
 
-    %% 8. Pack Synchronized Output Structs (Backward Compatibility)
+    %% Pack Synchronized Output Structs (Backward Compatibility w/ older file setups)
     FlowRates = struct();
     for j = 1:N_L
-        fn = LinkNames{j};
+        fn = matlab.lang.makeValidName(LinkNames{j});
         is_therm = isfield(Links(j), 'Type') && strcmpi(Links(j).Type, 'thermal');
         if is_therm
             FlowRates.(fn) = Qdot_links(j);
@@ -457,7 +468,7 @@ function [State, FlowRates, System] = StepSimulation(State, dt, System, LinkStat
     end
 
     for i = 1:N_N
-        fn = NodeNames{i};
+        fn = matlab.lang.makeValidName(NodeNames{i});
         State.Nodes.(fn) = Nodes(i);
     end
     State.NodeArray = Nodes;
@@ -467,7 +478,7 @@ function [State, FlowRates, System] = StepSimulation(State, dt, System, LinkStat
     State.Time = State.Time + dt;
 end
 
-%% --- Helper: Unpack System Topology into Fast Numerical Arrays ---
+%% Helper: Unpack System Topology into Fast Numerical Arrays
 function [Nodes, Links, LinkMap, PortMap, NodeNames, LinkNames, System] = unpackSystemTopology(System, State)
     % Extract or build NodeArray
     if isfield(State, 'NodeArray') && ~isempty(State.NodeArray)
@@ -667,8 +678,8 @@ function L = filterActuatorState(L, targetVal, dt)
     end
 end
 
-%% --- Helper: Courant Outflow Limiter ---
-function mdot = applyCourantOutflowLimiter(mdot, Links, LinkMap, PortMap, Nodes, dt)
+%% Helper: Outflow Limiter
+function mdot = applyFlowLimiter(mdot, Links, LinkMap, PortMap, Nodes, dt)
     N_L = numel(Links);
     N_N = numel(Nodes);
 
@@ -745,7 +756,7 @@ function mdot = applyCourantOutflowLimiter(mdot, Links, LinkMap, PortMap, Nodes,
     end
 end
 
-%% --- Helper: Accumulate Port Fluxes for TwoZoneTanks ---
+%% Helper: Accumulate Port Fluxes for TwoZoneTanks
 function [dm_in_ull, dm_out_ull, dE_in_ull, dE_out_ull, ...
           dm_in_liq, dm_out_liq, dE_in_liq, dE_out_liq] = accumulateTwoZonePortFluxes(...
           LinkMap, PortMap, mdot_pos, mdot_neg, E_pos, E_neg, N_N)
