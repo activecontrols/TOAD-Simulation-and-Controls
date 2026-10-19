@@ -176,12 +176,12 @@ function extractTables(constantsSTADPOLE)
     ylabel("angle fu")
     zlabel("Cv fu")
     matrix1 = [fu_pos, real(cvs_fu)];
-    matrix2 = matrix1;
-    lin_fit = fit(matrix2(:,1), matrix2(:,2), 'poly1');
+    matrix2 = matrix1(matrix1(:,1) < 60, :);
+    exp_fit = fit(matrix2(:,1), matrix2(:,2), 'exp1');
     t_range = linspace(min(time), max(time), 20);
     p_range = linspace(min(fu_pos), max(fu_pos), 20);
     [x, y] = meshgrid(t_range, p_range);
-    z_col = lin_fit(p_range(:));
+    z_col = exp_fit(p_range(:));
     z = repmat(z_col, 1, length(t_range));
     surf(x,y,z)
     hold off
