@@ -353,7 +353,7 @@ function [IG, QPTraj] = abort_guidance(Ab, C, Opts)
     q0  = abort_get(Ab,'q',[1;0;0;0]);  
     q0 = q0/norm(q0);
     w0  = abort_get(Ab,'w',[0;0;0]);
-    lz = abort_get(Ab,'r_lz',[0;0;0]);
+    r_lz = abort_get(Ab,'r_lz',[0;0;0]);
     ml0 = 0; 
     mi0 = 0;
     if Opts.Vehicle == 1
@@ -362,15 +362,15 @@ function [IG, QPTraj] = abort_guidance(Ab, C, Opts)
     m0  = abort_get(Ab,'m', C.m_dry + ml0 + mi0);
 
     % --- 1. Keyframes: start / waypoint above LZ / touchdown (R=4 -> min-snap) ---
-    z0 = r0(3) - lz(3);
+    z0 = r0(3) - r_lz(3);
     use_wp = z0 > 1.0;                          % skip waypoint if already very low. 1 meter is an arbitrary number, I don't know if this is a good height
     h_wp = min(Opts.AbortWpAlt, max(0.5*z0, 0.5));
-    r_wp = [lz(1:2); lz(3) + h_wp];
+    r_wp = [r_lz(1:2); r_lz(3) + h_wp];
     K = 2 + use_wp;
     Fix = nan(3, 4, K);
     Fix(:,1,1) = r0; Fix(:,2,1) = v0; Fix(:,3,1) = a0;        % jerk free
     if use_wp, Fix(:,1,2) = r_wp; end                         % waypoint: position only
-    Fix(:,1,K) = lz; Fix(:,2,K) = [0; 0; -Opts.TouchdownVz]; Fix(:,3,K) = 0;
+    Fix(:,1,K) = r_lz; Fix(:,2,K) = [0; 0; -Opts.TouchdownVz]; Fix(:,3,K) = 0;
     if use_wp, Tag = {'','wp','land'}; else, Tag = {'','land'}; end
 
     qpo = struct(); qpo.Tag = Tag; qpo.MinSegTime = Opts.MinSegTime;
@@ -380,23 +380,23 @@ function [IG, QPTraj] = abort_guidance(Ab, C, Opts)
     Tgrid = logspace(log10(Opts.AbortTfRange(1)), log10(Opts.AbortTfRange(2)), Opts.AbortNTf);
     Gc = inf(1, numel(Tgrid)); Jc = inf(1, numel(Tgrid));
     for i = 1:numel(Tgrid)
-        T = abort_seg_times(Tgrid(i), use_wp, r0, r_wp, lz, Opts.MinSegTime);
+        T = abort_seg_times(Tgrid(i), use_wp, r0, r_wp, r_lz, Opts.MinSegTime);
         [~, Q] = PolyQP(Fix, T, [], qpo);
-        [Gc(i), Jc(i)] = abort_metrics(Q, C, Opts, m0, lz);
+        [Gc(i), Jc(i)] = abort_metrics(Q, C, Opts, m0, r_lz);
     end
     key = Jc; key(Gc > 0) = Inf;
     if all(isinf(key)), [~, order] = sort(Gc); else, [~, order] = sort(key); end
 
     % --- 3. Re-solve best candidates with the landing-funnel corridor on the last leg ---
-    cor = struct('fn', @(ts, rs, tg) abort_funnel(ts, rs, tg, lz, Opts));
+    cor = struct('fn', @(ts, rs, tg) abort_funnel(ts, rs, tg, r_lz, Opts));
     qpo.Corridors = {cor};
     bestScore = Inf; QPTraj = []; feas = false; Gm = NaN; En = NaN; Cv = NaN;
     for ii = order(1:min(Opts.AbortTopK, numel(order)))
-        T = abort_seg_times(Tgrid(ii), use_wp, r0, r_wp, lz, Opts.MinSegTime);
+        T = abort_seg_times(Tgrid(ii), use_wp, r0, r_wp, r_lz, Opts.MinSegTime);
         [~, Q] = PolyQP(Fix, T, [], qpo);
-        [gm, E] = abort_metrics(Q, C, Opts, m0, lz);
+        [gm, E] = abort_metrics(Q, C, Opts, m0, r_lz);
         tsc = linspace(0, Q.T_total, 200);
-        cv = max(abort_funnel(tsc, poly_eval(Q, tsc, 0), Q.TagTimes, lz, Opts));
+        cv = max(abort_funnel(tsc, poly_eval(Q, tsc, 0), Q.TagTimes, r_lz, Opts));
         score = max(gm, cv);
         if score < bestScore
             bestScore = score; QPTraj = Q; Gm = gm; En = E; Cv = cv;
