@@ -96,7 +96,7 @@ function extractTables(constantsSTADPOLE)
     
 
     % cstar = f(p_chamber)
-    % Fitted with a quadratic
+    % Fitted with linear fit
     figure
     hold on
     scatter3(time, p_chamber, cstar)
@@ -105,11 +105,11 @@ function extractTables(constantsSTADPOLE)
     zlabel("cstar")
     matrix1 = [p_chamber, cstar];
     matrix2 = matrix1;
-    exp_fit = fit(matrix2(:,1), matrix2(:,2), 'poly2');
+    lin_fit = fit(matrix2(:,1), matrix2(:,2), 'poly1');
     t_range = linspace(min(time), max(time), 20);
     p_range = linspace(min(p_chamber), max(p_chamber), 20);
     [x, y] = meshgrid(t_range, p_range);
-    z_col = exp_fit(p_range(:));
+    z_col = lin_fit(p_range(:));
     z = repmat(z_col, 1, length(t_range));
     surf(x,y,z)
     hold off
@@ -152,7 +152,7 @@ function extractTables(constantsSTADPOLE)
     ylabel("angle ox")
     zlabel("Cv ox")
     matrix1 = [ox_commanded, real(cvs_ox)];
-    matrix2 = matrix1(matrix1(:,2) < 1.18, :);
+    matrix2 = matrix1;%matrix1(matrix1(:,2) < 1.18, :);
     exp_fit = fit(matrix2(:,1), matrix2(:,2), 'exp1');
     t_range = linspace(min(time), max(time), 20);
     p_range = linspace(min(ox_commanded), max(ox_commanded), 20);
@@ -176,7 +176,7 @@ function extractTables(constantsSTADPOLE)
     ylabel("angle fu")
     zlabel("Cv fu")
     matrix1 = [fu_pos, real(cvs_fu)];
-    matrix2 = matrix1(matrix1(:,1) < 60, :);
+    matrix2 = matrix1; %matrix1(matrix1(:,1) < 60, :);
     exp_fit = fit(matrix2(:,1), matrix2(:,2), 'exp1');
     t_range = linspace(min(time), max(time), 20);
     p_range = linspace(min(fu_pos), max(fu_pos), 20);
@@ -190,7 +190,16 @@ function extractTables(constantsSTADPOLE)
     fprintf("\nCv Fu table\n")
     fprintf("Cv Fu\tTheta Fu\n")
     disp([z_col, p_range(:)])
-
+    
+    % Isp = constant
+    figure
+    hold on
+    I_sp = extract_I_sp(thrust_cmd, mdot_ox + mdot_fu);
+    scatter(time, I_sp);
+    avg = mean(I_sp);
+    fplot(avg)
+    grid on
+    title("I_{sp} vs time");
 
 end
 
