@@ -1,20 +1,19 @@
-function [x_est, lastP] = TVCMEKF2(x_est, constantsASTRA, z, dT, U, mass)
-%% M-EKF with thrust-model propagation, force-error state d_f, and
-%% TVC-aided M-EKF (15-state replacement for FlightEstimator2)
+function [x_est, lastP] = TVCMEKF2(x_est, constantsASTRA, z, dT, U, mass, P0)
+%% TVC-aided M-EKF
 % Estimates the first 15 error states; only P(1:15,1:15) is passed in/out.
-%   [x_est, lastP(1:15,1:15)] = TVCMEKF2(x_est, TOAD, z, dt, lastP(1:15,1:15), U, mass);
 %
 % Inputs
 %   x_est  state vector; estimated: q(1:4), p(5:7), v(8:10), b_g(11:13), b_a(14:16)
 %          (b_m in 17:19 is read for bias removal but not estimated)
 %   z      15x1: [accel(1:3); gyro(4:6); mag(7:9); gps_pos(10:12); gps_vel(13:15)]
 %   P0     15x15 initial covariance
-%   U      [theta; phi; T; ...] applied gimbal angles [rad], thrust [N]
+%   U      [theta; phi; T; roll] applied gimbal angles, thrust
 %   mass   current vehicle mass [kg]
 %
 % Error state (15): [dtheta(1:3) dp(4:6) dv(7:9) dbg(10:12) dba(13:15)]
  
 nx = 15;
+zRaw = z;
 
 persistent P lastZ
 if isempty(P)
@@ -23,11 +22,15 @@ if isempty(P)
 end
 
 %%  Thrust model (body frame) 
-theta = U(1);  phi = U(2);  T = U(3);
-T_b = T * [cos(theta)*sin(phi);
-          -sin(theta);
-           cos(theta)*cos(phi)];
-a_thrust = T_b / mass;
+theta = U(1);
+phi = U(2);
+T = U(3);
+
+a_thrust = zeros(3,1);
+
+a_thrust(1) = T * cos(theta) * sin(phi) / (constantsASTRA.m_dry+ mass(1) + mass(2));
+a_thrust(2) = -T * sin(theta) / (constantsASTRA.m_dry+ mass(1) + mass(2));
+a_thrust(3) = T * cos(theta) * cos(phi) / (constantsASTRA.m_dry+ mass(1) + mass(2));
 
 %% Remove bias from IMU
 z(1:3) = z(1:3) - x_est(14:16);
@@ -80,7 +83,7 @@ Rc = constantsASTRA.R;
 R = zeros(6);
 R(1:3, 1:3) = Rc(1:3, 1:3);                                   % accel vs thrust model
 R(4:6, 4:6) = 1e-2 * MagMatrix + 1e-8 * (z(7:9) * z(7:9)');   % mag
- 
+
 % Process noise covariance and a-priori propagation step
 P = Phi * P * Phi' + Q;
 P = (P + P') / 2;
@@ -149,5 +152,5 @@ q_nom = quatmultiply(q', dq');
 q_nom = q_nom / norm(q_nom);
 x_est(1:4) = q_nom';
 x_est(5:16) = x_est(5:16) + dx(4:15);   % pos, vel, b_g, b_a
-lastZ = z;
+lastZ = zRaw;
 end
