@@ -1,5 +1,20 @@
 function [VRE, T, f] = VRECalc(throttle, G_RMAX, kGrom, bGrom, Kg2, lowEnd, highEnd)
-    % Samples: Focus only on the relevant spectrum
+% Check that inputs are valid before calculations
+assert(isfinite(throttle) && throttle >= 0, ...
+    'Throttle must be finite and nonnegative.');
+
+assert(isfinite(G_RMAX) && G_RMAX >= 0, ...
+    'G_RMAX must be finite and nonnegative.');
+
+assert(isfinite(lowEnd) && isfinite(highEnd) && ...
+    lowEnd > 0 && highEnd > lowEnd, ...
+    'PSD frequencies must satisfy 0 < lowEnd < highEnd.');
+
+assert(isfinite(kGrom) && isfinite(bGrom) && ...
+    kGrom > 0 && bGrom > 0, ...
+    'Stiffness and damping ratio must be finite and positive.');    
+
+% Samples: Focus only on the relevant spectrum
     Num = 500; 
     f = logspace(log10(10), log10(2500), Num); % 10 Hz to 2500 Hz
     
@@ -12,14 +27,15 @@ function [VRE, T, f] = VRECalc(throttle, G_RMAX, kGrom, bGrom, Kg2, lowEnd, high
     n = 1; 
     m = 2;
     
-    % Driving PSD shape
-    Broadband = GrmsIN^2 / (highEnd - lowEnd);
-    inPSD = Broadband .* abs(1 ./ (1 + (lowEnd ./ f) .^ (2 * n))) .* abs( 1 ./ (1 + (f / highEnd) .^ (2 * m)));
-    
-    % Scale to exact target GRMS (since the filters alter the total area)
-    current_Grms = sqrt(trapz(f, inPSD));
-    scale_factor = (GrmsIN / current_Grms)^2;
-    inPSD = inPSD .* scale_factor;
+    % Defined the spectral shape (independently of vibration amplitude)
+    shape = 1 ./ (1 + (lowEnd ./ f).^(2*n)) ...
+        .* 1 ./ (1 + (f ./ highEnd).^(2*m));
+
+    % Normalized the shape to get integral 1
+    shapeArea = trapz(f, shape);
+
+    % Scaled the area to the required mean sqr accel
+    inPSD = (GrmsIN^2 / shapeArea) .* shape;
     
     mBoard = 0.1;
     
