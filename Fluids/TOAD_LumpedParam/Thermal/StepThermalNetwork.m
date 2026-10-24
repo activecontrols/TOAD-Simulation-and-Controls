@@ -33,10 +33,11 @@ function [Q_nodes, State] = StepThermalNetwork(State, dt, Env)
         Q_nodes.TK_N2 = 0.0;
     end
 
-    % 2. LOX Tank Heat Inleak
-    if isfield(State.Nodes, 'TK_O2_01') && isfield(State.Thermal, 'TK_O2_01')
-        [Q_ull_ox, Q_liq_ox, State.Thermal.TK_O2_01] = TankThermalModel(...
-            State.Nodes.TK_O2_01, State.Thermal.TK_O2_01, dt, Env.T_amb);
+    % 2. LOX Tank Heat Inleak & Forced Convection
+    if isfield(State.Nodes, 'TK_O2_01')
+        mdot_n2_ox = 0.0;
+        if isfield(State, 'mdot_pr_ox'), mdot_n2_ox = State.mdot_pr_ox; end
+        [Q_ull_ox, Q_liq_ox] = TankThermalModel_v2(State.Nodes.TK_O2_01, mdot_n2_ox, dt);
         Q_nodes.TK_O2_01_ull = Q_ull_ox;
         Q_nodes.TK_O2_01_liq = Q_liq_ox;
     else
@@ -44,10 +45,11 @@ function [Q_nodes, State] = StepThermalNetwork(State, dt, Env)
         Q_nodes.TK_O2_01_liq = 0.0;
     end
 
-    % 3. Fuel Tank Heat Inleak
-    if isfield(State.Nodes, 'TK_FU_01') && isfield(State.Thermal, 'TK_FU_01')
-        [Q_ull_fu, Q_liq_fu, State.Thermal.TK_FU_01] = TankThermalModel(...
-            State.Nodes.TK_FU_01, State.Thermal.TK_FU_01, dt, Env.T_amb);
+    % 3. Fuel Tank Heat Inleak & Forced Convection
+    if isfield(State.Nodes, 'TK_FU_01')
+        mdot_n2_fu = 0.0;
+        if isfield(State, 'mdot_pr_fu'), mdot_n2_fu = State.mdot_pr_fu; end
+        [Q_ull_fu, Q_liq_fu] = TankThermalModel_v2(State.Nodes.TK_FU_01, mdot_n2_fu, dt);
         Q_nodes.TK_FU_01_ull = Q_ull_fu;
         Q_nodes.TK_FU_01_liq = Q_liq_fu;
     else
@@ -74,4 +76,6 @@ function [Q_nodes, State] = StepThermalNetwork(State, dt, Env)
         Q_nodes.SKIPPER_loss = 0.0;
         Q_nodes.Regen_gain   = 0.0;
     end
+
+    State.Q_nodes = Q_nodes;
 end

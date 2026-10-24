@@ -7,14 +7,14 @@ MEKF_Constants;
 %% Create constants struct for vehicle (Approximate values, all metric)
 if constants6DoF.Vehicle == 1
     % TOAD Parameters
-    constants6DoF.m_dry = 141.521;
+    constants6DoF.m_dry = 181.437;
     constants6DoF.g = 9.80145; 
     constants6DoF.rTB = 0.75;
     constants6DoF.J = diag([110 110 20]);
-    constants6DoF.MaxThrust = 2446.52;
-    constants6DoF.MaxMdot = 1.3204;
-    constants6DoF.OF = 1;
-    constants6DoF.OxMass = 20.78;   constants6DoF.FuMass = 19.79;
+    constants6DoF.MaxThrust = 2935.83;
+    constants6DoF.MaxMdot = 1.5513;
+    constants6DoF.OF = 1.2;
+    constants6DoF.OxMass = 33.42;   constants6DoF.FuMass = 26.181;
     constants6DoF.OxHeight = 0.377; constants6DoF.FuHeight = 0.495;
     constants6DoF.OxRadius = 0.146; constants6DoF.FuRadius = 0.146;
     constants6DoF.Ox_Z = 0.85;      constants6DoF.Fu_Z = 1.35;

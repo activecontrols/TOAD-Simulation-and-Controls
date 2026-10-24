@@ -38,10 +38,10 @@ u0 = [0; 0; constants6DoF.g * constants6DoF.m_wet; 0];
     % Outer Loop
     if Vehicle == 1
         % TOAD Tuning
-        max_x_trans = 1.4 * ones(1,6);
+        max_x_trans = 1.3 * ones(1,6);
     else
         % ASTRAv2 Tuning
-        max_x_trans = 1.5 * ones(1,6);
+        max_x_trans = 1.25 * ones(1,6);
     end
     constants6DoF.Q_trans = diag(1 ./ max_x_trans.^2);
     max_a_trans = 1.2; 
@@ -55,12 +55,12 @@ u0 = [0; 0; constants6DoF.g * constants6DoF.m_wet; 0];
         constants6DoF.R_rot = diag([35, 35, 1/4^2]);
     else
         % ASTRAv2 Tuning
-        max_x_rot = [0.15, 0.15, 0.12, 0.5, 0.5, 0.7];
-        constants6DoF.R_rot = diag([60, 60, 1/0.1^2]);
+        max_x_rot = [0.15, 0.15, 0.12, 0.75, 0.75, 0.7];
+        constants6DoF.R_rot = diag([70, 70, 1/0.10^2]);
     end
 
     constants6DoF.Q_rot = diag(1 ./ max_x_rot.^2);
-    constants6DoF.OmegaAtt = 3.2;
+    constants6DoF.OmegaAtt = 2.2;
 
 %% Trajectory Params
     % Pick a trajectory filename (e.g. "TOAD_Backflip_v001",
