@@ -91,10 +91,20 @@ function extractTables(constantsSTADPOLE)
 
     figure
     hold on
-    scatter(time, thrust_cmd)
-    title("Thrust Commanded vs. Time")
-    
+    scatter(thrust_cmd, p_chamber)
+    title("Chamber Pressure vs. Thrust commanded")
+    linfit = fit(thrust_cmd, p_chamber, "poly1");
+    plot(linfit)
 
+    figure
+    hold on
+    scatter(p_chamber, real(cvs_ox))
+    xlabel("Chamber pressure")
+    ylabel("Cv Ox")
+    title("Cv Ox vs. Chamber pressure")
+    polyfit = fit(p_chamber, real(cvs_ox), "poly3");
+    plot(polyfit)
+    
     % cstar = f(p_chamber)
     % Fitted with linear fit
     figure
@@ -115,9 +125,9 @@ function extractTables(constantsSTADPOLE)
     hold off
     view(3)
     grid on
-    fprintf("\nCstar table\n")
-    fprintf("Cstar\tP chamber\n")
-    disp([z_col, p_range(:)])
+    % fprintf("\nCstar table\n")
+    % fprintf("Cstar\tP chamber\n")
+    % disp([z_col, p_range(:)])
     
     % CdA = constant
     % Fitted with an average after truncating the data set, ignoring
@@ -139,8 +149,8 @@ function extractTables(constantsSTADPOLE)
     hold off
     view(3)
     grid on
-    fprintf("\nCdA constant\n")
-    disp(CdA_avg(1))
+    % fprintf("\nCdA constant\n")
+    % disp(CdA_avg(1))
 
     % CvOx = f(thetaOx)
     % Fitted with an exponential after truncating the data set, ignoring
@@ -163,9 +173,9 @@ function extractTables(constantsSTADPOLE)
     hold off
     view(3)
     grid on
-    fprintf("\nCv Ox table\n")
-    fprintf("Cv Ox\tTheta Ox\n")
-    disp([z_col, p_range(:)])
+    % fprintf("\nCv Ox table\n")
+    % fprintf("Cv Ox\tTheta Ox\n")
+    % disp([z_col, p_range(:)])
 
     % CvFu = f(thetaFu)
     % Fitted with a linear fit
@@ -187,9 +197,9 @@ function extractTables(constantsSTADPOLE)
     hold off
     view(3)
     grid on
-    fprintf("\nCv Fu table\n")
-    fprintf("Cv Fu\tTheta Fu\n")
-    disp([z_col, p_range(:)])
+    % fprintf("\nCv Fu table\n")
+    % fprintf("Cv Fu\tTheta Fu\n")
+    % disp([z_col, p_range(:)])
     
     % Isp = constant
     figure
