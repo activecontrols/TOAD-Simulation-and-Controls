@@ -354,6 +354,7 @@ diagnostics = struct();
 if showDiagnostics
     diagnostics = PlotEstimatorDiagnostics(simOut, t, x_data, r_target, ...
         estimateLog, trueAccelBias);
+    PlotLeakageLog(simOut, 'ekf_log');
 end
 
 %% 8. Real-Time Flight Animation
@@ -873,6 +874,41 @@ yaw_est = atan2(2*(q_est(:,1).*q_est(:,4) + q_est(:,2).*q_est(:,3)), ...
                 1 - 2*(q_est(:,3).^2 + q_est(:,4).^2));
 yaw_err_deg = rad2deg(atan2(sin(yaw_est - yaw_true), cos(yaw_est - yaw_true)));
 
+
+% Total attitude error angle: rotation angle of conj(q_true) * q_est
+w_rel = q_true(:,1).*q_est(:,1) + sum(q_true(:,2:4).*q_est(:,2:4), 2);
+v_rel = q_true(:,1).*q_est(:,2:4) - q_est(:,1).*q_true(:,2:4) ...
+    - cross(q_true(:,2:4), q_est(:,2:4), 2);
+att_err_deg = rad2deg(2*atan2(sqrt(sum(v_rel.^2, 2)), abs(w_rel)));
+
+ref = evalin('base','constants6DoF').mag;  ref = ref(:)/norm(ref);
+mm  = nan(size(t));
+for k = 1:numel(t)
+    if all(isfinite(q_est(k,:)))
+        mm(k) = norm(quatRot(q_est(k,:)')*ref - quatRot(q_true(k,:)')*ref);
+    end
+end
+
+figure('Name','Mag-observable attitude error','Color','w');
+plot(t, mm, 'k-'); hold on;
+plot(t, 0.386*deg2rad(att_err_deg), 'b--'); grid on;
+legend('Actual mag-prediction error','Expected if error were pure yaw');
+xlabel('Time [s]'); ylabel('Unit-vector error');
+
+mlTS = getEstimatorLog(simOut, 'meas_log');
+if isempty(mlTS)
+    warning('meas_log not logged; skipping Test B.');
+else
+    tm = double(mlTS.Time(:));
+    M  = double(formatData(mlTS.Data, numel(tm)));
+    mM = M(:,7:9);  mM = mM ./ sqrt(sum(mM.^2,2));
+    qT = interp1(t, q_true, tm);  qT = qT ./ sqrt(sum(qT.^2,2));
+    pred = zeros(numel(tm),3);
+    for k = 1:numel(tm), pred(k,:) = (quatRot(qT(k,:)')*ref)'; end
+    pad = tm < 10;
+    fprintf('Mean mag mismatch on pad: %s\n', mat2str(mean(mM(pad,:)-pred(pad,:)), 3));
+end
+
 axNames = {'North', 'West', 'Up'};
 valid = all(isfinite(p_err), 2);
 if ~any(valid)
@@ -959,6 +995,14 @@ legend({'b_{g,x}','b_{g,y}','b_{g,z}'}, 'Location', 'best');
 title('Estimated gyro bias');
 title(tl, 'TOAD: EKF Bias Diagnostics');
 
+figure('Name', 'TOAD EKF: Attitude Error', 'Color', 'w');
+plot(t, att_err_deg, 'k-', 'LineWidth', 1.4); hold on;
+plot(t, abs(yaw_err_deg), 'b--', 'LineWidth', 1.1); grid on;
+legend('Total attitude error', '|Euler yaw error|', 'Location', 'best');
+xlabel('Time [s]'); ylabel('Error [deg]');
+title('Total attitude error vs Euler yaw error');
+diag.attErrDeg = att_err_deg;
+
 % Metrics and arrays available in returned Plot6DoF() output.
 diag.available = true;
 diag.t = t;
@@ -975,6 +1019,13 @@ diag.gyroBiasEstimate = bg_est;
 diag.positionRMSE = sqrt(mean(p_norm(valid).^2));
 diag.velocityRMSE = sqrt(mean(v_norm(valid).^2));
 diag.positionFinalError = p_norm(find(valid, 1, 'last'));
+
+fl = t >= 10 & isfinite(yaw_err_deg);
+diag.yawRMSE_deg    = sqrt(mean(yaw_err_deg(fl).^2));
+diag.yawMaxAbs_deg  = max(abs(yaw_err_deg(fl)));
+diag.attRMSE_deg    = sqrt(mean(att_err_deg(fl).^2));
+fprintf('Yaw RMSE (flight): %.2f deg | max %.2f deg | total attitude RMSE: %.2f deg\n', ...
+    diag.yawRMSE_deg, diag.yawMaxAbs_deg, diag.attRMSE_deg);
 
 fprintf('\n--- TOAD EKF diagnostics (%s) ---\n', estimateLog);
 fprintf('Position RMSE: %.3f m\n', diag.positionRMSE);
@@ -1025,4 +1076,36 @@ if isa(logsout, 'Simulink.SimulationData.Dataset')
     catch
     end
 end
+end
+
+function PlotLeakageLog(simOut, name)
+ts = getEstimatorLog(simOut, name);
+if isempty(ts)
+    warning('PlotLeakageLog:NoLog', '%s not found in simOut.', name);
+    return;
+end
+tL = double(ts.Time(:));
+L  = double(formatData(ts.Data, numel(tL)));
+ok = all(isfinite(L), 2);                 % drops the ground-phase NaN rows
+tL = tL(ok);  L = L(ok,:);
+if isempty(tL), warning('Log is all NaN.'); return; end
+
+res = L(:,13:15);                         % accel residual (bias-removed meas - a_thrust)
+upd = any(res ~= 0, 2);                   % keep only steps where the IMU update fired
+tU  = tL(upd);  res = res(upd,:);
+if isempty(tU), warning('No IMU update rows in log.'); return; end
+
+figure('Name','TVC EKF: accel residual (U_sim)','Color','w');
+tl = tiledlayout(2,1,'TileSpacing','compact','Padding','compact');
+
+nexttile; plot(tU, res, '.', 'MarkerSize', 4); grid on;
+ylabel('accel residual [m/s^2]'); legend('x','y','z');
+title('Accel residual vs thrust model');
+
+nexttile; plot(tU, sqrt(sum(res.^2,2)), '.', 'MarkerSize', 4); grid on;
+ylabel('|residual| [m/s^2]'); xlabel('Time [s]');
+
+title(tl, sprintf('Flight from t = %.2f s', tL(1)));
+fprintf('Accel residual RMS per axis [m/s^2]: %.3f  %.3f  %.3f\n', ...
+    sqrt(mean(res.^2, 1)));
 end

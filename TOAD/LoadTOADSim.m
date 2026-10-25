@@ -28,6 +28,12 @@ u0 = [0; 0; constants6DoF.g * constants6DoF.m_wet; 0];
     % Kalman Filter & Control Parameters
     constants6DoF.Q = p2.Q;
     constants6DoF.R = p2.obsv_cov_mat;
+
+    constants6DoF.Q2 = p2.Q2;
+    constants6DoF.R2 = p2.R2;
+    constants6DoF.tvc = p2.tvc;
+
+
     constants6DoF.BSigma = 5e-2;
     constants6DoF.BBias = 1e-8;
     
@@ -65,7 +71,7 @@ u0 = [0; 0; constants6DoF.g * constants6DoF.m_wet; 0];
 %% Trajectory Params
     % Pick a trajectory filename (e.g. "TOAD_Backflip_v001",
     % "ASTRA_Circle_v001")
-    filename = "ASTRA_Backflip_v003";
+    filename = "ASTRA_Circle_v003";
     
     % Resolve trajectory CSV file path
     traj_dir = fullfile(pwd, 'Guidance', 'Trajectories');
