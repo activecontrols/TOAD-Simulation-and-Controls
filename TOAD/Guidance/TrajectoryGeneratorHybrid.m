@@ -25,8 +25,8 @@ clear; clc; close all;
 %% 1. Mission Configuration
 %% =========================================================================
 Vehicle     = 0;            % 1 = TOAD (liquid biprop), 0 = ASTRA (electric)
-Maneuver    = "Circle";   % "Hop", "Circle", "Backflip", "Waypoint", "Custom"
-Version     = 1;            % Output version integer: formats as v001, v002, etc.
+Maneuver    = "Backflip";   % "Hop", "Circle", "Backflip", "Waypoint", "Custom"
+Version     = 3;            % Output version integer: formats as v001, v002, etc.
 
 % Progressive Trajectory Build Visualization Trigger
 AnimateProgression = true;   % Animate progressive QP -> Collocation build process

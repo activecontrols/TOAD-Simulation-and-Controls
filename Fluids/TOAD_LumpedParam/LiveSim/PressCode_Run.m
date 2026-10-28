@@ -367,11 +367,11 @@ fprintf('Mean LOX Press Collapse Factor:    %.2f\n', mean(hist_collapse_ox(hist_
 fprintf('Mean Fuel Press Collapse Factor:   %.2f\n', mean(hist_collapse_fu(hist_t_fl > 1.0)));
 fprintf('=================================================================\n');
 
-%% 6-Panel Output Figure (Matching Baseline Format)
+%% 4-Panel Output Figure (Matching Baseline Format)
 fig = figure('Color', 'w', 'Position', [60, 60, 1350, 880]);
 
 % --- Subplot 1: COPV Pressure vs. Time ---
-subplot(3, 2, 1);
+subplot(2, 2, 1);
 plot(hist_t_fl, hist_P_copv, 'LineWidth', 1.8, 'Color', [0.15, 0.45, 0.8]);
 ylabel('COPV Pressure (psia)', 'FontSize', 10, 'FontWeight', 'bold');
 xlabel('Time (sec.)', 'FontSize', 10);
@@ -381,19 +381,19 @@ ylim([floor(min(hist_P_copv)/100)*100 - 100, 4600]);
 grid on;
 
 % --- Subplot 2: Ullage Volume Temperature vs. Time ---
-subplot(3, 2, 2);
-plot(hist_t_fl, hist_T_fu_ull, 'r-', 'LineWidth', 1.8); hold on;
-plot(hist_t_fl, hist_T_ox_ull, 'b-', 'LineWidth', 1.8);
-ylabel('Ullage Volume Temperature (K)', 'FontSize', 10, 'FontWeight', 'bold');
-xlabel('Time (sec.)', 'FontSize', 10);
-title('Ullage Volume Temperature vs. Time', 'FontSize', 11, 'FontWeight', 'bold');
-legend('Fuel Ullage', 'Ox Ullage', 'Location', 'best', 'FontSize', 9);
-xlim([0, ceil(totalTime)]);
-ylim([70, max([hist_T_fu_ull, hist_T_ox_ull]) + 20]);
-grid on;
+% subplot(2, 2, 2);
+% plot(hist_t_fl, hist_T_fu_ull, 'r-', 'LineWidth', 1.8); hold on;
+% plot(hist_t_fl, hist_T_ox_ull, 'b-', 'LineWidth', 1.8);
+% ylabel('Ullage Volume Temperature (K)', 'FontSize', 10, 'FontWeight', 'bold');
+% xlabel('Time (sec.)', 'FontSize', 10);
+% title('Ullage Volume Temperature vs. Time', 'FontSize', 11, 'FontWeight', 'bold');
+% legend('Fuel Ullage', 'Ox Ullage', 'Location', 'best', 'FontSize', 9);
+% xlim([0, ceil(totalTime)]);
+% ylim([70, max([hist_T_fu_ull, hist_T_ox_ull]) + 20]);
+% grid on;
 
 % --- Subplot 3: Pressurant SCFM vs. Time ---
-subplot(3, 2, 3);
+subplot(2, 2, 2);
 plot(hist_t_fl, hist_scfm_fu, 'r-', 'LineWidth', 1.6); hold on;
 plot(hist_t_fl, hist_scfm_ox, 'b-', 'LineWidth', 1.6);
 plot(hist_t_fl, hist_scfm_tot, 'g-', 'LineWidth', 1.8);
@@ -405,7 +405,7 @@ xlim([0, ceil(totalTime)]);
 grid on;
 
 % --- Subplot 4: COPV Temperature vs. Time ---
-subplot(3, 2, 4);
+subplot(2, 2, 3);
 plot(hist_t_fl, hist_T_copv, 'LineWidth', 1.8, 'Color', [0.15, 0.45, 0.8]);
 ylabel('COPV Temperature (K)', 'FontSize', 10, 'FontWeight', 'bold');
 xlabel('Time (sec.)', 'FontSize', 10);
@@ -413,20 +413,8 @@ title('COPV Temperature vs. Time', 'FontSize', 11, 'FontWeight', 'bold');
 xlim([0, ceil(totalTime)]);
 grid on;
 
-% --- Subplot 5: Required Press Mdot vs. Time ---
-subplot(3, 2, 5);
-plot(hist_t_fl, hist_mdot_n2_tot, 'g-', 'LineWidth', 1.8); hold on;
-plot(hist_t_fl, hist_mdot_n2_fu, 'r-', 'LineWidth', 1.6);
-plot(hist_t_fl, hist_mdot_n2_ox, 'b-', 'LineWidth', 1.6);
-ylabel('Mass Flow Rate Required (lb/s)', 'FontSize', 10, 'FontWeight', 'bold');
-xlabel('Time (sec.)', 'FontSize', 10);
-title('Required Press Mdot vs. Time', 'FontSize', 11, 'FontWeight', 'bold');
-legend('Total Press Mdot', 'Fuel Press Mdot', 'Ox Press Mdot', 'Location', 'best', 'FontSize', 9);
-xlim([0, ceil(totalTime)]);
-grid on;
-
 % --- Subplot 6: Collapse Factor vs. Time ---
-subplot(3, 2, 6);
+subplot(2, 2, 4);
 c_fu_plot = min(hist_collapse_fu, 5.0);
 c_ox_plot = min(hist_collapse_ox, 10.0);
 plot(hist_t_fl, c_fu_plot, 'r-', 'LineWidth', 1.8); hold on;
