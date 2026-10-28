@@ -53,13 +53,13 @@ p2.Q(16:18, 16:18) = p2.mag_bias_cov_mat*dt;
 dt2 = 0.002;
 
 % Tunable scalars
-t2.qAtt = 100; 
+t2.qAtt = 500;
 t2.gyroBiasCov = 1e-9;
 t2.velProcCov = 1e-2;
 t2.accelBiasCov= 1e-2;
 
 % Thrust-model uncertainty scaled by thrust
-p2.tvc.sigDir = deg2rad(1.0);
+p2.tvc.sigDir = deg2rad(1);
 p2.tvc.sigMag = 0.1;
 
 % Error state: [theta position velocity gyro bias accel bias]

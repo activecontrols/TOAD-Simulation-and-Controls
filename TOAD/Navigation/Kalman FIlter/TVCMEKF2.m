@@ -60,7 +60,7 @@ R_b2i = quatRot(q)';
 rGPS = [0 0 0.31]';
 z(13:15) = z(13:15) - R_b2i * cross(z(4:6), rGPS);
 
-a_model = a_thrust + x_est(14:16);
+a_model = a_thrust + x_est(14:16);%without this change ba effectively feeds nothing and velo propagates only on the thrust model
 
 
 %% State transition matrix
@@ -69,7 +69,7 @@ a_model = a_thrust + x_est(14:16);
 % drive velocity (propagation uses the thrust model, not the accelerometer)
 F = zeros(nx);
 F(1:12, 1:12) = StateTransitionMat(a_model, z(4:6), R_b2i, 0);
-F(7:9,13:15) = R_b2i;
+F(7:9,13:15) = R_b2i; %fixing yaw required repurposing accel biases as "thrust model error" so this rotation term just puts the error into the inertial frame
 
 % Propagate rest of state using THRUST acceleration
 x_est(8:10) = x_est(8:10) + (R_b2i * a_model - [0; 0; constantsASTRA.g]) * dT;
@@ -93,7 +93,7 @@ Rc = constantsASTRA.R2;
 
 R = zeros(6);
 R(1:3, 1:3) = Rc(1:3, 1:3);% accel vs thrust model
-R(4:6, 4:6) = 1e-3 * MagMatrix + 1e-8 * (z(7:9) * z(7:9)');% mag
+R(4:6, 4:6) = 1e-2 * MagMatrix + 1e-8 * (z(7:9) * z(7:9)');% mag
 
 % Process noise covariance and a-priori propagation step
 P = Phi * P * Phi' + Q;
@@ -141,8 +141,8 @@ if any(lastZ(10:15) ~= zRaw(10:15))
     % Measurement covariance matrix
     GyroCovar = eye(3) * 1e-2;
     R = zeros(6);
-    R(1:3, 1:3) = .3 * eye(3);
-    R(4:6, 4:6) = 0.3 * eye(3) + R_b2i * zetaCross(rGPS) * GyroCovar * (R_b2i * zetaCross(rGPS))';
+    R(1:3, 1:3) = 0.3 * eye(3);
+    R(4:6, 4:6) = .1 * eye(3) + R_b2i * zetaCross(rGPS) * GyroCovar * (R_b2i * zetaCross(rGPS))';
  
     % Kalman gain
     L = P * H' / (H * P * H' + R);
