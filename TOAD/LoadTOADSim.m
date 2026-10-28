@@ -47,12 +47,12 @@ u0 = [0; 0; constants6DoF.g * constants6DoF.m_wet; 0];
         max_x_trans = 1.3 * ones(1,6);
     else
         % ASTRAv2 Tuning
-        max_x_trans = 1.25 * ones(1,6);
+        max_x_trans = 1.2 * ones(1,6);
     end
     constants6DoF.Q_trans = diag(1 ./ max_x_trans.^2);
     max_a_trans = 1.2; 
     constants6DoF.R_trans = eye(3) .* (1 / max_a_trans^2);
-    constants6DoF.OmegaThr = 2.2;
+    constants6DoF.OmegaThr = 2.0;
     
     % Inner Loop
     if Vehicle == 1
@@ -61,21 +61,17 @@ u0 = [0; 0; constants6DoF.g * constants6DoF.m_wet; 0];
         constants6DoF.R_rot = diag([35, 35, 1/4^2]);
     else
         % ASTRAv2 Tuning
-        max_x_rot = [0.15, 0.15, 0.12, 0.75, 0.75, 0.7];
-        constants6DoF.R_rot = diag([70, 70, 1/0.10^2]);
+        max_x_rot = [0.20, 0.20, 0.12, 0.90, 0.90, 0.7];
+        constants6DoF.R_rot = diag([80, 80, 1/0.10^2]);
     end
 
     constants6DoF.Q_rot = diag(1 ./ max_x_rot.^2);
     constants6DoF.OmegaAtt = 2.2;
 
-%% Trajectory Params
+% Trajectory Params
     % Pick a trajectory filename (e.g. "TOAD_Backflip_v001",
     % "ASTRA_Circle_v001")
-<<<<<<< HEAD
-    filename = "ASTRA_Circle_v002";
-=======
     filename = "ASTRA_Circle_v003";
->>>>>>> 4ccbbc027a406b52eaafe74348f4a5ecf7e74bb8
     
     % Resolve trajectory CSV file path
     traj_dir = fullfile(pwd, 'Guidance', 'Trajectories');
