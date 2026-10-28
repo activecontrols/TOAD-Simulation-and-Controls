@@ -159,7 +159,7 @@ if PlotMode == 1
     subplot(2, 2, 1);
     plot(t_min, Tank.P * Pa2psi, 'LineWidth', 1.5, 'Color', [0.85 0.33 0.1]); hold on;
     plot(t_min, COPV.P * Pa2psi, 'LineWidth', 1.5, 'Color', [0 0.45 0.74]);
-    yline(Reg.SetPress * Pa2psi, '--r', 'Regulator Setpoint', 'LineWidth', 1.2);
+    yline(4500, '--r', 'Pressure Target', 'LineWidth', 1.2);
     xlabel('Time (min)');
     ylabel('Pressure (psi)');
     title('Pressure History');
