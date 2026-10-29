@@ -1,5 +1,9 @@
 #pragma once
+#ifdef _MSC_VER
+#define __packed            // MSVC (MATLAB MEX): packing is irrelevant here
+#else
 #define __packed __attribute__((__packed__)) // patch this in on all platforms
+#endif
 
 // this file contains shared structs for use across the embedded code and UI
 
