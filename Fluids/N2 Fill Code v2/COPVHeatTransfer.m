@@ -79,10 +79,11 @@ function [Q_gas, COPV_Temps_new] = COPVHeatTransfer(fillMode, dT, P_gas, T_gas, 
     h_conv_forced = (k_air / D_copv) * Nu_D;
 
     % Compute stagnant air convection as a floor
-    h_conv_nat = (k_air / L_copv) * (0.68 + (0.67 * Ra_L^(1/4)) / (1 + (0.492 / Pr)^(9/16))^(4/9));
+    Nu_nat = (0.68 + (0.67 * Ra_L^(1/4)) / (1 + (0.492 / Pr)^(9/16))^(4/9));
+    h_conv_nat = (k_air / L_copv) * Nu_nat;
     
-    % Pick the highest
-    h_conv = max(h_conv_forced, h_conv_nat);
+    % Mixed convection via Churchill-Usagi power-law blending
+    h_conv = (h_conv_forced^3.5 + h_conv_nat^3.5)^(1/3.5);
 
     % Radiation cooling, apparently not negligible lmao 
     h_rad = epsilon_fg * sigma * (T_fg + T_amb) * (T_fg^2 + T_amb^2);
