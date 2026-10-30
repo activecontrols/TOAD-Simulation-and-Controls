@@ -4,8 +4,8 @@ clc;
 
 %% Settings
 dT        = 0.001;   % 1 kHz loop (Q_gen and DigitalNF assume this)
-t_ground  = 2.0;     % seconds on the pad (estimator settles)
-t_flight  = 3.0;     % seconds of "flight"
+t_ground  = 5.0;     % seconds on the pad (estimator settles)
+t_flight  = 15.0;     % seconds of "flight"
 g         = 9.8015;
 mass      = 1.169;
 noise_on  = true;    % set false for a perfectly clean run
