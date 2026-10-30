@@ -50,7 +50,7 @@ Q = constantsASTRA.Q(1:12, 1:12);
 R = constantsASTRA.R(4:6, 4:6);
 
 % Matrix updates for the mags
-R(1:3, 1:3) = 3e-1 * MagMatrix + 1e-8 * (z(7:9) * z(7:9)');
+R(1:3, 1:3) = 1e-2 * MagMatrix + 1e-8 * (z(7:9) * z(7:9)');
 
 % Process Noise Covariance and a-priori propagation step
 P = Phi * P * Phi' + Q;
@@ -62,13 +62,13 @@ if any(lastZ(1:9) ~= z(1:9))
     % Measurement matrix
     H = zeros(3,12);
     H(1:3, 1:3) = zetaCross(R_b2i' * constantsASTRA.mag);
-        
+
     % Predicted measurements 
     z_hat = R_b2i' * constantsASTRA.mag;
 
     % A priori covariance and Kalman gain
     L = P * H' / (H * P * H' + R);
-    
+
     % Kalman Gain Weighting based on predicted acceleration
     ILH = (eye(12) - L * H);
     P = ILH * P * ILH' + L * R * L';
@@ -86,7 +86,7 @@ if any(lastZ(10:15) ~= z(10:15))
     H(4:6, 7:9) = eye(3);
 
     % Measurement Covariance Matrix
-    GyroCovar = eye(3) * 5e-2;
+    GyroCovar = eye(3) * 1e-2;
     R = zeros(6);
     R(1:3, 1:3) = 0.1 * eye(3);
     R(4:6, 4:6) = 0.3 * eye(3) + R_b2i * zetaCross(rGPS) * GyroCovar * (R_b2i * zetaCross(rGPS))';

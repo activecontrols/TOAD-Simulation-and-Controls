@@ -149,13 +149,38 @@ function [U_cmd, SpecRad, X_err] = TOAD_TVLQI(GND, X_est, X_trg, U_ff, K, t, con
                  X_est(11:13) - omegaTRG];
     Delta_u = -K_rot * X_err_rot;
 
+    %% Trim Integration & Clamping (cascaded authority allocation)
+    Channels = [1, 2, 4];
     
-    %% Trim Integration & clamping   
-    U_cmd(1) = U_ff(1) + Delta_u(1) - U_dist(1); 
-    U_cmd(2) = U_ff(2) + Delta_u(2) - U_dist(2);               
-    U_cmd(4) = U_ff(4) + Delta_u(3) - U_dist(3); 
+    % Input bounds
+    thrustMax = constantsTOAD.MaxThrust;
+    gimbalMax = pi/12;
+    InputBounds = [-gimbalMax       gimbalMax;
+        -gimbalMax       gimbalMax;
+        0.2 * thrustMax  thrustMax;
+        -7               7];
+    
+    %% Feedback Trim 
+    MaxTrim = [ones(2,1) * deg2rad(10); 5];
+    Trim_FB = min(max(Delta_u(:), -MaxTrim), MaxTrim);
+    
+    Bnd_min_1 = InputBounds(Channels, 1) - Trim_FB;
+    Bnd_max_1 = InputBounds(Channels, 2) - Trim_FB;
+    
+    %% Disturbance
+    MaxDist   = [ones(2,1) * deg2rad(10); 5]; 
+    U_dist_req = min(max(-U_dist(Channels), -MaxDist), MaxDist);
+    Trim_Dist  = min(max(U_dist_req, Bnd_min_1), Bnd_max_1);
+    
+    Trim = Trim_FB + Trim_Dist;
+    
+    Bnd_min_2 = InputBounds(Channels, 1) - Trim;
+    Bnd_max_2 = InputBounds(Channels, 2) - Trim;
+    
+    %% Feedforward
+    U_ff_cmd = min(max(U_ff(Channels), Bnd_min_2), Bnd_max_2);
+    U_cmd(Channels, 1) = Trim + U_ff_cmd;
 
-    % SpecRad = [Delta_u(1); Delta_u(2); U_cmd(3) - U_ff(3); Delta_u(3)];
     %% Spectral radius calculation for analysis (Taken from MatrixVerif)
 
     % Run at 10Hz for efficiency
@@ -200,13 +225,6 @@ function [U_cmd, SpecRad, X_err] = TOAD_TVLQI(GND, X_est, X_trg, U_ff, K, t, con
     LastSpecRad = SpecRad;
     % Error computation for output & clamping 
     X_err = [X_err_rot; X_err_trans]; 
-
-    thrustMax = constantsTOAD.MaxThrust;
-    gimbalMax = pi/12;
-    InputBounds = [-gimbalMax       gimbalMax;
-                   -gimbalMax       gimbalMax;
-                   .2 * thrustMax   thrustMax;
-                   -7               7];
     U_cmd = min(max(U_cmd, InputBounds(:, 1)), InputBounds(:, 2));
     U_last = U_cmd;
 end

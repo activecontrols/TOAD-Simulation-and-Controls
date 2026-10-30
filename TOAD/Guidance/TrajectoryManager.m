@@ -3,6 +3,7 @@ function [X, U, K, LA, LT] = TrajectoryManager(t, X_est, constantsTOAD)
     States = constantsTOAD.Traj.States;
     Inputs = constantsTOAD.Traj.Inputs;
     
+
     % FBGain maps to K_trans, FBCost maps to K_rot
     K_trans_Gain = constantsTOAD.Traj.KTGain;
     K_rot_Gain = constantsTOAD.Traj.KRGain; 
@@ -78,6 +79,12 @@ function [X, U, K, LA, LT] = TrajectoryManager(t, X_est, constantsTOAD)
     X_low = States(n_low,:);
     X_up  = States(n_high,:);
     X(:) = X_low + (X_up - X_low) .* ratio;
+    
+    % Quaternion normalization to eliminate norm shrinkage and DCM defect
+    q_norm = norm(X(1:4));
+    if q_norm > 1e-6
+        X(1:4) = X(1:4) / q_norm;
+    end
     
     U_low = Inputs(n_low,:);
     U_up  = Inputs(n_high,:);

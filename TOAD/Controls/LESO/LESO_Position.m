@@ -2,7 +2,7 @@
 % Estimates vehicle position, velocity, and unmodeled acceleration disturbances
 % in the inertial frame (m/s^2).
 
-function a_dist = LESO_Position(GND, X_est, X_trg, U_trg, L_Thrust, constantsTOAD, t)
+function a_dist = LESO_Position(GND, X_est, X_trg, U_cmd, L_Thrust, constantsTOAD, t)
 
     persistent t_last
     persistent xhat 
@@ -31,12 +31,10 @@ function a_dist = LESO_Position(GND, X_est, X_trg, U_trg, L_Thrust, constantsTOA
     C_IB = C_BI';
     
     % Nominal thrust force vector in body frame
-    theta = U_trg(1); 
-    phi   = U_trg(2);
-    thrust = U_trg(3);
+    theta = U_cmd(1); 
+    phi   = U_cmd(2);
+    thrust = U_cmd(3);
     ThrustVec_B = thrust * [cos(theta)*sin(phi); -sin(theta); cos(theta)*cos(phi)];
-    % * [0; 0; 1];
-    % * [cos(theta)*sin(phi); -sin(theta); cos(theta)*cos(phi)];
     
     % Nominal acceleration in inertial frame (inc. gravity correction)
     g_vec = [0; 0; -constantsTOAD.g];
