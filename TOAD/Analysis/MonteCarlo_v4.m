@@ -172,7 +172,27 @@ end
 
 %% Execute Parallel Simulations
 disp('Starting Parallel Monte Carlo Trajectory Simulations (parsim)...');
-out = parsim(simIn, 'ShowProgress', 'on', 'UseFastRestart', 'on');
+for i = 1:num_sims
+    simIn(i) = simIn(i).setVariable('IMU_Rate', IMU_Rate);
+    simIn(i) = simIn(i).setVariable('accelBias', accelBias);
+    simIn(i) = simIn(i).setVariable('gyroBias', gyroBias);
+    simIn(i) = simIn(i).setVariable('gyroNoisePower', gyroNoisePower);
+    simIn(i) = simIn(i).setVariable('dt_SIM', dt_SIM);
+    simIn(i) = simIn(i).setVariable('dt', dt);
+end
+
+out = parsim(simIn, ...
+    'ShowProgress', 'on', ...
+    'UseFastRestart', 'on', ...
+    'TransferBaseWorkspaceVariables', 'on');
+
+ok = arrayfun(@(s) isempty(s.ErrorMessage), out);
+
+if ~any(ok)
+    error('MonteCarlo:AllRunsFailed', ...
+        'No simulations succeeded. First error:\n%s', ...
+        out(1).ErrorMessage);
+end
 
 %% Extract Metrics and Interpolate Trajectories
 disp('Simulations complete. Extracting and interpolating trajectories...');
@@ -308,9 +328,9 @@ end
 % the full target trajectory directly. The state ordering used here follows
 % the logged vehicle state convention from V3:
 %   [q(1:4), position(1:3), velocity(1:3), ...]
-if isempty(target_state_all) || size(target_state_all,3) < 10
+if isempty(target_state_all) || size(target_state_all,3) < 7
     error(['The full-state target trajectory was not logged with the expected ' ...
-           'position/velocity entries (states 5:10).']);
+           'position entries.']);
 end
 
 target_pos_all = target_state_all(:,:,5:7);

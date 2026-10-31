@@ -75,15 +75,16 @@ constantsTOAD.OmegaAtt = 0.75;
 
 % Pick a trajectory filename 
 try 
-    filename = "Backflip_v1.csv";
-    Data = readmatrix("Guidance\Trajectories\"+filename);
+    filename = "Backflip_v2.csv";
+    filepath = fullfile("Guidance", "Trajectories", filename);
+    Data = readmatrix(filepath);
     constantsTOAD.Traj.Time = Data(:, 1);
     constantsTOAD.Traj.States = Data(:, 2:16);
     constantsTOAD.Traj.Inputs = Data(:, 17:20);
     [constantsTOAD.Traj.KTGain, constantsTOAD.Traj.KRGain, ...
      constantsTOAD.Traj.LAGain, constantsTOAD.Traj.LTGain] = ReadGains(filename);
 catch e
-    disp("Failed to read trajectory filename")
+    warning("Failed to read trajectory '%s': %s", filename, e.message);
 end
 clear slBus* 
 busInfo = Simulink.Bus.createObject(constantsTOAD);
@@ -116,3 +117,17 @@ Wind_Gain = 0.6;
 Wind_Covar = 7;
 lowEnd = 50;
 highEnd = 800;
+
+%V5 MC variables
+
+gimbalBias = zeros(4,1);
+magHardIron = 0.05 * ones(3,1);
+sigma_accel_mu = 1e-4;              % TODO: Allan variance / warm-up log
+accel_sigma_range = [0.5e-4, 2e-4];
+sigma_gyro_mu = deg2rad(1e-3);
+gyro_sigma_range = [0, 0];   
+IMUDriftParams = [zeros(1,8),1];
+seedDryden = [23341 23342 23343 23344];
+seedAccel = [23093 23094 23095];
+seedGyro = [23093 23094 23095];
+seedMagNoise = [23341,23342,23343];
