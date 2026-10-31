@@ -10,7 +10,7 @@ function extractTables(constantsSTADPOLE)
     [b,a] = butter(2, 0.5);
     
     thrust_cmd = filtfilt(b,a, att2(startup:end,3));
-    
+    disp(min(thrust_cmd))
     ox_commanded =  filtfilt(b,a, att2(startup:end, 4)*360);
     fu_cmd = filtfilt(b,a, att2(startup:end, 5)*360);
     fu_pos = filtfilt(b,a, att2(startup:end, 6)*360);
@@ -270,4 +270,73 @@ end
 
 function mdot = mdotToMetric(impmdot)
 mdot = impmdot * 2.204623;
+end
+
+function genTable(I_sp, cstar, g0, CdA_fu, CdA_ox, K_fu, K_ox)
+    
+
+    f_thrust = linspace(200, 590, 50);
+    
+    mdot = f_thrust / I_sp;
+
+    P_c = cstar/(A_t * g0) .* mdot;
+
+    % table_Pc = [f_thrust;P_c];
+
+    % writematrix(table_Pc, "Tables/thrustToPc.csv");
+
+    mdot_fu = mdot * 6/11;
+    mdot_ox = mdot * 5/11;
+
+    KGM3_TO_LBIN3 = 3.61273e-5;
+    PSI_TO_PA = 6894.7;
+    ipa_temp = 293.17; %%linspace(290,400, 50);
+    lox_temp =  109; %%linspace(90,150,50);
+    P_inj_ox = P_c * 2.28571428571 - 78.57; %% basic linear interpolation
+    P_inj_fu = P_c * 1.64204545455 - 47.20; %% basic linear interpolation
+    
+    delta_rho_ox = 10^9;
+    delta_rho_fu = 10^9;
+
+    rho_ox = arrayfun(@(x) FastFluidProps("Oxygen", 'From_P_T', x * PSI_TO_PA, lox_temp).rho, P_inj_ox) * KGM3_TO_LBIN3;
+    rho_fu = arrayfun(@(x) FastFluidProps("IPA", 'From_P_T', P_inj_fu * PSI_TO_PA, ipa_temp).rho, P_inj_fu) * KGM3_TO_LBIN3;
+
+    while abs(delta_rho_fu) > 10^-3
+        rho_fu_old = rho_fu;
+
+        inj_fu = p_c + mdot_fu.^2./(rho_fu*(CdA_fu));
+
+        rho_fu = arrayfun(@(x) FastFluidProps("IPA", 'From_P_T', P_inj_fu * PSI_TO_PA, ipa_temp).rho, inj_fu) * KGM3_TO_LBIN3;
+
+        delta_rho_fu = rho_fu_old - rho_fu;
+    end
+
+    while abs(delta_rho_ox) > 10^-3
+        rho_ox_old = rho_ox;
+        
+        inj_ox = p_c + mdot_ox.^2./(rho_ox*(CdA_ox));
+
+        rho_ox = arrayfun(@(x) FastFluidProps("Oxygen", 'From_P_T', x * PSI_TO_PA, lox_temp).rho, inj_ox) * KGM3_TO_LBIN3;
+        delta_rho_ox = rho_ox_old - rho_ox;
+    end
+    
+
+    p_inj_ox = p_c + mdot_ox.^2./(rho_ox*(CdA_ox));
+    
+    p_inj_fu = p_c + mdot_fu.^2./(rho_fu*(CdA_fu));
+
+    p_valve_fu = p_inj_fu + K_fu * mdot_fu.^2;
+    p_valve_ox = p_inj_ox + K_ox * mdot_ox.^2;
+
+
+    rho_water = 13/360;
+    p_tank = 550;
+    cv_fu = mdot_fu./(rho_fu.* rho_water .* (p_tank - p_valve_fu)).^0.5 * 60 / 231;
+    cv_ox = mdot_ox./(rho_ox.* rho_water .* (p_tank - p_valve_ox)).^0.5 * 60 / 231;
+
+    table_cv_fu = [f_thrust, cv_fu];
+    table_cv_ox = [f_thrust, cv_ox];
+
+    writematrix(table_cv_fu, "Tables/thrustCvFu.csv");
+    writematrix(table_cv_ox, "Tables/thrustCvOx.csv");
 end

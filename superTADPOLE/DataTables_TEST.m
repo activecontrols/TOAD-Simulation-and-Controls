@@ -500,6 +500,28 @@ ylabel('C^* (ft/s)');
 title('Hotfire C^* vs. Chamber Pressure');
 legend('show', 'Location', 'best');
 
+
+% P_c vs Temp
+figure('Name', 'Injector Temps vs Chamber Pressure');
+for i = 1:length(Data)
+    idx = (Data(i).Time > Trigger(1)) & (Data(i).Time < (Data(i).Time(end) - Trigger(2)));
+    if Data(i).TestType ~= "IPA CF" &&  isfield(DataF(i).Sensor, 'PT_OX_Inj') && ~all(isnan(DataF(i).Sensor.PT_OX_Inj))
+        plot(DataF(i).Sensor.PT_TCA_Chamber(idx), DataF(i).Sensor.PT_OX_Inj(idx), '-', ...
+            'Color', colors(i,:), 'LineWidth', 1.2, 'DisplayName', testNames(i) + " (OX)"); 
+        hold on; grid on;
+    end
+    if Data(i).TestType ~= "LOX CF" && isfield(DataF(i).Sensor, 'PT_IPA_Inj') && ~all(isnan(DataF(i).Sensor.PT_IPA_Inj))
+        plot(DataF(i).Sensor.PT_TCA_Chamber(idx), DataF(i).Sensor.PT_IPA_Inj(idx), '.', ...
+            'Color', colors(i,:), 'LineWidth', 1.2, 'DisplayName', testNames(i) + " (IPA)"); 
+        hold on; grid on;
+    end
+end
+xlabel('Chamber Pressure (psi)');
+xlim([80, 300]);
+ylabel('Temperatures');
+title('Injector Temps vs. Chamber Pressure');
+legend('show', 'Location', 'best');
+
 % Injector CdA vs. Time (Solid = OX, Dashed = IPA, Color = Test)
 figure('Name', 'Injector CdA vs Time');
 for i = 1:length(Data)
