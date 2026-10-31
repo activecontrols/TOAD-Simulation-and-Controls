@@ -4,7 +4,7 @@
 #include "matlab_funcs.h"
 
 namespace ControllerAndEstimator {
-    extern Matrix9_9 Flight_P;
+    extern Matrix12_12 Flight_P;
     extern Vector19 x_est;
 
     void init_controller_and_estimator_constants();

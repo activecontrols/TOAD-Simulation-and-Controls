@@ -1,4 +1,7 @@
 #pragma once
+#ifndef MATLAB_FUNCS_H
+#define MATLAB_FUNCS_H
+
 #include "astra_structs.h"
 #include <ArduinoEigenDense.h>
 
@@ -22,12 +25,17 @@ using Matrix3_6 = Eigen::Matrix<float, 3, 6>;
 using Matrix6_6 = Eigen::Matrix<float, 6, 6>;
 using Matrix6_3 = Eigen::Matrix<float, 6, 3>;
 using Matrix3_9 = Eigen::Matrix<float, 3, 9>;
+using Matrix3_12 = Eigen::Matrix<float, 3, 12>;
 using Matrix4_4 = Eigen::Matrix<float, 4, 4>;
 using Matrix6_9 = Eigen::Matrix<float, 6, 9>;
+using Matrix6_12 = Eigen::Matrix<float, 6, 12>;
 using Matrix9_3 = Eigen::Matrix<float, 9, 3>;
-using Matrix6_18 = Eigen::Matrix<float, 6, 18>;
 using Matrix9_6 = Eigen::Matrix<float, 9, 6>;
 using Matrix9_9 = Eigen::Matrix<float, 9, 9>;
+using Matrix12_3 = Eigen::Matrix<float, 12, 3>;
+using Matrix12_6 = Eigen::Matrix<float, 12, 6>;
+using Matrix12_12 = Eigen::Matrix<float, 12, 12>;
+using Matrix6_18 = Eigen::Matrix<float, 6, 18>;
 using Matrix18_6 = Eigen::Matrix<float, 18, 6>;
 using Matrix18_18 = Eigen::Matrix<float, 18, 18>;
 
@@ -61,6 +69,7 @@ Matrix4_4 HamiltonianProd(Vector4 q);
 Vector19 GroundEstimator(Vector19 x_est, constantsASTRA_t constantsASTRA, Vector15 z, float dT, Matrix18_18 &P, bool new_mag_packet, bool new_gps_packet, Matrix3_3 gps_vel_covar,
                          Matrix3_3 gps_pos_covar);
 Vector19 FlightEstimator(Vector19 x_est, constantsASTRA_t constantsASTRA, Vector15 z, float dT, Matrix9_9 &P, bool new_gps_packet, Matrix3_3 gps_vel_covar, Matrix3_3 gps_pos_covar);
+Vector19 FlightEstimator2(Vector19 x_est, constantsASTRA_t constantsASTRA, Vector15 z, float dT, Matrix12_12 &P, bool new_mag_packet, bool new_gps_packet, Matrix3_3 gps_vel_covar, Matrix3_3 gps_pos_covar);
 Vector16 StateAUG(Vector13 XKF, Vector3 G);
 Vector4 DCM_Quat_Conversion(Matrix3_3 R);
 Vector9 DigitalNF(Vector9 IN, bool GND, float THRUST_PERC, float dT, Matrix9_4 &X, Matrix9_4 &Y);
@@ -90,3 +99,5 @@ template <typename MatrixN_N> MatrixN_N matrixExpPade6(MatrixN_N A) {
 
     return denom.inverse() * numer;
 }
+
+#endif // MATLAB_FUNCS_H

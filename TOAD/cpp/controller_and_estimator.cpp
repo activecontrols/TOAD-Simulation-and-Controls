@@ -4,7 +4,7 @@
 namespace ControllerAndEstimator {
 constantsASTRA_t constantsASTRA;
 Matrix18_18 P;
-Matrix9_9 Flight_P;
+Matrix12_12 Flight_P;
 Vector19 x_est;
 Vector2 lastEMA;
 Matrix9_4 dnf_X;
@@ -71,6 +71,8 @@ void init_controller_and_estimator_constants() {
   P.block<3, 3>(12, 12) = Matrix3_3::Identity() * 0.00001;
   P.block<3, 3>(15, 15) = Matrix3_3::Identity() * 0.00001;
 
+  Flight_P = P.block<12, 12>(0, 0);
+
   x_est = Vector19::Zero();
   x_est[0] = 1;
   lastEMA = Vector2::Zero();
@@ -108,7 +110,7 @@ Controller_Output get_controller_output(Controller_Input ci, const Vector15 &X_t
   }
 
   if (!ci.GND_val && last_GND) { // we left GND this frame
-    Flight_P = P.block<9, 9>(0, 0);
+    Flight_P = P.block<12, 12>(0, 0);
     ASTRAv2_Controller_reset(); // reset integral gains in the controller itself
   }
 
@@ -118,7 +120,7 @@ Controller_Output get_controller_output(Controller_Input ci, const Vector15 &X_t
   if (ci.GND_val) {
     x_est = GroundEstimator(x_est, constantsASTRA, z, loop_dT, P, ci.new_mag_packet, ci.new_gps_packet, gps_vel_covar, gps_pos_covar);
   } else {
-    x_est = FlightEstimator(x_est, constantsASTRA, z, loop_dT, Flight_P, ci.new_gps_packet, gps_vel_covar, gps_pos_covar);
+    x_est = FlightEstimator2(x_est, constantsASTRA, z, loop_dT, Flight_P, ci.new_mag_packet, ci.new_gps_packet, gps_vel_covar, gps_pos_covar);
   }
 
   Vector15 X_ctrl;
