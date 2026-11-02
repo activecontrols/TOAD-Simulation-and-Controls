@@ -289,17 +289,22 @@ for i = 1:length(Data)
     inExcludedWindow = any((t >= TimeExclude(:,1)') & (t <= TimeExclude(:,2)'), 2);
     idx_steady = (t > Trigger(1)) & (t < (t(end) - Trigger(2))) & ~inExcludedWindow;
 
-    % Local OX Mdot across injector
+    % Local OX Mdot across injector and K across injector
     if Data(i).TestType ~= "IPA CF"
         gc = 32.174 * 12;
         Pc = DataF(i).Sensor.PT_TCA_Chamber;
+
+        checkK = true;
         
         % Switch for available direct injector pressure
         if Data(i).HasMat && ~all(isnan(DataF(i).Sensor.PT_OX_Inj))
             P_inj_ox = DataF(i).Sensor.PT_OX_Inj;
+            P_valve_ox = DataF(i).Sensor.PT_OX_ValveDown;
         else
             P_inj_ox = DataF(i).Sensor.PT_OX_ValveDown;
+            checkK = false;
         end
+
         
         % Switch for available direct injector temperature
         if Data(i).HasMat && ~all(isnan(DataF(i).Sensor.TC_OX_Inj))
@@ -324,18 +329,35 @@ for i = 1:length(Data)
         err_ox_pct = (loc_ox - meas_ox) ./ meas_ox * 100;
         err_ox_pct(isinf(err_ox_pct)) = NaN;
         Params(i).OX_Mdot_ErrPCT = err_ox_pct;
+
+        if(checkK)
+            % disp(size(Params(i).OX_Mdot_LOC))
+            % disp(size(P_valve_ox))
+            % disp(size(P_inj_ox))
+            Params(i).K_ox = NaN(size(t));
+            Params(i).K_ox(idx_steady) = (P_valve_ox(idx_steady) - P_inj_ox(idx_steady)) ./ loc_ox.^2;
+        else
+            Params(i).K_ox = zeros(size(t));
+            size(Params(i).K_ox)
+            % size(idx_steady)
+        end
+
     end
 
-    % Local IPA Mdot across injector
+    % Local IPA Mdot across injector 
     if Data(i).TestType ~= "LOX CF"
         gc = 32.174 * 12;
         Pc = DataF(i).Sensor.PT_TCA_Chamber;
-        
+        checkK = true;
+
         % Switch for available direct injector pressure
         if Data(i).HasMat && ~all(isnan(DataF(i).Sensor.PT_IPA_Inj))
             P_inj_ipa = DataF(i).Sensor.PT_IPA_Inj;
+            P_valve_ipa = DataF(i).Sensor.PT_IPA_ValveDown;
         else
             P_inj_ipa = DataF(i).Sensor.PT_IPA_ValveDown;
+            checkK = false;
+            
         end
         
         % Switch for available direct injector temperature (if field exists)
@@ -360,7 +382,20 @@ for i = 1:length(Data)
         err_ipa_pct = (loc_ipa - meas_ipa) ./ meas_ipa * 100;
         err_ipa_pct(isinf(err_ipa_pct)) = NaN;
         Params(i).IPA_Mdot_ErrPCT = (err_ipa_pct);
+
+        if(checkK)
+            Params(i).K_ipa = NaN(size(t));
+            Params(i).K_ipa(idx_steady) = (P_valve_ipa(idx_steady) - P_inj_ipa(idx_steady));
+        else
+            Params(i).K_ipa = NaN(size(t));
+            size(Params(i).K_ipa)
+        end
     end
+
+
+    % Extract K across injector
+
+
 
     % Extract Cstar for hotfires (using lower-noise local injector mdot)
     if contains(DataF(i).TestType, "HF")
@@ -385,6 +420,7 @@ for i = 1:length(Data)
         % Interpolate theoretical C* and get C* efficiency
         [Params(i).EtaCstar, Params(i).Cstar_theo] = getCstarEff(Pc, Params(i).OF, Params(i).Cstar);
     end
+
 
     % Extract Momentum Ratio for hotfires (using local injector mdot & average CdA)
     if contains(DataF(i).TestType, "HF")
@@ -520,6 +556,34 @@ xlabel('Chamber Pressure (psi)');
 xlim([80, 300]);
 ylabel('Temperatures');
 title('Injector Temps vs. Chamber Pressure');
+legend('show', 'Location', 'best');
+
+
+% Injector K vs. Time (Solid = OX, Dashed = IPA, Color = Test)
+figure('Name', 'Injector dP vs Time');
+for i = 1:length(Data)
+
+    t = Data(i).Time;
+    inExcludedWindow = any((t >= TimeExclude(:,1)') & (t <= TimeExclude(:,2)'), 2);
+    idx_steady = (t > Trigger(1)) & (t < (t(end) - Trigger(2))) & ~inExcludedWindow;
+
+    if Data(i).TestType ~= "LOX CF"
+        plot(DataF(i).Time, Params(i).K_ipa, '-', ...
+            'Color', colors(i,:), 'LineWidth', 1.2, 'DisplayName', testNames(i) + " (OX)"); 
+        hold on; grid on;
+    end
+    if Data(i).TestType ~= "IPA CF"
+        size(idx_steady)
+        disp(size(Params(i).K_ox))
+        plot(DataF(i).Time, Params(i).K_ox, '--', ...
+            'Color', colors(i,:), 'LineWidth', 1.2, 'DisplayName', testNames(i) + " (IPA)"); 
+        hold on; grid on;
+    end
+end
+ylim([-20, 20]);
+xlabel('Time (s)');
+ylabel('dP (psi)');
+title('Injector dP vs. Time (Solid = OX, Dashed = IPA)');
 legend('show', 'Location', 'best');
 
 % Injector CdA vs. Time (Solid = OX, Dashed = IPA, Color = Test)

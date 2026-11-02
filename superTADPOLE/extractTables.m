@@ -42,7 +42,10 @@ function extractTables(constantsSTADPOLE)
     mdot_fu(find(abs(cvs_fu) > 5, 50));
     fu_valve_up(find(abs(cvs_fu) > 5, 50))-fu_valve_down(find(abs(cvs_fu) > 5, 50));
    
-    
+    % genTable(160, 4500, a_t, g_0, 0.45, 0.65)
+    K_fu = 
+    K_ox
+
     % disp(cvs_ox - arrayfun(@(x) AngleToCoefficient(x),ox_commanded))
     figure;
     hold on;
@@ -72,9 +75,14 @@ function extractTables(constantsSTADPOLE)
     figure;
     CdA = extract_CdA(ox_valve_down, p_chamber, mdot_ox, o_dens_inj);
     scatter(p_chamber, CdA);
-    title("CdA wrt. chamber pressure");
+    title("Ox CdA wrt. chamber pressure");
     find((CdA) < 0, 50);
     mdot_ox(find((CdA) < 0, 50));
+
+    figure;
+    CdA_fu = extract_CdA(fu_valve_down, p_chamber, mdot_fu, fu_dens_inj);
+    scatter(p_chamber, CdA_fu);
+    title("Fuel CdA wrt. chamber pressure");
 
     figure;
     I_sp = extract_I_sp(thrust_cmd, mdot_ox + mdot_fu);
@@ -272,7 +280,7 @@ function mdot = mdotToMetric(impmdot)
 mdot = impmdot * 2.204623;
 end
 
-function genTable(I_sp, cstar, g0, CdA_fu, CdA_ox, K_fu, K_ox)
+function genTable(I_sp, cstar, A_t,  g0, CdA_fu, CdA_ox, K_fu, K_ox)
     
 
     f_thrust = linspace(200, 590, 50);
