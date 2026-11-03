@@ -29,7 +29,6 @@ function [Node_new, mdot_nozzle, isLit] = SKIPPER_Model(Node, Inflow, Nozzle, dt
     mdot_fu = max(0.0, Inflow.mdot_fu);
     mdot_prop = mdot_ox + mdot_fu;
 
-    
     A_t = 1.2810e-3;
     Cd = 0.95;
     P_back = 101325.0;
