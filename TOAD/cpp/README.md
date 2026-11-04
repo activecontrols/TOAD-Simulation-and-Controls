@@ -26,7 +26,7 @@ The wrapper uses the vehicle's C++ implementation, including its single-precisio
 | `Extras/ArduinoEigenDense.h` | A compatibility header that maps the Arduino-style `#include <ArduinoEigenDense.h>` include to standard Eigen on a PC. It also declares `Matrix9_4`. |
 | `Extras/eigen-3.4.0/` | Eigen 3.4.0 linear algebra headers; no separate installation step is needed. |
 | `build_mex.m` | Build script that compiles the source files into the MEX binary. |
-| `test_astra.m` | Basic test that supplies synthetic sensor readings to the MEX function and plots its outputs. |
+| `test.m` | Basic test that supplies synthetic sensor readings to the MEX function and plots its outputs. |
 
 ## Prerequisites
 
@@ -136,7 +136,7 @@ Initialize with `astra_mex('init')` before entering the loop. At each time step,
 ## Step 3: Execute the basic test
 
 ```matlab
-test_astra
+test
 ```
 
 The test simulates five seconds at 1 kHz with the vehicle held upright and stationary: two seconds in ground mode followed by three seconds in flight mode. It prints basic checks and creates four plots showing the estimated quaternion, estimated position, thrust, and gimbal commands. A dashed line indicates the mode transition. This verifies basic execution and output behavior; it does not validate a flight trajectory.
