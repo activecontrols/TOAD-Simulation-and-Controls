@@ -162,11 +162,14 @@ if any(lastZ(10:15) ~= zRaw(10:15))
     dx = dx + inn;
 end
 
+tilt = acos(min(1, max(-1, R_b2i(3,3))));   % rad off vertical
+
 logRow = [dxI(1:3)', dxI(10:12)', ...   % 1-6   IMU-step att, bg correction
           dxG(1:3)', dxG(10:12)', ...   % 7-12  GPS-step att, bg correction
           resI(1:3)', resI(4:6)', ...   % 13-18 accel residual, mag residual
           resG(1:3)', resG(4:6)', ...   % 19-24 GPS pos, vel residual
-          P(10,13), P(11,14), P(12,15)];% 25-27 cov(dbg_i, dba_i)
+          P(10,13), P(11,14), P(12,15), ...  % 25-27 cov(dbg_i, dba_i)
+          sqrt(P(3,3)), tilt];          % 28-29 sigma yaw [rad], tilt [rad]
 
 % Output
 lastP = P;

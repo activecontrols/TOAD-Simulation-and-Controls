@@ -950,22 +950,40 @@ grid on; axis equal; view(3);
 xlabel('North [m]'); ylabel('West [m]'); zlabel('Up [m]');
 title('TOAD: Actual vs EKF Flight Path');
 
-%% Diagnostic figure C: error norms, velocity, yaw and tracking error
+%% Diagnostic figure C: error norms, velocity, Euler angles and tracking error
+% Euler angles (ZYX, same convention as the yaw formula above), q = [w x y z]
+quat2eul_zyx = @(q) deal( ...
+    atan2(2*(q(:,1).*q(:,2) + q(:,3).*q(:,4)), 1 - 2*(q(:,2).^2 + q(:,3).^2)), ...                % roll
+    asin(max(-1, min(1, 2*(q(:,1).*q(:,3) - q(:,4).*q(:,2))))), ...                                % pitch
+    atan2(2*(q(:,1).*q(:,4) + q(:,2).*q(:,3)), 1 - 2*(q(:,3).^2 + q(:,4).^2)));                    % yaw
+[rollT, pitchT, yawT] = quat2eul_zyx(q_true);
+[rollE, pitchE, yawE] = quat2eul_zyx(q_est);
+wrapd = @(a) rad2deg(atan2(sin(a), cos(a)));
+eul_err_deg = [wrapd(rollE - rollT), wrapd(pitchE - pitchT), wrapd(yawE - yawT)];
+
 figure('Name', 'TOAD EKF: Error Diagnostics', 'Color', 'w');
 tl = tiledlayout(2, 2, 'TileSpacing', 'compact', 'Padding', 'compact');
+
 nexttile;
-plot(t, p_norm, 'LineWidth', 1.3); grid on;
-ylabel('Position error norm [m]'); xlabel('Time [s]');
-title('Position estimation error');
+plot(t, p_err, 'LineWidth', 1.1); hold on;
+plot(t, p_norm, 'k-', 'LineWidth', 1.4); grid on;
+legend({'North','West','Up','Total'}, 'Location', 'best');
+ylabel('Position error [m]'); xlabel('Time [s]');
+title('Position estimate - truth');
+
 nexttile;
 plot(t, v_err, 'LineWidth', 1.1); grid on;
 legend({'North','West','Up'}, 'Location', 'best');
 ylabel('Velocity error [m/s]'); xlabel('Time [s]');
 title('Velocity estimate - truth');
+
 nexttile;
-plot(t, yaw_err_deg, 'LineWidth', 1.3); grid on;
-ylabel('Yaw error [deg]'); xlabel('Time [s]');
-title('Estimated - true heading');
+plot(t, eul_err_deg, 'LineWidth', 1.1); hold on;
+plot(t, att_err_deg, 'k-', 'LineWidth', 1.4); grid on;
+legend({'Roll','Pitch','Yaw','Total'}, 'Location', 'best');
+ylabel('Euler angle error [deg]'); xlabel('Time [s]');
+title('Estimated - true Euler angles');
+
 nexttile;
 plot(t, sqrt(sum((r_true-r_target).^2, 2)), 'k-', 'LineWidth', 1.3); hold on;
 plot(t, p_norm, 'b--', 'LineWidth', 1.1); grid on;
@@ -1104,6 +1122,32 @@ title('Accel residual vs thrust model');
 
 nexttile; plot(tU, sqrt(sum(res.^2,2)), '.', 'MarkerSize', 4); grid on;
 ylabel('|residual| [m/s^2]'); xlabel('Time [s]');
+
+% --- yaw uncertainty vs tilt, and which update moves yaw ---
+sigYaw = rad2deg(L(:,28));
+tiltD  = rad2deg(L(:,29));
+magYaw = cumsum(L(:,3));      % yaw correction from IMU/mag steps
+gpsYaw = cumsum(L(:,9));      % yaw correction from GPS steps
+
+figure('Name','TVC EKF: yaw observability','Color','w');
+tl2 = tiledlayout(3,1,'TileSpacing','compact','Padding','compact');
+
+nexttile;
+yyaxis left;  plot(tL, sigYaw, 'LineWidth', 1.2); ylabel('\sigma yaw [deg]');
+yyaxis right; plot(tL, tiltD,  'LineWidth', 1.2); ylabel('tilt [deg]');
+grid on; title('Yaw uncertainty vs tilt');
+
+nexttile;
+plot(tL, rad2deg(magYaw), tL, rad2deg(gpsYaw), 'LineWidth', 1.1); grid on;
+legend('mag (cumulative)','GPS (cumulative)','Location','best');
+ylabel('cum. yaw correction [deg]');
+title('Which update moves yaw');
+
+nexttile;
+plot(tL, sigYaw, 'LineWidth', 1.1); grid on;
+ylabel('\sigma yaw [deg]'); xlabel('Time [s]');
+title('Yaw sigma alone');
+title(tl2, 'Yaw observability');
 
 title(tl, sprintf('Flight from t = %.2f s', tL(1)));
 fprintf('Accel residual RMS per axis [m/s^2]: %.3f  %.3f  %.3f\n', ...
