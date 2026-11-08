@@ -1,5 +1,8 @@
 #include "matlab_funcs.h"
 #define RTK 1
+#include "simstruc.h"
+#include "math.h"
+#include <Eigen/Eigen>
 
 Matrix18_18 GroundStateTransitionMat(Vector3 accel, Vector3 gyro, Matrix3_3 R_b2i) {
   // Remove angular rates from error-state. Make safety copies of all relevant
@@ -17,6 +20,10 @@ Vector19 GroundEstimator(Vector19 x_est, constantsASTRA_t constantsASTRA, Vector
                          Matrix3_3 gps_pos_covar) {
   // M-EKF Implementation
   // Remove bias from IMU
+    ssPrintf("\n");
+  ssPrintf("\n testin %lf", x_est.segment<3>(13).norm());
+    ssPrintf("\n which breaks %lf", x_est.segment<3>(10).norm());
+    ssPrintf("\n help meeee %lf", x_est.segment<3>(16).norm());
   z.segment<3>(0) = z.segment<3>(0) - x_est.segment<3>(13);
   z.segment<3>(3) = z.segment<3>(3) - x_est.segment<3>(10);
   z.segment<3>(6) = z.segment<3>(6) - x_est.segment<3>(16);
@@ -26,9 +33,18 @@ Vector19 GroundEstimator(Vector19 x_est, constantsASTRA_t constantsASTRA, Vector
   // Extract quaternion
   Vector18 dx = Vector18::Zero();
   Vector4 q = x_est.segment<4>(0);
-  Vector4 qdot = 0.5 * HamiltonianProd(q) * (Vector4() << 0, z.segment<3>(3)).finished();
-  x_est.segment<4>(0) = q + qdot * dT;
-  q = x_est.segment<4>(0);
+  Vector3 eulerAngles = z.segment<3>(3);
+  if ((eulerAngles.norm() < 0.00001) || dT == 0 || ){
+     q = x_est.segment<4>(0);
+  }
+  else{
+
+    ssPrintf("\n euler angles %lf", eulerAngles.norm());
+    x_est.segment<4>(0) = (HamiltonianProd(q) * (Vector4() << cos(eulerAngles.norm()*dT/2), eulerAngles.segment<3>(0)/(eulerAngles.norm())*sin(eulerAngles.norm()*dT/2)).finished());
+    
+    q = x_est.segment<4>(0);
+    ssPrintf("\n quat %lf", q.norm());
+  }
 
   // A-priori quaternion estimate and rotation matrix
   q.normalize();
@@ -55,9 +71,11 @@ Vector19 GroundEstimator(Vector19 x_est, constantsASTRA_t constantsASTRA, Vector
   // Process Noise Covariance and a-priori propagation step
   // Q = 0.5 * Q;
   Matrix3_3 mag_matrix = (Matrix3_3::Identity() - z.segment<3>(6) * z.segment<3>(6).transpose()) / mag_norm;
-  R.block<3, 3>(3, 3) = 4e-1 * mag_matrix + 5e-5 * z.segment<3>(6) * z.segment<3>(6).transpose();
+  R.block<3, 3>(3, 3) = 2e-1 * mag_matrix + 1e-6 * z.segment<3>(6) * z.segment<3>(6).transpose();
   P = Phi * P * Phi.transpose() + Q;
-  P = (P + P.transpose()) / 2;
+
+  Matrix18_18 p_new = (P + P.transpose()) / 2.0f;
+  P = p_new;
 
   // IMU Update
   if (new_mag_packet) {
@@ -70,6 +88,7 @@ Vector19 GroundEstimator(Vector19 x_est, constantsASTRA_t constantsASTRA, Vector
 
     // A priori covariance and Kalman gain
     Matrix18_6 L = P * H.transpose() * (H * P * H.transpose() + R).inverse();
+    L.block<3,6>(15,0) = Matrix3_6::Zero();
     // L.block<1, 6>(14, 0) = Vector6::Zero().transpose();
 
     // Predicted measurements
@@ -78,7 +97,8 @@ Vector19 GroundEstimator(Vector19 x_est, constantsASTRA_t constantsASTRA, Vector
     // Kalman Gain Weighting based on predicted acceleration
     Matrix18_18 ILH = (Matrix18_18::Identity() - L * H);
     P = ILH * P * ILH.transpose() + L * R * L.transpose();
-    P = (P + P.transpose()) / 2;
+    Matrix18_18 p_new_imu = (P + P.transpose()) / 2.0f;
+    P = p_new_imu;
     Vector6 residual = ((Vector6() << z.segment<3>(0), z.segment<3>(6)).finished() - z_hat);
     dx = dx + L * residual;
   }
@@ -104,10 +124,11 @@ Vector19 GroundEstimator(Vector19 x_est, constantsASTRA_t constantsASTRA, Vector
     // Kalman Gain Weighting based on predicted acceleration
     Matrix18_18 ILH = (Matrix18_18::Identity() - L * H);
     P = ILH * P * ILH.transpose() + L * R * L.transpose();
-    P = (P + P.transpose()) / 2;
-    Vector6 residual = (z.segment<6>(9) - z_hat);
-    Vector18 inn = L * residual;
-    dx = dx + inn;
+    Matrix18_18 p_new_gps = (P + P.transpose()) / 2.0f;
+    P = p_new_gps;
+    Vector6 residual = (z.segment<6>(9) - z_hat) - H*dx;
+    ssPrintf("\n%lf", residual(1));
+    dx = dx + L * residual;
   }
 
   // Update full-state estimates
@@ -118,7 +139,7 @@ Vector19 GroundEstimator(Vector19 x_est, constantsASTRA_t constantsASTRA, Vector
   q_nom.normalize();
   x_est.segment<4>(0) = q_nom;
   x_est.segment<15>(4) = x_est.segment<15>(4) + dx.segment<15>(3);
-  x_est.segment<6>(4) = Vector6::Zero();
+  // x_est.segment<6>(4) = Vector6::Zero();
 
   return x_est;
 }
