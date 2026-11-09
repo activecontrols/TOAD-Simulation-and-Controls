@@ -140,8 +140,8 @@ static void mdlOutputs(SimStruct *S, int_T tid) {
     Controller_Output co = ControllerAndEstimator::get_controller_output(ci, X_trg_vec, U_ff_vec, dt, dt, &cs);
 
     // Assign commands to Output Port 0
-    u_cmd[0] = co.gimbal_pitch_deg;
-    u_cmd[1] = co.gimbal_yaw_deg;
+    u_cmd[0] = co.gimbal_yaw_deg;
+    u_cmd[1] = co.gimbal_pitch_deg;
     u_cmd[2] = co.thrust_N;
     u_cmd[3] = co.roll_rad_sec_squared;
 
