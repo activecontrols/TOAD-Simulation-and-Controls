@@ -70,7 +70,7 @@ Vector19 GroundEstimator(Vector19 x_est, constantsASTRA_t constantsASTRA, Vector
 
     // A priori covariance and Kalman gain
     Matrix18_6 L = P * H.transpose() * (H * P * H.transpose() + R).inverse();
-    // L.block<1, 6>(14, 0) = Vector6::Zero().transpose();
+    L.block<3, 6>(15, 0).setZero();
 
     // Predicted measurements
     Vector6 z_hat = (Vector6() << R_b2i.transpose() * (Vector3() << 0, 0, constantsASTRA.g).finished(), R_b2i.transpose() * constantsASTRA.mag).finished();
@@ -96,7 +96,7 @@ Vector19 GroundEstimator(Vector19 x_est, constantsASTRA_t constantsASTRA, Vector
 
     // A priori covariance and Kalman gain
     Matrix18_6 L = P * H.transpose() * (H * P * H.transpose() + R).inverse();
-    // L.block<1, 6>(14, 0) = Vector6::Zero().transpose();
+    L.block<3, 6>(15, 0).setZero();
 
     // Predicted measurements
     Vector6 z_hat = (Vector6() << x_est.segment<3>(4), x_est.segment<3>(7)).finished();

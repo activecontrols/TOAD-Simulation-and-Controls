@@ -55,7 +55,7 @@ static void mdlInitializeSizes(SimStruct *S) {
     ssSetOutputPortDataType(S, 0, SS_SINGLE);
 
     // Port 1: Telemetry / State Estimate
-    ssSetOutputPortWidth(S, 1, 19);
+    ssSetOutputPortWidth(S, 1, 15);
     ssSetOutputPortDataType(S, 1, SS_SINGLE);
 
     // Timing & Engine Options
@@ -73,7 +73,7 @@ static void mdlInitializeSizes(SimStruct *S) {
 
 static void mdlInitializeSampleTimes(SimStruct *S) {
     // 1 kHz discrete sample time (0.001 s)
-    ssSetSampleTime(S, 0, 0.001);
+    ssSetSampleTime(S, 0, 0.002);
     ssSetOffsetTime(S, 0, 0.0);
     ssSetModelReferenceSampleTimeDefaultInheritance(S);
 }
@@ -145,26 +145,22 @@ static void mdlOutputs(SimStruct *S, int_T tid) {
     u_cmd[2] = co.thrust_N;
     u_cmd[3] = co.roll_rad_sec_squared;
 
-    // Assign estimated state telemetry to Output Port 1
-    x_est[0]  = cs.x_est.q_vec_w;
-    x_est[1]  = cs.x_est.q_vec_x;
-    x_est[2]  = cs.x_est.q_vec_y;
-    x_est[3]  = cs.x_est.q_vec_z;
-    x_est[4]  = cs.x_est.est_pos_north;
-    x_est[5]  = cs.x_est.est_pos_west;
-    x_est[6]  = cs.x_est.est_pos_up;
-    x_est[7]  = cs.x_est.est_vel_north;
-    x_est[8]  = cs.x_est.est_vel_west;
-    x_est[9]  = cs.x_est.est_vel_up;
-    x_est[10] = cs.x_est.gyro_bias_yaw;
-    x_est[11] = cs.x_est.gyro_bias_pitch;
-    x_est[12] = cs.x_est.gyro_bias_roll;
-    x_est[13] = cs.x_est.accel_bias_x;
-    x_est[14] = cs.x_est.accel_bias_y;
-    x_est[15] = cs.x_est.accel_bias_z;
-    x_est[16] = cs.x_est.mag_bias_x;
-    x_est[17] = cs.x_est.mag_bias_y;
-    x_est[18] = cs.x_est.mag_bias_z;
+    // Assign 15-state Augmented Controls State to Output Port 1
+    x_est[0] = cs.x_est.q_vec_w;
+    x_est[1] = cs.x_est.q_vec_x;
+    x_est[2] = cs.x_est.q_vec_y;
+    x_est[3] = cs.x_est.q_vec_z;
+    x_est[4] = cs.x_est.est_pos_north;
+    x_est[5] = cs.x_est.est_pos_west;
+    x_est[6] = cs.x_est.est_pos_up;
+    x_est[7] = cs.x_est.est_vel_north;
+    x_est[8] = cs.x_est.est_vel_west;
+    x_est[9] = cs.x_est.est_vel_up;
+    x_est[10] = y_meas[3] - cs.x_est.gyro_bias_yaw;
+    x_est[11] = y_meas[4] - cs.x_est.gyro_bias_pitch;
+    x_est[12] = y_meas[5] - cs.x_est.gyro_bias_roll;
+    x_est[13] = 0.0f;
+    x_est[14] = 0.0f;
 }
 
 static void mdlTerminate(SimStruct *S) {

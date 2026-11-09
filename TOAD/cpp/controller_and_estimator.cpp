@@ -9,6 +9,9 @@ Vector19 x_est;
 Vector2 lastEMA;
 Matrix9_4 dnf_X;
 Matrix9_4 dnf_Y;
+Vector9 xhat_pos;
+Vector6 xhat_att;
+Vector4 last_U_cmd;
 float last_thrust;
 bool last_GND;
 const float tau = 0.03; // seconds - time constant for ema low pass filter applied to gimbal angles
@@ -78,6 +81,9 @@ void init_controller_and_estimator_constants() {
   lastEMA = Vector2::Zero();
   dnf_X = Matrix9_4::Ones();
   dnf_Y = Matrix9_4::Ones();
+  xhat_pos.setZero();
+  xhat_att.setZero();
+  last_U_cmd.setZero();
   last_thrust = 0;
   last_GND = true;
 
@@ -86,10 +92,6 @@ void init_controller_and_estimator_constants() {
 
 Controller_Output get_controller_output(Controller_Input ci, const Vector15 &X_trg, const Vector4 &U_ff, float ideal_dT, float loop_dT, Controller_Internals *cs) {
   Vector15 z;
-  static Vector9 xhat_pos = Vector9::Zero();
-  static Vector6 xhat_att = Vector6::Zero();
-  static Vector4 last_U_cmd = Vector4::Zero();
-
   // clang-format off
   z << ci.imu.accel_x, ci.imu.accel_y, ci.imu.accel_z, 
        ci.imu.gyro_yaw, ci.imu.gyro_pitch, ci.imu.gyro_roll,
@@ -123,8 +125,10 @@ Controller_Output get_controller_output(Controller_Input ci, const Vector15 &X_t
     x_est = FlightEstimator2(x_est, constantsASTRA, z, loop_dT, Flight_P, ci.new_mag_packet, ci.new_gps_packet, gps_vel_covar, gps_pos_covar);
   }
 
+  // CHANGE: Bias corrected rates
+  Vector3 omega_body = z.segment<3>(3) - x_est.segment<3>(10); 
   Vector15 X_ctrl;
-  X_ctrl << x_est.segment<10>(0), z.segment<3>(3), 0.0f, 0.0f;
+  X_ctrl << x_est.segment<10>(0), omega_body, 0.0f, 0.0f;
 
   // Run disturbance observers
   Vector3 a_dist = LESO_Position(ci.GND_val, X_ctrl, last_U_cmd, constantsASTRA.L_Thrust, constantsASTRA, loop_dT, xhat_pos);
@@ -157,6 +161,7 @@ Controller_Output get_controller_output(Controller_Input ci, const Vector15 &X_t
   co.thrust_N = raw_co(2);
   co.roll_rad_sec_squared = raw_co(3);
 
+  // Add the full estimated state 
   cs->x_est.q_vec_w = x_est(0);
   cs->x_est.q_vec_x = x_est(1);
   cs->x_est.q_vec_y = x_est(2);
