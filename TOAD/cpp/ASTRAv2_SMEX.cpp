@@ -159,9 +159,9 @@ static void mdlOutputs(SimStruct *S, int_T tid) {
     x_est[7] = cs.x_est.est_vel_north;
     x_est[8] = cs.x_est.est_vel_west;
     x_est[9] = cs.x_est.est_vel_up;
-    x_est[10] = y_meas[3] - cs.x_est.gyro_bias_yaw;
-    x_est[11] = y_meas[4] - cs.x_est.gyro_bias_pitch;
-    x_est[12] = y_meas[5] - cs.x_est.gyro_bias_roll;
+    x_est[10] = cs.filter_out[3] - cs.x_est.gyro_bias_yaw;
+    x_est[11] = cs.filter_out[4] - cs.x_est.gyro_bias_pitch;
+    x_est[12] = cs.filter_out[5] - cs.x_est.gyro_bias_roll;
     x_est[13] = 0.0f;
     x_est[14] = 0.0f;
 

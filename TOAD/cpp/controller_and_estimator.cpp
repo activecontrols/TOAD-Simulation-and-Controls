@@ -104,7 +104,7 @@ Controller_Output get_controller_output(Controller_Input ci, const Vector15 &X_t
   if (last_thrust < 1) { // prevent div by 0 in filter
     last_thrust = 9.8;
   }
-  Vector9 filt_imu = DigitalNF(imu, ci.GND_val, last_thrust / 14.7 * 100.0, ideal_dT, dnf_X, dnf_Y);
+  Vector9 filt_imu = DigitalNF(imu, ci.GND_val, last_thrust / constantsASTRA.MaxThrust * 100.0, ideal_dT, dnf_X, dnf_Y);
   z.segment<9>(0) = filt_imu;
 
   for (int i = 0; i < 9; i++) {
