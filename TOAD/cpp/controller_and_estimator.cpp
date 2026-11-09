@@ -52,7 +52,7 @@ void init_controller_and_estimator_constants() {
   constantsASTRA.MaxThrust = 16.0f;
   constantsASTRA.J << 0.067f, 0.067f, 0.02f;
   constantsASTRA.K_I = Matrix3_3::Identity();
-  constantsASTRA.K_I.diagonal() << 0.45f, 0.45f, 0.15f;
+  constantsASTRA.K_I.diagonal() << 0.25f, 0.25f, 0.25f;
   constantsASTRA.Q = Q_gen();
 
   // Gain Matrices (TODO: Check values)
@@ -160,6 +160,12 @@ Controller_Output get_controller_output(Controller_Input ci, const Vector15 &X_t
   co.gimbal_pitch_deg = new_gimbal_pitch;
   co.thrust_N = raw_co(2);
   co.roll_rad_sec_squared = raw_co(3);
+  co.dist_accel_x = a_dist(0);
+  co.dist_accel_y = a_dist(1);
+  co.dist_accel_z = a_dist(2);
+  co.dist_rate_x  = u_dist(0);
+  co.dist_rate_y  = u_dist(1);
+  co.dist_rate_z  = u_dist(2);
 
   // Add the full estimated state 
   cs->x_est.q_vec_w = x_est(0);

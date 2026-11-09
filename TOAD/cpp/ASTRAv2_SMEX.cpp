@@ -8,7 +8,6 @@
 #include "matlab_funcs.h"
 
 static void mdlInitializeSizes(SimStruct *S) {
-    // Zero parameters needed for MVP (assumes 1 kHz / 0.001 s loop)
     ssSetNumSFcnParams(S, 0);
     if (ssGetNumSFcnParams(S) != ssGetSFcnParamsCount(S)) {
         return; // Parameter mismatch
@@ -48,7 +47,7 @@ static void mdlInitializeSizes(SimStruct *S) {
     // Output Ports
     // Port 0: Actuator Commands U_cmd [pitch_deg; yaw_deg; thrust_N; roll_accel] = 4 floats
     // Port 1: Estimated State X_est [q(4); pos(3); vel(3); biases(9)] = 19 floats
-    if (!ssSetNumOutputPorts(S, 2)) return;
+    if (!ssSetNumOutputPorts(S, 3)) return;
 
     // Port 0: Commands
     ssSetOutputPortWidth(S, 0, 4);
@@ -57,6 +56,10 @@ static void mdlInitializeSizes(SimStruct *S) {
     // Port 1: Telemetry / State Estimate
     ssSetOutputPortWidth(S, 1, 15);
     ssSetOutputPortDataType(S, 1, SS_SINGLE);
+
+    // Port 2: Disturbance Estimate
+    ssSetOutputPortWidth(S, 2, 6);
+    ssSetOutputPortDataType(S, 2, SS_SINGLE);
 
     // Timing & Engine Options
     ssSetNumSampleTimes(S, 1);
@@ -72,7 +75,6 @@ static void mdlInitializeSizes(SimStruct *S) {
 }
 
 static void mdlInitializeSampleTimes(SimStruct *S) {
-    // 1 kHz discrete sample time (0.001 s)
     ssSetSampleTime(S, 0, 0.002);
     ssSetOffsetTime(S, 0, 0.0);
     ssSetModelReferenceSampleTimeDefaultInheritance(S);
@@ -96,6 +98,7 @@ static void mdlOutputs(SimStruct *S, int_T tid) {
     // Acquire output pointers (using ssGetOutputPortSignal for typed single-precision)
     real32_T *u_cmd = (real32_T*) ssGetOutputPortSignal(S, 0);
     real32_T *x_est = (real32_T*) ssGetOutputPortSignal(S, 1);
+    real32_T *DistLESO = (real32_T*) ssGetOutputPortSignal(S, 2);
 
     // Build Controller_Input struct
     Controller_Input ci{};
@@ -135,7 +138,7 @@ static void mdlOutputs(SimStruct *S, int_T tid) {
     Eigen::Map<const Vector4>  U_ff_vec(u_ff);
 
     // Step the C++ flight controller and estimator
-    const float dt = 0.001f;
+    const float dt = 0.002f;
     Controller_Internals cs{};
     Controller_Output co = ControllerAndEstimator::get_controller_output(ci, X_trg_vec, U_ff_vec, dt, dt, &cs);
 
@@ -161,6 +164,14 @@ static void mdlOutputs(SimStruct *S, int_T tid) {
     x_est[12] = y_meas[5] - cs.x_est.gyro_bias_roll;
     x_est[13] = 0.0f;
     x_est[14] = 0.0f;
+
+    // Assign disturbance estimates
+    DistLESO[0] = co.dist_accel_x;
+    DistLESO[1] = co.dist_accel_y;
+    DistLESO[2] = co.dist_accel_z;
+    DistLESO[3] = co.dist_rate_x;
+    DistLESO[4] = co.dist_rate_y;
+    DistLESO[5] = co.dist_rate_z;
 }
 
 static void mdlTerminate(SimStruct *S) {
