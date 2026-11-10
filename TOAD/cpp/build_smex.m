@@ -55,6 +55,7 @@ end
 objFiles = cell(size(sources));
 recompiled = 0;
 tTotal = tic;
+compile = mex.getCompilerConfigurations('CPP','Selected')
 
 for k = 1:numel(sources)
     srcFile = fullfile(cppDir, sources{k});
@@ -86,7 +87,7 @@ for k = 1:numel(sources)
 end
 
 % Link step
-mexTarget = fullfile(cppDir, 'ASTRAv2_SMEX.cpp');
+mexTarget = fullfile(cppDir, ['ASTRAv2_SMEX', mexext]);
 targetInfo = dir(mexTarget);
 needsLink = (recompiled > 0) || isempty(targetInfo);
 
