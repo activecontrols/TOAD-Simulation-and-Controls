@@ -1,5 +1,5 @@
 // Rotational Disturbance Observer
-// Pablo Plata 10/13/26
+// Pablo Plata & Alex 10/13/26
 
 #include "matlab_funcs.h"
 

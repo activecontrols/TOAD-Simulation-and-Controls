@@ -32,8 +32,8 @@ Vector4 ASTRAv2_Controller(bool GND, const Vector15 &X_est, const Vector15 &X_tr
   Vector3 vel_err = X_est.segment<3>(7) - X_trg.segment<3>(7);
 
   // Leaked integration for the translational integral trim
-  I_trans = I_trans * 0.999f + pos_err * dT;
-  Vector3 MaxInt = (Vector3() << 0.35f, 0.35f, 0.15f).finished();
+  I_trans = I_trans * 0.9999f + pos_err * dT;
+  Vector3 MaxInt = (Vector3() << 0.35f, 0.35f, 0.5f).finished();
   I_trans = I_trans.cwiseMin(MaxInt).cwiseMax(-MaxInt);
 
   Vector6 trans_err;

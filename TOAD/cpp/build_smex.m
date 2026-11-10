@@ -30,7 +30,6 @@ sources = {
     'DigitalNF.cpp'
     'Q_gen.cpp'
     'GroundEstimator.cpp'
-    'FlightEstimator.cpp'
     'FlightEstimator2.cpp'
     'LESO_Position.cpp'
     'LESO_Attitude.cpp'
@@ -55,7 +54,7 @@ end
 objFiles = cell(size(sources));
 recompiled = 0;
 tTotal = tic;
-compile = mex.getCompilerConfigurations('CPP','Selected')
+compile = mex.getCompilerConfigurations('CPP','Selected');
 
 for k = 1:numel(sources)
     srcFile = fullfile(cppDir, sources{k});
@@ -87,12 +86,13 @@ for k = 1:numel(sources)
 end
 
 % Link step
-mexTarget = fullfile(cppDir, ['ASTRAv2_SMEX', mexext]);
+mexTarget = fullfile(cppDir, ['ASTRAv2_SMEX.', mexext]); % Added '.' before mexext
 targetInfo = dir(mexTarget);
 needsLink = (recompiled > 0) || isempty(targetInfo);
 
 if needsLink
     fprintf('Linking ASTRAv2_SMEX... ');
+    clear mex; % Unload locked .mexw64 from memory before overwriting
     t0 = tic;
     mex(objFiles{:}, '-output', 'ASTRAv2_SMEX', '-outdir', cppDir);
     fprintf('(%.2f s)\n', toc(t0));
