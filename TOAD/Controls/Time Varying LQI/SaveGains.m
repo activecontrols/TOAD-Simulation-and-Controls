@@ -3,7 +3,7 @@ function SaveGains(filename, constantsTOAD)
     t = m(:, 1)';
     x = m(:, 2:16)';
     u = m(1:end-1, 17:20)';
-    
+
     [K_trans_List, K_rot_List, LA, LT] = GainGenerator(x, u, t, constantsTOAD);
     
     writematrix(K_trans_List, "Guidance\Trajectories\Gains\K_trans_" + filename + ".csv");
