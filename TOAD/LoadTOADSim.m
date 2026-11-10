@@ -112,7 +112,7 @@ TB_d = [0.01, 0.01, 0]';
 
 % Constant vars (varied usage)
 [windMerid, windZonal] = atmoshwm(40.4258686, -86.9080655, 186 + 50);
-accelBias = 0.02 * ones(3,1);
+accelBias = 0.01 * ones(3,1);
 gyroBias = 0.0 * ones(3, 1);
 distMode = 0;
 

@@ -92,11 +92,9 @@ Vector19 FlightEstimator2(Vector19 x_est, constantsASTRA_t constantsASTRA, Vecto
         H.block<3, 3>(3, 6) = Matrix3_3::Identity();
 
         // Measurement Covariance Matrix
-        Matrix3_3 GyroCovar = 1e-2f * Matrix3_3::Identity();
         Matrix6_6 R_gps = Matrix6_6::Zero();
-        R_gps.block<3, 3>(0, 0) = 0.1f * Matrix3_3::Identity();
-        Matrix3_3 cross_term = R_b2i * zetaCross(rGPS);
-        R_gps.block<3, 3>(3, 3) = 0.3f * Matrix3_3::Identity() + cross_term * GyroCovar * cross_term.transpose();
+        R_gps.block<3, 3>(0, 0) = 0.4 * Matrix3_3::Identity();
+        R_gps.block<3, 3>(3, 3) = 0.1 * Matrix3_3::Identity();
 
         // A priori covariance and Kalman gain
         Matrix12_6 L = P * H.transpose() * (H * P * H.transpose() + R_gps).inverse();
