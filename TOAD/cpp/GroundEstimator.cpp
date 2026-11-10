@@ -34,12 +34,8 @@ Vector19 GroundEstimator(Vector19 x_est, constantsASTRA_t constantsASTRA, Vector
      q = x_est.segment<4>(0);
   }
   else{
-
-    ssPrintf("\n euler angles %lf", eulerAngles.norm());
     x_est.segment<4>(0) = (HamiltonianProd(q) * (Vector4() << cos(eulerAngles.norm()*dT/2), eulerAngles.segment<3>(0)/(eulerAngles.norm())*sin(eulerAngles.norm()*dT/2)).finished());
-    
     q = x_est.segment<4>(0);
-    ssPrintf("\n quat %lf", q.norm());
   }
 
   // A-priori quaternion estimate and rotation matrix

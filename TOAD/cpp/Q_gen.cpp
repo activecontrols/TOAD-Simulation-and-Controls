@@ -3,8 +3,8 @@
 Matrix18_18 Q_gen() {
     float gyro_cov = 1e-5;
     float gyro_bias_cov = 1e-10;
-    float accel_proc_cov = 1e-5;
-    float accel_bias_cov = 1e-15;
+    float accel_proc_cov = 2e-3;
+    float accel_bias_cov = 1e-8;
     float mag_proc_cov = 1e-1;
     float mag_bias_cov = 1e-15; // * 3000;
 

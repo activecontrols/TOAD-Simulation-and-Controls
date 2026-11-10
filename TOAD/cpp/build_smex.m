@@ -15,7 +15,7 @@ else
     cppDir = fullfile(fileparts(fileparts(thisDir)), 'cpp');
 end
 
-eigenDir  = fullfile(cppDir, 'Extras', 'eigen-3.4.0', 'eigen-3.4.0');
+eigenDir  = fullfile(cppDir, 'Extras', 'eigen-3.4.0');
 extrasDir = fullfile(cppDir, 'Extras');
 objDir    = fullfile(cppDir, 'build_objs');
 if ~exist(objDir, 'dir'), mkdir(objDir); end
@@ -55,6 +55,7 @@ end
 objFiles = cell(size(sources));
 recompiled = 0;
 tTotal = tic;
+compile = mex.getCompilerConfigurations('CPP','Selected')
 
 for k = 1:numel(sources)
     srcFile = fullfile(cppDir, sources{k});
@@ -86,7 +87,7 @@ for k = 1:numel(sources)
 end
 
 % Link step
-mexTarget = fullfile(cppDir, 'ASTRAv2_SMEX.cpp');
+mexTarget = fullfile(cppDir, ['ASTRAv2_SMEX', mexext]);
 targetInfo = dir(mexTarget);
 needsLink = (recompiled > 0) || isempty(targetInfo);
 
