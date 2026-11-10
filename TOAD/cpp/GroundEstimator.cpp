@@ -30,7 +30,7 @@ Vector19 GroundEstimator(Vector19 x_est, constantsASTRA_t constantsASTRA, Vector
   Vector18 dx = Vector18::Zero();
   Vector4 q = x_est.segment<4>(0);
   Vector3 eulerAngles = z.segment<3>(3);
-  if ((eulerAngles.norm() < 0.00001) || dT == 0 || ){
+  if ((eulerAngles.norm() < 0.00001) || dT == 0 ){
      q = x_est.segment<4>(0);
   }
   else{
