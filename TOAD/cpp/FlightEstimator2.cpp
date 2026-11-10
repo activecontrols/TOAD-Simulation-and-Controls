@@ -22,15 +22,15 @@ Vector19 FlightEstimator2(Vector19 x_est, constantsASTRA_t constantsASTRA, Vecto
     // Extract quaternion
     Vector12 dx = Vector12::Zero();
     Vector4 q = x_est.segment<4>(0);
-    float gyro_norm = z.segment<3>(3).norm();
-    if (gyro_norm < 1e-5f || dT == 0.0f) {
-        x_est.segment<4>(0) = q;
-    } else {
-        float half_angle = gyro_norm * dT * 0.5f;
-        Vector4 delta_q;
-        delta_q << cosf(half_angle), (z.segment<3>(3) / gyro_norm) * sinf(half_angle);
-        x_est.segment<4>(0) = HamiltonianProd(q) * delta_q;
+    Vector3 eulerAngles = z.segment<3>(3);
+    if ((eulerAngles.norm() < 0.00001) || dT == 0 ){
+        q = x_est.segment<4>(0);
     }
+    else{
+        x_est.segment<4>(0) = (HamiltonianProd(q) * (Vector4() << cos(eulerAngles.norm()*dT/2), eulerAngles.segment<3>(0)/(eulerAngles.norm())*sin(eulerAngles.norm()*dT/2)).finished());
+        q = x_est.segment<4>(0);
+    }
+
     q = x_est.segment<4>(0) / x_est.segment<4>(0).norm();
 
     // A-priori quaternion estimate and rotation matrix
