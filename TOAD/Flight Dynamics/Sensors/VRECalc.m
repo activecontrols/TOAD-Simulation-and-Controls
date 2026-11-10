@@ -34,4 +34,9 @@ function [VRE, T, f] = VRECalc(throttle, G_RMAX, kGrom, bGrom, Kg2, lowEnd, high
     
     % VRE Induced bias
     VRE = Kg2 * GrmsIMU^2 * pi / 180;
+    if throttle <= 0
+        VRE = 0;
+        T = zeros(size(f));
+        return;
+    end
 end

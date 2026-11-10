@@ -308,9 +308,9 @@ end
 % the full target trajectory directly. The state ordering used here follows
 % the logged vehicle state convention from V3:
 %   [q(1:4), position(1:3), velocity(1:3), ...]
-if isempty(target_state_all) || size(target_state_all,3) < 10
+if isempty(target_state_all) || size(target_state_all,3) < 7
     error(['The full-state target trajectory was not logged with the expected ' ...
-           'position/velocity entries (states 5:10).']);
+           'position entries.']);
 end
 
 target_pos_all = target_state_all(:,:,5:7);

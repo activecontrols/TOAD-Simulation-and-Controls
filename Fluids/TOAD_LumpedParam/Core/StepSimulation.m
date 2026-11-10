@@ -420,27 +420,27 @@ function [State, FlowRates, System] = StepSimulation(State, dt, System, LinkStat
                     end
                 end
 
-                % Ignition triggers
-                SparkActive = false;
-                if isfield(Nodes(i), 'SparkActive') && Nodes(i).SparkActive
-                    SparkActive = true;
+                % Ignition trigger evaluation
+                IGN = false;
+                if nargin >= 4 && isstruct(LinkStates) && isfield(LinkStates, 'IGN')
+                    IGN = (LinkStates.IGN > 0.5 || isequal(LinkStates.IGN, true));
+                elseif isfield(State, 'CmdStates') && isfield(State.CmdStates, 'IGN')
+                    IGN = (State.CmdStates.IGN > 0.5 || isequal(State.CmdStates.IGN, true));
+                elseif isfield(Nodes(i), 'SparkActive') && Nodes(i).SparkActive
+                    IGN = true;
+                elseif isfield(Nodes(i), 'isLit') && Nodes(i).isLit
+                    IGN = true;
                 end
                 for j_sig = 1:N_L
                     if strcmpi(Links(j_sig).Type, 'signal') && LinkMap(j_sig, 2) == i
                         if Links(j_sig).Cv > 0.5 || Links(j_sig).State > 0.5
-                            SparkActive = true;
+                            IGN = true;
                         end
                     end
                 end
 
-                TorchActive = false;
-                if Inflow.mdot_n2 > 0.001 && isfield(Nodes(i), 'TorchLit') && Nodes(i).TorchLit
-                    TorchActive = true;
-                end
-
-                % Advance Combustor
-                [Nodes(i), mdot_nozzle, ~, ~] = StepCombustor(...
-                    Nodes(i), Inflow, Nozzle, dt, SparkActive, TorchActive, 0.0);
+                % Advance Combustor via analytical SKIPPER propulsion model
+                [Nodes(i), mdot_nozzle, ~] = SKIPPER_Model(Nodes(i), Inflow, Nozzle, dt, IGN);
 
                 % Update nozzle link flow if present
                 if nozzle_link_idx > 0
