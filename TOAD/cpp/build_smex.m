@@ -86,7 +86,7 @@ for k = 1:numel(sources)
 end
 
 % Link step
-mexTarget = fullfile(cppDir, ['ASTRAv2_SMEX.' mexext]);
+mexTarget = fullfile(cppDir, 'ASTRAv2_SMEX.cpp');
 targetInfo = dir(mexTarget);
 needsLink = (recompiled > 0) || isempty(targetInfo);
 

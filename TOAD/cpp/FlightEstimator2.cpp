@@ -1,4 +1,5 @@
 #include "matlab_funcs.h"
+#include "simstruc.h"
 
 Matrix12_12 FlightStateTransitionMat2(Vector3 accel, Vector3 gyro, Matrix3_3 R_b2i) {
     Matrix12_12 F = Matrix12_12::Zero();
@@ -60,15 +61,21 @@ Vector19 FlightEstimator2(Vector19 x_est, constantsASTRA_t constantsASTRA, Vecto
     // Matrix updates for the mags
     R_mag = 1e-2f * MagMatrix + 1e-8f * (z.segment<3>(6) * z.segment<3>(6).transpose());
 
+    ssPrintf("\n step 0 apriori P: %lf", P(3,3));
+    ssPrintf("\n step 0 apriori Q: %lf", Q(3,3));
     // Process Noise Covariance and a-priori propagation step
     P = Phi * P * Phi.transpose() + Q;
-    P = (P + P.transpose()) / 2.0f;
-
+    ssPrintf("\n step 1 apriori P: %lf", P(3,3));
+    Matrix12_12 p_new = (P + P.transpose()) / 2.0f;
+    P = p_new;
+    ssPrintf("\napriori P: %lf", P(3,3));
+  
     // IMU Update
     if (new_mag_packet) {
         // Measurement matrix
         Matrix3_12 H = Matrix3_12::Zero();
         H.block<3, 3>(0, 0) = zetaCross(R_b2i.transpose() * constantsASTRA.mag);
+        ssPrintf("\nH: %lf", H(0,0));
 
         // Predicted measurements
         Vector3 z_hat = R_b2i.transpose() * constantsASTRA.mag;
@@ -79,7 +86,10 @@ Vector19 FlightEstimator2(Vector19 x_est, constantsASTRA_t constantsASTRA, Vecto
         // Kalman Gain Weighting based on predicted acceleration
         Matrix12_12 ILH = (Matrix12_12::Identity() - L * H);
         P = ILH * P * ILH.transpose() + L * R_mag * L.transpose();
-        P = (P + P.transpose()) / 2.0f;
+        ssPrintf("\nP: %lf", P(3,3));
+        Matrix12_12 p_new_gain = (P + P.transpose()) / 2.0f;
+        P = p_new_gain;
+        ssPrintf("P new: %lf", P(3,3));
         Vector3 residual = (z.segment<3>(6) - z_hat);
         dx = dx + L * residual;
     }
@@ -106,7 +116,8 @@ Vector19 FlightEstimator2(Vector19 x_est, constantsASTRA_t constantsASTRA, Vecto
         // Kalman Gain Weighting based on predicted acceleration
         Matrix12_12 ILH = (Matrix12_12::Identity() - L * H);
         P = ILH * P * ILH.transpose() + L * R_gps * L.transpose();
-        P = (P + P.transpose()) / 2.0f;
+        Matrix12_12 p_new_gps = (P + P.transpose()) / 2.0f;
+        P = p_new_gps;
         Vector6 residual = (z.segment<6>(9) - z_hat) - H * dx;
         Vector12 inn = L * residual;
         dx = dx + inn;
