@@ -20,10 +20,6 @@ Vector19 GroundEstimator(Vector19 x_est, constantsASTRA_t constantsASTRA, Vector
                          Matrix3_3 gps_pos_covar) {
   // M-EKF Implementation
   // Remove bias from IMU
-    ssPrintf("\n");
-  ssPrintf("\n testin %lf", x_est.segment<3>(13).norm());
-    ssPrintf("\n which breaks %lf", x_est.segment<3>(10).norm());
-    ssPrintf("\n help meeee %lf", x_est.segment<3>(16).norm());
   z.segment<3>(0) = z.segment<3>(0) - x_est.segment<3>(13);
   z.segment<3>(3) = z.segment<3>(3) - x_est.segment<3>(10);
   z.segment<3>(6) = z.segment<3>(6) - x_est.segment<3>(16);
@@ -88,8 +84,7 @@ Vector19 GroundEstimator(Vector19 x_est, constantsASTRA_t constantsASTRA, Vector
 
     // A priori covariance and Kalman gain
     Matrix18_6 L = P * H.transpose() * (H * P * H.transpose() + R).inverse();
-    L.block<3,6>(15,0) = Matrix3_6::Zero();
-    // L.block<1, 6>(14, 0) = Vector6::Zero().transpose();
+    L.block<3, 6>(15, 0).setZero();
 
     // Predicted measurements
     Vector6 z_hat = (Vector6() << R_b2i.transpose() * (Vector3() << 0, 0, constantsASTRA.g).finished(), R_b2i.transpose() * constantsASTRA.mag).finished();
@@ -116,7 +111,7 @@ Vector19 GroundEstimator(Vector19 x_est, constantsASTRA_t constantsASTRA, Vector
 
     // A priori covariance and Kalman gain
     Matrix18_6 L = P * H.transpose() * (H * P * H.transpose() + R).inverse();
-    // L.block<1, 6>(14, 0) = Vector6::Zero().transpose();
+    L.block<3, 6>(15, 0).setZero();
 
     // Predicted measurements
     Vector6 z_hat = (Vector6() << x_est.segment<3>(4), x_est.segment<3>(7)).finished();
@@ -127,8 +122,8 @@ Vector19 GroundEstimator(Vector19 x_est, constantsASTRA_t constantsASTRA, Vector
     Matrix18_18 p_new_gps = (P + P.transpose()) / 2.0f;
     P = p_new_gps;
     Vector6 residual = (z.segment<6>(9) - z_hat) - H*dx;
-    ssPrintf("\n%lf", residual(1));
-    dx = dx + L * residual;
+    Vector18 inn = L * residual;
+    dx = dx + inn;
   }
 
   // Update full-state estimates
@@ -139,7 +134,7 @@ Vector19 GroundEstimator(Vector19 x_est, constantsASTRA_t constantsASTRA, Vector
   q_nom.normalize();
   x_est.segment<4>(0) = q_nom;
   x_est.segment<15>(4) = x_est.segment<15>(4) + dx.segment<15>(3);
-  // x_est.segment<6>(4) = Vector6::Zero();
+  x_est.segment<6>(4) = Vector6::Zero();
 
   return x_est;
 }

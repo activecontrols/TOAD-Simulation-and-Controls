@@ -41,7 +41,7 @@ Vector4 ASTRAv2_Controller(bool GND, const Vector15 &X_est, const Vector15 &X_tr
   Vector3 Delta_A = -constantsASTRA.K_trans * trans_err - constantsASTRA.K_I * I_trans;
 
   // Acceleration saturation limit
-  Vector3 MaxAccelCorr = (Vector3() << 1.5f, 1.5f, 4.0f).finished();
+  Vector3 MaxAccelCorr = (Vector3() << 3.5f, 3.5f, 5.0f).finished();
   Delta_A = Delta_A.cwiseMin(MaxAccelCorr).cwiseMax(-MaxAccelCorr);
 
   // Nominal Trajectory Acceleration

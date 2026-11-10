@@ -106,6 +106,12 @@ struct Controller_Output {
   float roll_rad_sec_squared;
   float gimbal_pitch_deg;
   float gimbal_yaw_deg;
+  float dist_accel_x;
+  float dist_accel_y;
+  float dist_accel_z;
+  float dist_rate_x;
+  float dist_rate_y;
+  float dist_rate_z;
 };
 
 // telemetry packet sent by vehicle to the UI

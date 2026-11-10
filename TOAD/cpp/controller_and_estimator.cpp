@@ -10,6 +10,9 @@ Vector19 x_est;
 Vector2 lastEMA;
 Matrix9_4 dnf_X;
 Matrix9_4 dnf_Y;
+Vector9 xhat_pos;
+Vector6 xhat_att;
+Vector4 last_U_cmd;
 float last_thrust;
 bool last_GND;
 const float tau = 0.03; // seconds - time constant for ema low pass filter applied to gimbal angles
@@ -50,7 +53,7 @@ void init_controller_and_estimator_constants() {
   constantsASTRA.MaxThrust = 16.0f;
   constantsASTRA.J << 0.067f, 0.067f, 0.02f;
   constantsASTRA.K_I = Matrix3_3::Identity();
-  constantsASTRA.K_I.diagonal() << 0.45f, 0.45f, 0.15f;
+  constantsASTRA.K_I.diagonal() << 0.25f, 0.25f, 0.25f;
   constantsASTRA.Q = Q_gen();
 
   // Gain Matrices (TODO: Check values)
@@ -80,6 +83,9 @@ void init_controller_and_estimator_constants() {
   lastEMA = Vector2::Zero();
   dnf_X = Matrix9_4::Ones();
   dnf_Y = Matrix9_4::Ones();
+  xhat_pos.setZero();
+  xhat_att.setZero();
+  last_U_cmd.setZero();
   last_thrust = 0;
   last_GND = true;
 
@@ -88,10 +94,6 @@ void init_controller_and_estimator_constants() {
 
 Controller_Output get_controller_output(Controller_Input ci, const Vector15 &X_trg, const Vector4 &U_ff, float ideal_dT, float loop_dT, Controller_Internals *cs) {
   Vector15 z;
-  static Vector9 xhat_pos = Vector9::Zero();
-  static Vector6 xhat_att = Vector6::Zero();
-  static Vector4 last_U_cmd = Vector4::Zero();
-
   // clang-format off
   z << ci.imu.accel_x, ci.imu.accel_y, ci.imu.accel_z, 
        ci.imu.gyro_yaw, ci.imu.gyro_pitch, ci.imu.gyro_roll,
@@ -104,7 +106,7 @@ Controller_Output get_controller_output(Controller_Input ci, const Vector15 &X_t
   if (last_thrust < 1) { // prevent div by 0 in filter
     last_thrust = 9.8;
   }
-  Vector9 filt_imu = DigitalNF(imu, ci.GND_val, last_thrust / 14.7 * 100.0, ideal_dT, dnf_X, dnf_Y);
+  Vector9 filt_imu = DigitalNF(imu, ci.GND_val, last_thrust / constantsASTRA.MaxThrust * 100.0, ideal_dT, dnf_X, dnf_Y);
   z.segment<9>(0) = filt_imu;
 
   for (int i = 0; i < 9; i++) {
@@ -132,8 +134,10 @@ Controller_Output get_controller_output(Controller_Input ci, const Vector15 &X_t
     ssPrintf("\nZ: %lf", x_est(2));
   }
 
+  // CHANGE: Bias corrected rates
+  Vector3 omega_body = z.segment<3>(3) - x_est.segment<3>(10); 
   Vector15 X_ctrl;
-  X_ctrl << x_est.segment<10>(0), z.segment<3>(3), 0.0f, 0.0f;
+  X_ctrl << x_est.segment<10>(0), omega_body, 0.0f, 0.0f;
 
   // Run disturbance observers
   Vector3 a_dist = LESO_Position(ci.GND_val, X_ctrl, last_U_cmd, constantsASTRA.L_Thrust, constantsASTRA, loop_dT, xhat_pos);
@@ -165,7 +169,14 @@ Controller_Output get_controller_output(Controller_Input ci, const Vector15 &X_t
   co.gimbal_pitch_deg = new_gimbal_pitch;
   co.thrust_N = raw_co(2);
   co.roll_rad_sec_squared = raw_co(3);
+  co.dist_accel_x = a_dist(0);
+  co.dist_accel_y = a_dist(1);
+  co.dist_accel_z = a_dist(2);
+  co.dist_rate_x  = u_dist(0);
+  co.dist_rate_y  = u_dist(1);
+  co.dist_rate_z  = u_dist(2);
 
+  // Add the full estimated state 
   cs->x_est.q_vec_w = x_est(0);
   cs->x_est.q_vec_x = x_est(1);
   cs->x_est.q_vec_y = x_est(2);
