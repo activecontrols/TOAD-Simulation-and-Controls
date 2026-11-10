@@ -40,6 +40,7 @@ Vector19 FlightEstimator2(Vector19 x_est, constantsASTRA_t constantsASTRA, Vecto
     // GPS velocity correction
     Vector3 rGPS = (Vector3() << 0.0f, 0.0f, 0.31f).finished();
     z.segment<3>(12) = z.segment<3>(12) - R_b2i * z.segment<3>(3).cross(rGPS);
+    z.segment<3>(9) = z.segment<3>(9) - R_b2i * rGPS;
 
     // State Transition Matrix
     Matrix12_12 F = FlightStateTransitionMat2(z.segment<3>(0), z.segment<3>(3), R_b2i);
@@ -103,8 +104,8 @@ Vector19 FlightEstimator2(Vector19 x_est, constantsASTRA_t constantsASTRA, Vecto
 
         // Measurement Covariance Matrix
         Matrix6_6 R_gps = Matrix6_6::Zero();
-        R_gps.block<3, 3>(0, 0) = 0.4 * Matrix3_3::Identity();
-        R_gps.block<3, 3>(3, 3) = 0.1 * Matrix3_3::Identity();
+        R_gps.block<3, 3>(0, 0) = 0.2 * Matrix3_3::Identity();
+        R_gps.block<3, 3>(3, 3) = 0.02 * Matrix3_3::Identity();
 
         // A priori covariance and Kalman gain
         Matrix12_6 L = P * H.transpose() * (H * P * H.transpose() + R_gps).inverse();

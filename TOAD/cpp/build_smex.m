@@ -15,7 +15,7 @@ else
     cppDir = fullfile(fileparts(fileparts(thisDir)), 'cpp');
 end
 
-eigenDir  = fullfile(cppDir, 'Extras', 'eigen-3.4.0', 'eigen-3.4.0');
+eigenDir  = fullfile(cppDir, 'Extras', 'eigen-3.4.0');
 extrasDir = fullfile(cppDir, 'Extras');
 objDir    = fullfile(cppDir, 'build_objs');
 if ~exist(objDir, 'dir'), mkdir(objDir); end
