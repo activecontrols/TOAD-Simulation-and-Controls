@@ -19,7 +19,7 @@ classdef TrajectoryOptimizerHybrid < handle
 
         %% Costs
         WeightTrackPos double = 1.00; WeightTrackVel double = 0.50; WeightTrackAtt double = 0.1
-        WeightTrackTime double = 0; WeightCorridor double = 1.00
+        WeightTrackTime double = 0.5; WeightCorridor double = 1.00
         WeightSlew double = 0.1; WeightCurv double = 0.1
 
         Maneuver string = "Circle"; ManeuverParams struct = struct()
