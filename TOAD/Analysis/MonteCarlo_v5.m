@@ -41,12 +41,12 @@ B_nom = G.C / (2 * sqrt(K_nom * m_FC));
 
 %% V5 disturbance settings (all dispersion sizes in one place)
 % Inertia: symmetric +/- fraction of nominal per principal axis
-J_frac = 0.10;
+J_frac = 0.15;
 
 % Mean wind, at the 6 m reference height used by the Dryden block
 wind_sweep         = false;   % true: uniform 0..wind_max (envelope search)
-wind_max           = 12;      % m/s, upper end of the envelope sweep
-wind_weibull_scale = 4.0;     % m/s, operational campaign
+wind_max           = 15;      % m/s, upper end of the envelope sweep
+wind_weibull_scale = 5.0;     % m/s, operational campaign
 wind_weibull_shape = 2.0;     % Rayleigh-like; matches measured surface wind
 dryden_W6          = 15;      % m/s, "Wind speed at 6 m" set in the Dryden block mask
 turb_mult_range    = [0.5, 2.0]; % multiplier on spec turbulence intensity
@@ -365,6 +365,10 @@ Att_Err_Max = max(att_err_deg(:, eval_idx), [], 2);            % deg
 
 Fail_Error    = ~ok(:);
 Fail_NoData   = isnan(Pos_Err_Max) | isnan(Att_Err_Max);
+
+% Quick override for failiure anaysis, failure errors are 2 sigma bounds
+pos_err_fail = std(Pos_Err_Max) * 2;
+att_err_fail = std(Att_Err_Max) * 2;
 Fail_Position = Pos_Err_Max > pos_err_fail;
 Fail_Attitude = Att_Err_Max > att_err_fail;
 MC_Fail = Fail_Error | Fail_NoData | Fail_Position | Fail_Attitude;
