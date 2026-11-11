@@ -12,7 +12,7 @@
 
 %% Configuration
 model_name = 'TOAD_Simulation_CPP';
-num_sims = 50;
+num_sims = 250;
 
 % Set to true for a new random batch every run, or false to lock a specific seed
 use_random_master_seed = true; 
@@ -63,7 +63,7 @@ sigma_softIron  = 0.01;                   % per element of the (symmetric) matri
 
 % Pass/fail thresholds (after the pad hold)
 pad_hold_time   = 15;      % s, PadHoldTime in TrajectoryManager
-pos_err_fail    = 2.0;     % m, matches max_x_trans position limit
+pos_err_fail    = 1.0;     % m, matches max_x_trans position limit
 att_err_fail    = 15;      % deg
 
 %% Preallocate Monte Carlo disturbance arrays

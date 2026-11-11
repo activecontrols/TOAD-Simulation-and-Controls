@@ -32,13 +32,13 @@ Vector4 ASTRAv2_Controller(bool GND, const Vector15 &X_est, const Vector15 &X_tr
   Vector3 vel_err = X_est.segment<3>(7) - X_trg.segment<3>(7);
 
   // Leaked integration for the translational integral trim
-  I_trans = I_trans * 0.9999f + pos_err * dT;
+  I_trans = I_trans * 0.9999f +  constantsASTRA.K_I * pos_err * dT;
   Vector3 MaxInt = (Vector3() << 0.35f, 0.35f, 0.5f).finished();
   I_trans = I_trans.cwiseMin(MaxInt).cwiseMax(-MaxInt);
 
   Vector6 trans_err;
   trans_err << pos_err, vel_err;
-  Vector3 Delta_A = -constantsASTRA.K_trans * trans_err - constantsASTRA.K_I * I_trans;
+  Vector3 Delta_A = -constantsASTRA.K_trans * trans_err - I_trans;
 
   // Acceleration saturation limit
   Vector3 MaxAccelCorr = (Vector3() << 3.5f, 3.5f, 5.0f).finished();
@@ -67,35 +67,8 @@ Vector4 ASTRAv2_Controller(bool GND, const Vector15 &X_est, const Vector15 &X_tr
   Vector3 Z_B_trg = C_B2I_ref * (T_B_ff / fmaxf(tb_norm, 1e-4f));
   float z_curr = X_est[6];
   float vz_curr = X_est[9];
-
-  // Altitude & Sink - Rate Adaptive Cone Clamping
-  // TODO (Pablo): Check if this is even worth having, or if u can simplify the logic on this.
-  // If current velocity is negative indicating descent, we calculate the
-  // stopping distance given our current altitude target and limit the
-  // tilt accordingly.
-  float MaxConeAng = 20.0f * M_PI / 180.0f;
-  if (vz_curr < -1.0f) {
-    float thrustDist = fminf(a_dist(2), 0.0f);
-    float availAccel = fmaxf((constantsASTRA.MaxThrust / Mass + thrustDist) - constantsASTRA.g, 0.4f);
-    float stopDist = 0.5f * (vz_curr * vz_curr) / availAccel;
-
-    if (z_curr < stopDist * 1.35f + 2.5f) {
-      // Emergency Braking Pullout: Lock thrust strictly vertical to maximize deceleration
-      MaxConeAng = 10.0f * M_PI / 180.0f;
-      f_req(2) = fmaxf(f_req(2), constantsASTRA.MaxThrust / Mass);
-    } else if (z_curr < stopDist * 1.50f + 5.0f) {
-      // Anticipatory Braking, squeeze cone angle smoothly
-      float coneRatio = (z_curr - stopDist) / fmaxf(stopDist, 1.0f);
-      float clampedRatio = fminf(fmaxf(coneRatio, 0.3f), 1.0f);
-      MaxConeAng = (15.0f * M_PI / 180.0f) * clampedRatio;
-      f_req(2) = fmaxf(f_req(2), constantsASTRA.g + 1.2f);
-    } else {
-      MaxConeAng = 20.0f * M_PI / 180.0f;
-    }
-  } else {
-    MaxConeAng = 20.0f * M_PI / 180.0f;
-  }
-
+  float MaxConeAng = 25.0f * M_PI / 180.0f;
+  
   // Project the required force direction into the allowable cone relative
   // to nominal thrust axis
   float norm_f = f_req.norm();
