@@ -116,8 +116,6 @@ Controller_Output get_controller_output(Controller_Input ci, const Vector15 &X_t
   if (!ci.GND_val && last_GND) { // we left GND this frame
     Flight_P = P.block<12, 12>(0,0);
     
-    ssPrintf("flight: %lf", Flight_P(3,3));
-    ssPrintf("\ngoing to flight");
     ASTRAv2_Controller_reset(); // reset integral gains in the controller itself
   }
 
@@ -125,13 +123,10 @@ Controller_Output get_controller_output(Controller_Input ci, const Vector15 &X_t
   Matrix3_3 gps_pos_covar = get_pos_cov_mtx(ci.gps);
 
   if (ci.GND_val) {
-      ssPrintf("ground: %lf", P(3,3));
     x_est = GroundEstimator(x_est, constantsASTRA, z, loop_dT, P, ci.new_mag_packet, ci.new_gps_packet, gps_vel_covar, gps_pos_covar);
   } else {
     
     x_est = FlightEstimator2(x_est, constantsASTRA, z, loop_dT, Flight_P, ci.new_mag_packet, ci.new_gps_packet, gps_vel_covar, gps_pos_covar);
-    ssPrintf("\nflight");
-    ssPrintf("\nZ: %lf", x_est(2));
   }
 
   // CHANGE: Bias corrected rates

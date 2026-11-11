@@ -1,4 +1,4 @@
-function [U_cmd, SpecRad, X_err] = TOAD_TVLQI_2(GND, X_est, X_trg, U_ff, K, t, constantsTOAD, Dist_LESO)
+function [U_cmd, SpecRad, X_err] = TOAD_TVLQI_2(GND, X_est, X_trg, U_ff, t, constantsTOAD, Dist_LESO)
 % LESO Augmented Time Varying LQR formulation
 %
 %   Augmented with Dynamic Cone Clamping & Altitude Pullout Protection to
@@ -29,9 +29,10 @@ function [U_cmd, SpecRad, X_err] = TOAD_TVLQI_2(GND, X_est, X_trg, U_ff, K, t, c
         Dist_LESO = zeros(6,1);
     end
 
+    
     % Unpack gains and disturbance estimates
-    K_trans  = K(1:3, 1:6);
-    K_rot    = K(4:6, 1:6);
+    K_trans  = constantsTOAD.K_Trans;
+    K_rot    = constantsTOAD.K_Rot;
     a_dist   = Dist_LESO(1:3);
     ang_accel_dist = Dist_LESO(4:6);
     

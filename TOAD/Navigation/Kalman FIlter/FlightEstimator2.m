@@ -24,6 +24,7 @@ R_b2i = quatRot(q)';
 % GPS velocity correction
 rGPS = [0 0 0.31]';
 z(13:15) = z(13:15) - R_b2i * cross(z(4:6), rGPS);
+z(10:12) = z(10:12) - R_b2i * rGPS;
 
 % Process Covariance Matrix
 persistent P lastZ 

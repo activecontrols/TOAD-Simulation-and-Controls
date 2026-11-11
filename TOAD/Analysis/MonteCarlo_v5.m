@@ -63,7 +63,7 @@ sigma_softIron  = 0.01;                   % per element of the (symmetric) matri
 
 % Pass/fail thresholds (after the pad hold)
 pad_hold_time   = 15;      % s, PadHoldTime in TrajectoryManager
-pos_err_fail    = 2.0;     % m, matches max_x_trans position limit
+pos_err_fail    = 1.0;     % m, matches max_x_trans position limit
 att_err_fail    = 15;      % deg
 
 %% Preallocate Monte Carlo disturbance arrays
