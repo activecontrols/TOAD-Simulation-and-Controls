@@ -53,7 +53,7 @@ void init_controller_and_estimator_constants() {
   constantsASTRA.MaxThrust = 16.0f;
   constantsASTRA.J << 0.067f, 0.067f, 0.02f;
   constantsASTRA.K_I = Matrix3_3::Identity();
-  constantsASTRA.K_I.diagonal() << 0.25f, 0.25f, 0.25f;
+  constantsASTRA.K_I.diagonal() << 0.15f, 0.15f, 0.15f;
   constantsASTRA.Q = Q_gen();
 
   // Gain Matrices (TODO: Check values)

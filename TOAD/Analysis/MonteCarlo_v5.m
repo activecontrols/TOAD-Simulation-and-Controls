@@ -12,7 +12,7 @@
 
 %% Configuration
 model_name = 'TOAD_Simulation_CPP';
-num_sims = 50;
+num_sims = 250;
 
 % Set to true for a new random batch every run, or false to lock a specific seed
 use_random_master_seed = true; 
