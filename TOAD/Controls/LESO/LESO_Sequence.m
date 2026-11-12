@@ -2,8 +2,9 @@
 % Coordinates the parallel execution of the Translational and Rotational LESOs.
 % Returns a consolidated disturbance vector: Dist = [a_dist; U_dist]
 
-function Dist = LESO_Sequence(GND, X_est, X_trg, U_cmd, L_Att, L_Thrust, constantsTOAD, t)
-    
+function Dist = LESO_Sequence(GND, X_est, X_trg, U_cmd, constantsTOAD, t)
+    L_Thrust = constantsTOAD.L_Thrust;
+    L_Att = constantsTOAD.L_Att;
     % Position/Velocity LESO (Translational Disturbance Acceleration)
     a_dist = LESO_Position(GND, X_est, X_trg, U_cmd, L_Thrust, constantsTOAD, t);
     
