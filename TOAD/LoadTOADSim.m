@@ -105,7 +105,6 @@ busInfo = Simulink.Bus.createObject(constants6DoF);
 topLevelBusName = busInfo(end).busName;
 Vehicle_Bus = evalin('base', topLevelBusName);
 
-Waypoints = TrajectoryBuilder;
 J_d = constants6DoF.J * 0.1;
 MaxMdot_d = 0;
 TB_d = [0.01, 0.01, 0]';
