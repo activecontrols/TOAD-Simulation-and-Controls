@@ -28,39 +28,78 @@ function [InitialGuess, QPTraj, Report] = PolyQP(Waypoints, Constants, Opts)
         return;
     end
 
-    % 4. Unified Evaluate -> Dilation Loop
+    % 4. Unified Evaluate -> Bidirectional Time Scaling Loop
     MaxOuter = 40;
     stallCount = 0;
     outerIter = 0;
+
+    M = Plan.SegCount;
+    canContract = true(1, M);
+    for m = 1:M
+        if Plan.IsHold(m) || Plan.IsCruise(m)
+            canContract(m) = false;
+        else
+            % Only contract segments whose fixed derivative BCs (order >= 1) are homogeneous (0 or NaN)
+            dA = Plan.FixCg(:, 2:r, m);
+            dB = Plan.FixCg(:, 2:r, m + 1);
+            if any(dA(:) ~= 0 & ~isnan(dA(:))) || any(dB(:) ~= 0 & ~isnan(dB(:)))
+                canContract(m) = false;
+            end
+        end
+    end
+    hasDilated = false(1, M);
 
     [EvalOut, Feasible] = evaluateConstraints(QPTraj, Plan, Constants, Limits);
     bestUtil = EvalOut.MaxOverallUtil;
     bestSegT = Plan.SegT;
     prevSegUtil = max(EvalOut.SegUtil, [], 1);
 
-    while ~Feasible && outerIter < MaxOuter
-        outerIter = outerIter + 1;
+    while outerIter < MaxOuter
+        didScale = false;
+        didContract = false;
 
-        % Monotone per-segment dilation: T_m <- T_m * 1.02 * max_c (u_c)^(1/k_c)
-        didStretch = false;
-        M = Plan.SegCount;
         for m = 1:M
-            if ~Plan.IsHold(m) && ~Plan.IsCruise(m) && EvalOut.SegDilate(m) > 1.0
-                s_apply = min(2.0, 1.02 * EvalOut.SegDilate(m));
-                Plan.SegT(m) = Plan.SegT(m) * s_apply;
-                didStretch = true;
+            if ~Plan.IsHold(m) && ~Plan.IsCruise(m)
+                sm = EvalOut.SegDilate(m);
+                if sm > 1.0
+                    s_apply = min(2.0, 1.02 * sm);
+                    Plan.SegT(m) = Plan.SegT(m) * s_apply;
+                    hasDilated(m) = true;
+                    didScale = true;
+                elseif Feasible && canContract(m) && ~hasDilated(m) && (1.02 * sm < 0.97) && (Plan.SegT(m) > Limits.MinSegTime + 1e-6)
+                    s_apply = max(0.60, 1.02 * sm);
+                    T_new = max(Limits.MinSegTime, Plan.SegT(m) * s_apply);
+                    if T_new < Plan.SegT(m) - 1e-6
+                        Plan.SegT(m) = T_new;
+                        didScale = true;
+                        didContract = true;
+                    end
+                end
             end
         end
 
-        if ~didStretch
+        if ~didScale
             break;
         end
+
+        outerIter = outerIter + 1;
 
         % Re-solve legs with updated segment durations (no time redistribution inside loop)
         [Plan, QPTraj] = solveAllLegs(Plan, A0, H0, Limits, false);
         [EvalOut, Feasible] = evaluateConstraints(QPTraj, Plan, Constants, Limits);
 
-        % Stall detection: continue as long as any active segment's max utilisation improved
+        if didContract
+            % Update baseline after contraction step
+            bestUtil = EvalOut.MaxOverallUtil;
+            if Feasible
+                bestSegT = Plan.SegT;
+            end
+            prevSegUtil = max(EvalOut.SegUtil, [], 1);
+            stallCount = 0;
+            continue;
+        end
+
+        % Stall detection during dilation phase
         curSegUtil = max(EvalOut.SegUtil, [], 1);
         violMask = curSegUtil > 1.0 + 1e-3;
         madeProgress = (EvalOut.MaxOverallUtil < bestUtil - 1e-4) || ...
