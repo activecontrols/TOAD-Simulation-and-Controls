@@ -8,13 +8,12 @@ function [CoefPhys, Deriv, Cost] = solveLeg(FixLeg, SegTimes, A0, H0)
     nv = r * K;
 
     % Assemble global endpoint-derivative Hessian Rmat over leg knots
-    % Normalized per-segment weight T_m^(2r-2) * T_m^(1-2r) = T_m^(-1) eliminates
-    % high-order stiffness mismatch across unequal segment durations while preserving C^(r-1) continuity
+    % Physical action integral weight T_m^(1-2r) for squared r-th derivative over [0, T_m]
     Rmat = zeros(nv, nv);
     for m = 1:M
         Tm = SegTimes(m);
         s = [Tm .^ (0:(r - 1)), Tm .^ (0:(r - 1))].';
-        Hm = (1 / Tm) * (s * s.') .* H0;
+        Hm = (Tm ^ (1 - 2 * r)) * (s * s.') .* H0;
         ix = (m - 1) * r + (1:nc);
         Rmat(ix, ix) = Rmat(ix, ix) + Hm;
     end

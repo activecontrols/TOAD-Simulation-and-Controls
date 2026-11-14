@@ -28,26 +28,23 @@ function [InitialGuess, QPTraj, Report] = PolyQP(Waypoints, Constants, Opts)
         return;
     end
 
-    % 4. Unified Evaluate -> Bidirectional Time Scaling Loop
+    % 4. Unified Evaluate -> Bidirectional Leg Time Scaling Loop
     MaxOuter = 40;
     stallCount = 0;
     outerIter = 0;
 
-    M = Plan.SegCount;
-    canContract = true(1, M);
-    for m = 1:M
-        if Plan.IsHold(m) || Plan.IsCruise(m)
-            canContract(m) = false;
-        else
-            % Only contract segments whose fixed derivative BCs (order >= 1) are homogeneous (0 or NaN)
-            dA = Plan.FixCg(:, 2:r, m);
-            dB = Plan.FixCg(:, 2:r, m + 1);
-            if any(dA(:) ~= 0 & ~isnan(dA(:))) || any(dB(:) ~= 0 & ~isnan(dB(:)))
-                canContract(m) = false;
-            end
+    nLegs = Plan.LegCount;
+    legCanContract = true(1, nLegs);
+    for leg = 1:nLegs
+        m1 = Plan.LegStartSeg(leg);
+        m2 = Plan.LegEndSeg(leg);
+        % Only contract legs whose fixed derivative BCs (order >= 1) are homogeneous (0 or NaN)
+        dLeg = Plan.FixCg(:, 2:r, m1:(m2 + 1));
+        if any(dLeg(:) ~= 0 & ~isnan(dLeg(:)))
+            legCanContract(leg) = false;
         end
     end
-    hasDilated = false(1, M);
+    legHasDilated = false(1, nLegs);
 
     [EvalOut, Feasible] = evaluateConstraints(QPTraj, Plan, Constants, Limits);
     bestUtil = EvalOut.MaxOverallUtil;
@@ -58,22 +55,22 @@ function [InitialGuess, QPTraj, Report] = PolyQP(Waypoints, Constants, Opts)
         didScale = false;
         didContract = false;
 
-        for m = 1:M
-            if ~Plan.IsHold(m) && ~Plan.IsCruise(m)
-                sm = EvalOut.SegDilate(m);
-                if sm > 1.0
-                    s_apply = min(2.0, 1.02 * sm);
-                    Plan.SegT(m) = Plan.SegT(m) * s_apply;
-                    hasDilated(m) = true;
+        for leg = 1:nLegs
+            m1 = Plan.LegStartSeg(leg);
+            m2 = Plan.LegEndSeg(leg);
+            s_leg = max(EvalOut.SegDilate(m1:m2));
+            if s_leg > 1.0
+                s_apply = min(2.0, 1.02 * s_leg);
+                Plan.SegT(m1:m2) = Plan.SegT(m1:m2) * s_apply;
+                legHasDilated(leg) = true;
+                didScale = true;
+            elseif Feasible && legCanContract(leg) && ~legHasDilated(leg) && (1.02 * s_leg < 0.97)
+                s_min_leg = max(Limits.MinSegTime ./ Plan.SegT(m1:m2));
+                s_apply = max([0.60, s_min_leg, 1.02 * s_leg]);
+                if s_apply < 1.0 - 1e-4
+                    Plan.SegT(m1:m2) = Plan.SegT(m1:m2) * s_apply;
                     didScale = true;
-                elseif Feasible && canContract(m) && ~hasDilated(m) && (1.02 * sm < 0.97) && (Plan.SegT(m) > Limits.MinSegTime + 1e-6)
-                    s_apply = max(0.60, 1.02 * sm);
-                    T_new = max(Limits.MinSegTime, Plan.SegT(m) * s_apply);
-                    if T_new < Plan.SegT(m) - 1e-6
-                        Plan.SegT(m) = T_new;
-                        didScale = true;
-                        didContract = true;
-                    end
+                    didContract = true;
                 end
             end
         end
@@ -84,12 +81,11 @@ function [InitialGuess, QPTraj, Report] = PolyQP(Waypoints, Constants, Opts)
 
         outerIter = outerIter + 1;
 
-        % Re-solve legs with updated segment durations (no time redistribution inside loop)
+        % Re-solve legs with updated segment durations (preserving optimal relative time shares)
         [Plan, QPTraj] = solveAllLegs(Plan, A0, H0, Limits, false);
         [EvalOut, Feasible] = evaluateConstraints(QPTraj, Plan, Constants, Limits);
 
         if didContract
-            % Update baseline after contraction step
             bestUtil = EvalOut.MaxOverallUtil;
             if Feasible
                 bestSegT = Plan.SegT;
@@ -158,14 +154,14 @@ function [Plan, QPTraj] = solveAllLegs(Plan, A0, H0, Limits, doAllocateTimes)
     DerivAll = FixP;
     totalCost = 0;
 
-    % Optional one-time Richter time redistribution on multi-segment legs where intermediate knots have no pinned velocities
+    % Optional one-time Richter time redistribution on multi-segment legs where intermediate knots have at least one free velocity axis
     if doAllocateTimes
         for leg = 1:Plan.LegCount
             m1 = Plan.LegStartSeg(leg);
             m2 = Plan.LegEndSeg(leg);
             if m2 > m1
                 midVelBins = FixP(:, 2, (m1 + 1):m2);
-                if ~any(~isnan(midVelBins(:)))
+                if all(any(isnan(midVelBins), 1))
                     FixLeg = FixP(:, 1:r, m1:(m2 + 1));
                     T_leg = Plan.SegT(m1:m2);
                     [T_opt, ~] = allocateTimes(FixLeg, T_leg, A0, H0, Limits.MinSegTime);

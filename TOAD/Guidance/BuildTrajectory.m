@@ -29,25 +29,19 @@ fprintf('=======================================================================
 
 %% Define Mission Waypoints
 dummyWP   = TOADWaypoint([0; 0; 0]);
-Waypoints = repmat(dummyWP, 1, 6);
+Waypoints = repmat(dummyWP, 1, 9);
+Radius = 5;
+Height = 7;
 
-Waypoints(1) = TOADWaypoint([0; 0; 0], ...
-    'Label', 'PAD HLD 1', 'HoldTime', 10.0);
-
-Waypoints(2) = TOADWaypoint([0; 0; 2], ...
-    'Label', 'FLT 1', 'MaxVel', [5; 5; 5], 'StraightLine', true);
-
-Waypoints(3) = TOADWaypoint([10; 4; 15], ...
-    'Label', 'FLT 2', 'MaxVel', [5; 5; 5], 'VelBC', [NaN, NaN, 0]);
-
-Waypoints(4) = TOADWaypoint([10; 10; 10], ...
-    'Label', 'FLT 3', 'MaxVel', [5; 5; 5]);
-
-Waypoints(5) = TOADWaypoint([10; 10; 2], ...
-    'Label', 'FLT 4', 'HoldTime', 1.0, 'MaxVel', [5; 5; 5]);
-
-Waypoints(6) = TOADWaypoint([10; 10; 0], ...
-    'Label', 'FLT END', 'HoldTime', 1.0, 'MaxVel', [3; 3; 1], 'StraightLine', true);
+Waypoints(1) = TOADWaypoint([0; 0; 0], 'Label', 'PAD HLD 1', 'HoldTime', 10.0);
+Waypoints(2) = TOADWaypoint([0; 0; 2], 'Label', 'FLT 1', 'StraightLine', true);
+Waypoints(3) = TOADWaypoint([Radius; 0; Height], 'Label', 'FLT 2');
+Waypoints(4) = TOADWaypoint([0; Radius; Height], 'Label', 'FLT 3');
+Waypoints(5) = TOADWaypoint([-Radius; 0; Height], 'Label', 'FLT 4');
+Waypoints(6) = TOADWaypoint([0; -Radius; Height], 'Label', 'FLT 5');
+Waypoints(7) = TOADWaypoint([Radius; 0; Height], 'Label', 'FLT 6');
+Waypoints(8) = TOADWaypoint([0; 0; 2], 'Label', 'FLT 7', 'HoldTime', 1.0);
+Waypoints(9) = TOADWaypoint([0; 0; 0], 'Label', 'FLT END', 'HoldTime', 1.0, 'MaxVel', [3; 3; 1], 'StraightLine', true);
 
 %% Polynomial Trajectory & Flatness Inversion
 tic;
