@@ -4,8 +4,8 @@
 
 namespace ControllerAndEstimator {
 constantsASTRA_t constantsASTRA;
-Matrix18_18 P;
-Matrix12_12 Flight_P;
+Matrix15_15 P;
+Matrix15_15 Flight_P;
 Vector19 x_est;
 Vector2 lastEMA;
 Matrix9_4 dnf_X;
@@ -16,6 +16,14 @@ Vector4 last_U_cmd;
 float last_thrust;
 bool last_GND;
 const float tau = 0.002; // seconds - time constant for ema low pass filter applied to gimbal angles
+
+// Hand off ground attitude/pos/vel/gyro-bias covariance and reset OU mag-bias slack for flight.
+static void init_flight_covariance() {
+  Flight_P = Matrix15_15::Zero();
+  Flight_P.block<12, 12>(0, 0) = P.block<12, 12>(0, 0);
+  Flight_P.block<3, 3>(12, 12) = Matrix3_3::Identity() * (0.015f * 0.015f);
+  x_est.segment<3>(16).setZero();
+}
 
 Matrix3_3 get_pos_cov_mtx(GPS_State gps_state) {
   Matrix3_3 pos_cov_mtx;
@@ -66,20 +74,21 @@ void init_controller_and_estimator_constants() {
   constantsASTRA.L_Att << 6.808373e-03, 0, 0, 0, 8.123445e-03, 0, 0, 0, 8.123349e-03, 5.788234e-03, 0, 0, 0, 8.242795e-03, 0, 0, 0, 8.194591e-03;
 
   constantsASTRA.R = Matrix6_6::Zero();
-  constantsASTRA.R.block<3, 3>(0, 0) = Matrix3_3::Identity() * 0.050;
-  constantsASTRA.R.block<3, 3>(3, 3) = Matrix3_3::Identity() * 0.100;
+  constantsASTRA.R.block<3, 3>(0, 0) = Matrix3_3::Identity() * 0.002f;
+  constantsASTRA.R.block<3, 3>(3, 3) = Matrix3_3::Identity() * 0.050f;
 
-  P = Matrix18_18::Identity();
-  P.block<3, 3>(0, 0) = Matrix3_3::Identity() * 0.1;
-  P.block<3, 3>(9, 9) = Matrix3_3::Identity() * 0.001;
-  P.block<3, 3>(12, 12) = Matrix3_3::Identity() * 0.00001;
-  P.block<3, 3>(15, 15) = Matrix3_3::Identity() * 0.00001;
-
-  Flight_P = Matrix12_12::Zero();
-  Flight_P = P.block<12, 12>(0, 0);
+  P = Matrix15_15::Identity();
+  P.block<3, 3>(0, 0) = Matrix3_3::Identity() * 0.05f;
+  P.block<3, 3>(3, 3) = Matrix3_3::Identity() * 1.0f;
+  P.block<3, 3>(6, 6) = Matrix3_3::Identity() * 0.1f;
+  P.block<3, 3>(9, 9) = Matrix3_3::Identity() * 0.001f;
+  P(12, 12) = 0.0004f;
+  P(13, 13) = 0.0004f;
+  P(14, 14) = 0.01f;
 
   x_est = Vector19::Zero();
   x_est[0] = 1;
+  init_flight_covariance();
   lastEMA = Vector2::Zero();
   dnf_X = Matrix9_4::Ones();
   dnf_Y = Matrix9_4::Ones();
@@ -95,10 +104,10 @@ void init_controller_and_estimator_constants() {
 Controller_Output get_controller_output(Controller_Input ci, const Vector15 &X_trg, const Vector4 &U_ff, float ideal_dT, float loop_dT, Controller_Internals *cs) {
   Vector15 z;
   // clang-format off
-  z << ci.imu.accel_x, ci.imu.accel_y, ci.imu.accel_z, 
+  z << ci.imu.accel_x, ci.imu.accel_y, ci.imu.accel_z,
        ci.imu.gyro_yaw, ci.imu.gyro_pitch, ci.imu.gyro_roll,
        ci.mag.mag_x, ci.mag.mag_y, ci.mag.mag_z,
-       ci.gps.pos.north, ci.gps.pos.west, ci.gps.pos.up, 
+       ci.gps.pos.north, ci.gps.pos.west, ci.gps.pos.up,
        ci.gps.vel.north, ci.gps.vel.west, ci.gps.vel.up;
   // clang-format on
 
@@ -114,8 +123,7 @@ Controller_Output get_controller_output(Controller_Input ci, const Vector15 &X_t
   }
 
   if (!ci.GND_val && last_GND) { // we left GND this frame
-    Flight_P = P.block<12, 12>(0,0);
-    
+    init_flight_covariance();
     ASTRAv2_Controller_reset(); // reset integral gains in the controller itself
   }
 
@@ -125,12 +133,11 @@ Controller_Output get_controller_output(Controller_Input ci, const Vector15 &X_t
   if (ci.GND_val) {
     x_est = GroundEstimator(x_est, constantsASTRA, z, loop_dT, P, ci.new_mag_packet, ci.new_gps_packet, gps_vel_covar, gps_pos_covar);
   } else {
-    
     x_est = FlightEstimator2(x_est, constantsASTRA, z, loop_dT, Flight_P, ci.new_mag_packet, ci.new_gps_packet, gps_vel_covar, gps_pos_covar);
   }
 
   // CHANGE: Bias corrected rates
-  Vector3 omega_body = z.segment<3>(3) - x_est.segment<3>(10); 
+  Vector3 omega_body = z.segment<3>(3) - x_est.segment<3>(10);
   Vector15 X_ctrl;
   X_ctrl << x_est.segment<10>(0), omega_body, 0.0f, 0.0f;
 
@@ -171,7 +178,6 @@ Controller_Output get_controller_output(Controller_Input ci, const Vector15 &X_t
   co.dist_rate_y  = u_dist(1);
   co.dist_rate_z  = u_dist(2);
 
-  // Add the full estimated state 
   cs->x_est.q_vec_w = x_est(0);
   cs->x_est.q_vec_x = x_est(1);
   cs->x_est.q_vec_y = x_est(2);
