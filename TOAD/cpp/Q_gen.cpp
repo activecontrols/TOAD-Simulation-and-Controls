@@ -1,15 +1,15 @@
 #include "matlab_funcs.h"
 
 Matrix18_18 Q_gen() {
-    float gyro_cov = 1e-5;
-    float gyro_bias_cov = 1e-10;
+    float gyro_cov = 2e-4;
+    float gyro_bias_cov = 1e-11;
     float accel_proc_cov = 1e-2;
-    float accel_bias_cov = 1e-8;
-    float mag_proc_cov = 1e-1;
+    float accel_bias_cov = 1e-9;
+    float mag_proc_cov = 1e-2;
     float mag_bias_cov = 1e-15; // * 3000;
 
     // Init constants
-    float dt = 0.001;
+    float dt = 0.002;
 
     // body vectors, defined from flight computer notation
     Vector3 f_global_body = (Vector3() << 0, 0, -9.81).finished(); // Expected gravity vector from 0 (standing upright)

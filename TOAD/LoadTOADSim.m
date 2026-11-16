@@ -21,8 +21,6 @@ FlightDynamicsGen(constants6DoF);
 x0 = [1; zeros(12,1); constants6DoF.OxMass; constants6DoF.FuMass];
 u0 = [0; 0; constants6DoF.g * constants6DoF.m_wet; 0];
 
-%% Guidance, Navigation, Control parameters
-
 %% Kalman Filter params
     MEKF_Constants;
     % Kalman Filter & Control Parameters
@@ -87,7 +85,7 @@ u0 = [0; 0; constants6DoF.g * constants6DoF.m_wet; 0];
 %% Trajectory Params
     % Pick a trajectory filename (e.g. "TOAD_Backflip_v001",
     % "ASTRA_Circle_v001")
-    filename = "ASTRA_Circle_v003";
+    filename = "ASTRA_Circle_v005";
     
     % Resolve trajectory CSV file path
     traj_dir = fullfile(pwd, 'Guidance', 'Trajectories');

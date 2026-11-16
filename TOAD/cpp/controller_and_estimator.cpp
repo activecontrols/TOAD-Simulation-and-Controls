@@ -15,7 +15,7 @@ Vector6 xhat_att;
 Vector4 last_U_cmd;
 float last_thrust;
 bool last_GND;
-const float tau = 0.03; // seconds - time constant for ema low pass filter applied to gimbal angles
+const float tau = 0.002; // seconds - time constant for ema low pass filter applied to gimbal angles
 
 Matrix3_3 get_pos_cov_mtx(GPS_State gps_state) {
   Matrix3_3 pos_cov_mtx;
@@ -53,7 +53,7 @@ void init_controller_and_estimator_constants() {
   constantsASTRA.MaxThrust = 16.0f;
   constantsASTRA.J << 0.067f, 0.067f, 0.02f;
   constantsASTRA.K_I = Matrix3_3::Identity();
-  constantsASTRA.K_I.diagonal() << 0.15f, 0.15f, 0.15f;
+  constantsASTRA.K_I.diagonal() << 0.15f, 0.15f, 0.10f;
   constantsASTRA.Q = Q_gen();
 
   // Gain Matrices (TODO: Check values)
