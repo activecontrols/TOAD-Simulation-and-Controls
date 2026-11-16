@@ -178,6 +178,7 @@ Controller_Output get_controller_output(Controller_Input ci, const Vector15 &X_t
   co.dist_rate_y  = u_dist(1);
   co.dist_rate_z  = u_dist(2);
 
+  // Add the full estimated state
   cs->x_est.q_vec_w = x_est(0);
   cs->x_est.q_vec_x = x_est(1);
   cs->x_est.q_vec_y = x_est(2);
