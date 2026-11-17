@@ -45,12 +45,11 @@ function [X, U, K, LA, LT] = TrajectoryManager(t, X_est, constantsTOAD)
     LT_Gain = constantsTOAD.Traj.LTGain;
 
     X = zeros(15, 1);
-    XTEST = zeros(3, 1);
     U = zeros(4, 1);
     K = zeros(6, 6);
     LA = zeros(6, 3);
     LT = zeros(9, 6);
-
+    
     K(1:3, 1:6) = K_trans_Gain(end, :, :);
     K(4:6, 1:6) = K_rot_Gain(end, :, :);
 
@@ -59,10 +58,12 @@ function [X, U, K, LA, LT] = TrajectoryManager(t, X_est, constantsTOAD)
     
     %% Handle Boundary Conditions
     if t - tAbort <= Time(1) || t - tAbort == 0
+        
         X(:) = States(1,:);
         U(:) = Inputs(1,:);
         return;
     elseif t - tAbort >= Time(end)
+        
         X(:) = States(end,:);
         X(1:4) = [1; 0; 0; 0];
         X(8:end) = 0;

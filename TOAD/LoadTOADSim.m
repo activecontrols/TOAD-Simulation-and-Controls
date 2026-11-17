@@ -21,8 +21,6 @@ FlightDynamicsGen(constants6DoF);
 x0 = [1; zeros(12,1); constants6DoF.OxMass; constants6DoF.FuMass];
 u0 = [0; 0; constants6DoF.g * constants6DoF.m_wet; 0];
 
-%% Guidance, Navigation, Control parameters
-
 %% Kalman Filter params
     MEKF_Constants;
     % Kalman Filter & Control Parameters
@@ -39,9 +37,11 @@ u0 = [0; 0; constants6DoF.g * constants6DoF.m_wet; 0];
     if Vehicle == 1
         % TOAD Tuning
         max_x_trans = 1.3 * ones(1,6);
+        max_x_trans([3, 6]) = 0.4;
     else
         % ASTRAv2 Tuning
-        max_x_trans = 1.25 * ones(1,6);
+        max_x_trans = 1.2 * ones(1,6);
+        max_x_trans([3, 6]) = 0.4;
     end
     constants6DoF.Q_trans = diag(1 ./ max_x_trans.^2);
     max_a_trans = 1.2; 
@@ -55,7 +55,7 @@ u0 = [0; 0; constants6DoF.g * constants6DoF.m_wet; 0];
         constants6DoF.R_rot = diag([35, 35, 1/4^2]);
     else
         % ASTRAv2 Tuning
-        max_x_rot = [0.15, 0.15, 0.12, 0.75, 0.75, 0.7];
+        max_x_rot = [0.2, 0.2, 0.12, 0.8, 0.8, 0.7];
         constants6DoF.R_rot = diag([70, 70, 1/0.10^2]);
     end
 
@@ -87,7 +87,7 @@ u0 = [0; 0; constants6DoF.g * constants6DoF.m_wet; 0];
 %% Trajectory Params
     % Pick a trajectory filename (e.g. "TOAD_Backflip_v001",
     % "ASTRA_Circle_v001")
-    filename = "ASTRA_Hop_v002";
+    filename = "ASTRA_Circle_v005";
     
     % Resolve trajectory CSV file path
     traj_dir = fullfile(pwd, 'Guidance', 'Trajectories');
