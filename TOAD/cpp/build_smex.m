@@ -5,6 +5,9 @@ thisDir   = fileparts(mfilename('fullpath'));
 if isempty(thisDir), thisDir = pwd; end
 
 eigenDir  = fullfile(thisDir, 'Extras', 'eigen-3.4.0', 'eigen-3.4.0');
+if ~isfile(fullfile(eigenDir, 'Eigen', 'Dense'))
+    eigenDir = fullfile(thisDir, 'Extras', 'eigen-3.4.0');
+end
 extrasDir = fullfile(thisDir, 'Extras');
 
 assert(isfile(fullfile(thisDir, 'ASTRAv2_SMEX.cpp')), 'ASTRAv2_SMEX.cpp not found.');
@@ -25,6 +28,7 @@ mex('-D_USE_MATH_DEFINES', ...
     fullfile(thisDir, 'ASTRAv2_Controller.cpp'), ...
     fullfile(thisDir, 'LESO_Position.cpp'), ...
     fullfile(thisDir, 'LESO_Attitude.cpp'), ...
+    fullfile(thisDir, 'TrajectoryManager.cpp'), ...
     '-outdir', thisDir);
 
 disp('ASTRAv2_SMEX S-Function build finished successfully.');

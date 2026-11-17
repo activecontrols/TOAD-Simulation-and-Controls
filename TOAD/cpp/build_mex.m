@@ -1,6 +1,9 @@
 % build_mex.m  (run from inside the cpp folder)
 
 eigenDir = 'Extras/eigen-3.4.0/eigen-3.4.0';
+if ~isfile([eigenDir '/Eigen/Dense'])
+    eigenDir = 'Extras/eigen-3.4.0';
+end
 
 % Fail early if a path is wrong
 assert(isfile('astra_mex.cpp'),                  'astra_mex.cpp not found. cd into the cpp folder first.');
@@ -20,6 +23,7 @@ mex('-D_USE_MATH_DEFINES', ...
     'Q_gen.cpp', ...
     'ASTRAv2_Controller.cpp', ...
     'LESO_Position.cpp', ...
-    'LESO_Attitude.cpp');
+    'LESO_Attitude.cpp', ...
+    'TrajectoryManager.cpp');
 
 disp('Build finished.');
