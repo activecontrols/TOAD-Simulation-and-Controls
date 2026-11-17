@@ -8,9 +8,9 @@ mdot = f_thrust / I_sp;
 
 P_c = cstar/(A_t * g0) .* mdot;
 
-% table_Pc = [f_thrust;P_c];
+table_Pc = [f_thrust;P_c];
 
-% writematrix(table_Pc, "Tables/thrustToPc.csv");
+writematrix(table_Pc, "Tables/thrustToPc.csv");
 
 mdot_fu = mdot * 6/11;
 mdot_ox = mdot * 5/11;
@@ -47,12 +47,15 @@ while abs(delta_rho_ox(end)) > 10^-5
     delta_rho_ox = rho_ox_old - rho_ox;
 end
 
-
 p_inj_ox = P_c + (mdot_ox/g0).^2./(2*rho_ox*(CdA_ox)^2);
 
-max(p_inj_ox)
+table_pc_oxinj = [P_c; p_inj_ox];
+writematrix(table_pc_oxinj, "Tables/PcInjOx.csv");
 
 p_inj_fu = P_c + (mdot_fu/g0).^2./(2*rho_fu*(CdA_fu)^2);
+
+table_oxinj_fuinj = [p_inj_ox; p_inj_fu];
+writematrix(table_oxinj_fuinj, "Tables/InjOxFu.csv");
 
 p_valve_fu = p_inj_fu + K_fu * mdot_fu.^2;
 p_valve_ox = p_inj_ox + K_ox * mdot_ox.^2;
@@ -61,15 +64,12 @@ p_valve_ox = p_inj_ox + K_ox * mdot_ox.^2;
 rho_water = 13/360;
 p_tank = 550;
 
-max(p_valve_fu)
-min(p_tank - p_valve_fu)
-
 cv_fu = mdot_fu./(rho_fu.* rho_water .* (p_tank - p_valve_fu)).^0.5 * 60 / 231;
 cv_ox = mdot_ox./(rho_ox.* rho_water .* (p_tank - p_valve_ox)).^0.5 * 60 / 231;
 
-table_cv_fu = [f_thrust; cv_fu];
-table_cv_ox = [f_thrust; cv_ox];
+table_cv_fu = [p_inj_fu; cv_fu];
+table_cv_ox = [p_inj_ox; cv_ox];
 
-writematrix(table_cv_fu, "Tables/thrustCvFu.csv");
-writematrix(table_cv_ox, "Tables/thrustCvOx.csv");
+writematrix(table_cv_fu, "Tables/injCvFu.csv");
+writematrix(table_cv_ox, "Tables/injCvOx.csv");
 end
