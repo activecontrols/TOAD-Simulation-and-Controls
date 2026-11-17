@@ -12,7 +12,7 @@
 
 %% Configuration
 model_name = 'TOAD_Simulation_CPP';
-num_sims = 250;
+num_sims = 1000;
 
 % Set to true for a new random batch every run, or false to lock a specific seed
 use_random_master_seed = true; 
@@ -45,8 +45,8 @@ J_frac = 0.10;
 
 % Mean wind, at the 6 m reference height used by the Dryden block
 wind_sweep         = false;   % true: uniform 0..wind_max (envelope search)
-wind_max           = 12;      % m/s, upper end of the envelope sweep
-wind_weibull_scale = 4.0;     % m/s, operational campaign
+wind_max           = 15;      % m/s, upper end of the envelope sweep
+wind_weibull_scale = 6.0;     % m/s, operational campaign
 wind_weibull_shape = 2.0;     % Rayleigh-like; matches measured surface wind
 dryden_W6          = 15;      % m/s, "Wind speed at 6 m" set in the Dryden block mask
 turb_mult_range    = [0.5, 2.0]; % multiplier on spec turbulence intensity

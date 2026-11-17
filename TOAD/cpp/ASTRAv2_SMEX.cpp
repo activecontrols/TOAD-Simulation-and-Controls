@@ -74,8 +74,9 @@ static void mdlInitializeSizes(SimStruct *S) {
     ssSetNumNonsampledZCs(S, 0);
 
     // Support Simulink Accelerator
-    ssSetOptions(S, SS_OPTION_EXCEPTION_FREE_CODE |
-                    SS_OPTION_USE_TLC_WITH_ACCELERATOR);
+    // ssSetOptions(S, SS_OPTION_EXCEPTION_FREE_CODE |
+    //                 SS_OPTION_USE_TLC_WITH_ACCELERATOR);
+    ssSetOptions(S, SS_OPTION_EXCEPTION_FREE_CODE);
 }
 
 static void mdlInitializeSampleTimes(SimStruct *S) {
