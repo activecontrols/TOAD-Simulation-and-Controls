@@ -110,8 +110,8 @@ yield_strength = properties(1:7, 1:2);
 elongation_break = [properties(1:7,1) properties(1:7,5)];
 
 v = 0.33; % GUESS poissons ratio
-N = 35*8; % engine lifespan (for margin math)
 SF = 4; % lifespan saftey factor (4 per NASA 5012C)
+N = 35*SF; % engine lifespan (for margin math)
 
 % Contour Interpolation
 % contour = readmatrix('contour_SKIPPER_250_40.xlsx'); % import engine contour
@@ -585,8 +585,9 @@ for i = points % 1 = injector, steps = exit
                 
             Qtot = Qtot + Qdot_avg * num_channels; %total heat through entire chamber [W]
    
-            % structural calculations
+            % Structural calculations
             if i <= steps 
+                % Interpolate material properties against temperature conditions across the chamber
                 yield(i) = interp1(yield_strength(:,1), yield_strength(:,2), T_wg(i), 'linear', 'extrap');
                 E_current(i) = interp1(E(:,1), E(:,2), T_wg(i), 'linear', 'extrap');
                 CTE_current(i) = interp1(CTE(:,1), CTE(:,2), T_wg(i), 'linear', 'extrap');
@@ -597,41 +598,58 @@ for i = points % 1 = injector, steps = exit
                     elong(i) = 0.25;
                 end
 
+                % Unit control to make the maximum allowable strains play nice
                 epsilon_emax(i) = ((yield(i)*1000000)/ E_current(i));
 
+                % Wall temperature averaging
                 deltaT1(i) = T_wg(i) - T_wl(i);
                 deltaT2(i) = ((T_wg(i) + T_wl(i))/2) - T_coolant(i); 
 
-                sigma_tp(i) = ( ((P_coolant(i)-P_g(i))/2).*((w_c_x(i)./t_w_x(i)).^2) );
-                sigma_tp_cold(i) =  ( ((P_coolant(i))/2).*((w_c_x(i)./t_w_x(i)).^2) );
-                sigma_tt(i) = (E_current(i)*CTE_current(i)*heatflux(i)*t_w_x(i))/(2*(1-v)*k_w_current(i));
-                sigma_t(i) = ( ((P_coolant(i)-P_g(i))/2).*((w_c_x(i)./t_w_x(i)).^2) ) + (E_current(i)*CTE_current(i)*heatflux(i)*t_w_x(i))/(2*(1-v)*k_w_current(i)); % tangential stress
-                sigma_lc(i) = E_current(i)*(CTE_liq_side(i)*(T_wl(i)-T_coolant(i)) + ((CTE_liq_side(i)*deltaT1(i))/(2*(1-v))));
-                sigma_ll(i) = E_current(i)*(CTE_current(i)*(T_wg(i)-T_coolant(i)) + ((CTE_current(i)*deltaT1(i))/(2*(1-v))));
+                % Calculate Stresses
+                % See https://purdue-space-program.atlassian.net/wiki/spaces/PAC/pages/1974796299/Regen+Code+Documentation#Recommended-Reading 
+                % for the sources where many of the stress/strain relationships come from
+                sigma_tp(i) = ( ((P_coolant(i)-P_g(i))/2).*((w_c_x(i)./t_w_x(i)).^2) ); % Tangential pressing stress at the hot wall
+                sigma_tp_cold(i) =  ( ((P_coolant(i))/2).*((w_c_x(i)./t_w_x(i)).^2) ); % Tangential pressing stress at the cold wall
+                sigma_tt(i) = (E_current(i)*CTE_current(i)*heatflux(i)*t_w_x(i))/(2*(1-v)*k_w_current(i)); % Tangential thermal stress
+                sigma_t(i) = ( ((P_coolant(i)-P_g(i))/2).*((w_c_x(i)./t_w_x(i)).^2) ) + (E_current(i)*CTE_current(i)*heatflux(i)*t_w_x(i))/(2*(1-v)*k_w_current(i)); % Total tangential stress
+                sigma_lc(i) = E_current(i)*(CTE_liq_side(i)*(T_wl(i)-T_coolant(i)) + ((CTE_liq_side(i)*deltaT1(i))/(2*(1-v)))); % Longitudinal stress at the channels
+                sigma_ll(i) = E_current(i)*(CTE_current(i)*(T_wg(i)-T_coolant(i)) + ((CTE_current(i)*deltaT1(i))/(2*(1-v)))); % Longitudinal stress in the lands (fins)
 
+                % Calculate Von Mises Stresses
+                sigma_vc(i) = sqrt(sigma_lc(i)^2 + sigma_t(i)^2 - sigma_lc(i)*sigma_t(i)); % Von Mises Stress at the channels
+                sigma_vl(i) = sqrt(sigma_ll(i)^2 + sigma_t(i)^2 - sigma_ll(i)*sigma_t(i)); % Von Mises Stress in the lands (fins)
 
-                sigma_vc(i) = sqrt(sigma_lc(i)^2 + sigma_t(i)^2 - sigma_lc(i)*sigma_t(i));
-                sigma_vl(i) = sqrt(sigma_ll(i)^2 + sigma_t(i)^2 - sigma_ll(i)*sigma_t(i));
-
-                % Calculate total Strains
+                % Calculate Strains
+                % Refer to references in the "Calculate Stresses" section
                 epsilon_lc(i) = ((CTE_liq_side(i)*deltaT1(i))/(2*(1-v))) + CTE_liq_side(i)*(T_wl(i)-T_coolant(i));
                 epsilon_ll(i) = ((CTE_current(i)*deltaT1(i))/(2*(1-v))) + CTE_current(i)*(T_wg(i)-T_coolant(i));  
                 epsilon_tp(i) = ( ((P_coolant(i)-P_g(i))/2).*((w_c_x(i)./t_w_x(i)).^2) )  /E_current(i);
                 epsilon_tt(i) = ((E_current(i)*CTE_current(i)*heatflux(i)*t_w_x(i))/(2*(1-v)*k_w_current(i)))  /E_current(i);
-                epsilon_t(i) = 1.15 * (( ((P_coolant(i)-P_g(i))/2).*((w_c_x(i)./t_w_x(i)).^2) ) + (E_current(i)*CTE_current(i)*heatflux(i)*t_w_x(i))/(2*(1-v)*k_w_current(i))) / E_current(i); % tangential stress
+                epsilon_t(i) = 1.15 * (( ((P_coolant(i)-P_g(i))/2).*((w_c_x(i)./t_w_x(i)).^2) ) + (E_current(i)*CTE_current(i)*heatflux(i)*t_w_x(i))/(2*(1-v)*k_w_current(i))) / E_current(i);
+
+                % Calculate Von Mises Strains
                 epsilon_vc(i) = sqrt(epsilon_lc(i)^2 + epsilon_t(i)^2 - epsilon_lc(i)*epsilon_t(i));
                 epsilon_vl(i) = sqrt(epsilon_ll(i)^2 + epsilon_t(i)^2 - epsilon_ll(i)*epsilon_t(i));
 
+                % Calculate Total Strains
                 epsilon_tota(i) = ((CTE_current(i)*deltaT1(i))/(2*(1-v))) + CTE_current(i) * deltaT2(i); 
                 epsilon_tott(i) = epsilon_t(i);
                 epsilon_toteff(i) = (2/sqrt(3)) * sqrt(((epsilon_tott(i)^2)+ epsilon_tott(i)*epsilon_tota(i) + (epsilon_tota(i))^2));
+
+                % Peak Point Strain shenanigans
                 if (peak_point_strain_input ~= 0) % Set total effective strain to the input peak point strain if the peak point strain is input 
                     epsilon_toteff(i) = peak_point_strain_input;
                 end
+
+                % Back out stresses because working in strains is more accurate here
                 sigma_a(i) = E_current(i) * epsilon_tota(i);
                 sigma_t2(i) = E_current(i) * epsilon_tott(i);
+
+                % Calculate Plastic Strains
                 epsilon_pa(i) = epsilon_tota(i) - epsilon_emax(i);
                 epsilon_pt(i) = epsilon_tott(i) - epsilon_emax(i);
+
+                % If statement garbage To dynamically account for the impacts of both Elastic Strains and Plastic Strains where relevant along the chamber
                 epsilon_emaxeff(i) = (2/sqrt(3)) * sqrt(((epsilon_emax(i)^2) + epsilon_emax(i)*epsilon_emax(i) + (epsilon_emax(i))^2));
                 if epsilon_pa(i) < 0
                     epsilon_pa(i) = 0;
@@ -649,19 +667,26 @@ for i = points % 1 = injector, steps = exit
                     epsilon_eeff(i) = epsilon_emaxeff(i);
                 end
 
+                % First Life Cycle Metric calculations
                 epsilon_peff(i) = (2/sqrt(3)) * sqrt(((epsilon_pt(i)^2) + epsilon_pt(i)*epsilon_pa(i) + (epsilon_pa(i))^2));
                 epsilon_cs(i) = 2*yield(i)/E_current(i) + ((elong(i)/2)*((N)^(-1/2)));
+
+                % Peak Point Strain shenanigans (part 2)
                 if (peak_point_strain_input ~= 0) % Set effective plastic strain to the input peak point strain minus the effective elastic strain if the peak point strain is input 
                     epsilon_peff(i) = epsilon_toteff(i) - epsilon_eeff(i);
                 end
-                epsilon_cs_tot(i) = epsilon_cs(i) + epsilon_eeff(i)/2; % Total strain after N # of hotfires
-                MS_lowcycle(i) = epsilon_cs(i) / (epsilon_peff(i));
-                MS(i) = epsilon_cs_tot(i) / (epsilon_toteff(i));
-                num_fires(i) = 1/SF * ((2/elong(i))* (epsilon_toteff(i)- (epsilon_eeff(i)/2)))^(-2); %divide by 4 per NASA 5012C
-                num_fires_lowcycle(i) = 1/SF * ((2*epsilon_peff(i))/elong(i))^(-2); %divide by 4 per NASA 5012C
-                epsilon_cs_spacex(i) = (3.5 * yield(i)*((N)^(-.12)))/E_current(i) + (elong(i)/N)^(.6);
-                MS_spacex(i) = epsilon_cs_spacex(i) / epsilon_toteff(i);
 
+                % Rest of the Life Cycle Metric calculations
+                % Use three similar but different LCF estimations, all vaguely Coffin-Manson relations.
+                epsilon_cs_tot(i) = epsilon_cs(i) + epsilon_eeff(i)/2;
+                MS_lowcycle(i) = (epsilon_cs(i) / (epsilon_peff(i))) -1;
+                MS(i) = (epsilon_cs_tot(i) / (epsilon_toteff(i))) -1;
+                num_fires(i) = 1/SF * ((2/elong(i))* (epsilon_toteff(i)- (epsilon_eeff(i)/2)))^(-2); 
+                num_fires_lowcycle(i) = 1/SF * ((2*epsilon_peff(i))/elong(i))^(-2); 
+                epsilon_cs_spacex(i) = (3.5 * yield(i)*((N)^(-.12)))/E_current(i) + (elong(i)/N)^(.6);
+                MS_spacex(i) = (epsilon_cs_spacex(i) / epsilon_toteff(i)) -1;
+
+                % Back out stresses because working in strains is more accurate here (but again for different strains)
                 sigma_eff(i) = E_current(i) * epsilon_toteff(i);
                 sigma_a(i) = E_current(i) * epsilon_tota(i);
                 sigma_t2(i) = E_current(i) * epsilon_tott(i);
@@ -674,6 +699,7 @@ for i = points % 1 = injector, steps = exit
     end % Heat transfer convergence loop end
 end % Axial station loop end
 
+% Take the worst-case value (probably near the throat) from all the vectors for output
 overall_MS = min(MS);
 overall_MS_lowcycle = min(MS_lowcycle);
 overall_MS_spacex = min(MS_spacex);
@@ -695,11 +721,11 @@ P_coolant_out = P_coolant;
 if DisplayMode == 1
     %% FORMATTED OUTPUT
     fprintf("\nEngine Throttle: %.1f", throttle * 100)
-    fprintf("\n\nMargin of safety for engine life of %0.0f hot fires: %.02f", N/8, overall_MS)
+    fprintf("\n\nMargin of safety for engine life of %0.0f hot fires: %.02f", N/SF, overall_MS)
     fprintf("\nEngine life (hot fires): %.02f", Engine_life)
-    fprintf("\nLowcycle Margin of safety for engine life of %0.0f hot fires: %.02f", N/8, overall_MS_lowcycle)
+    fprintf("\nLowcycle Margin of safety for engine life of %0.0f hot fires: %.02f", N/SF, overall_MS_lowcycle)
     fprintf("\nEngine life (hot fires) Lowcycle: %.02f", Engine_life_lowcycle)
-    fprintf("\nManson Universal Slopes Margin of safety for engine life of %0.0f hot fires: %.02f", N/8, overall_MS_spacex)
+    fprintf("\nManson Universal Slopes Margin of safety for engine life of %0.0f hot fires: %.02f", N/SF, overall_MS_spacex)
     fprintf("\nSafety factor to yield: %.02f", yield_SF)
     if (peak_point_strain_input == 0)
         fprintf("\nAxial Plastic Deformation per Cycle: %.05f in", plastic_deformation_cyclic)

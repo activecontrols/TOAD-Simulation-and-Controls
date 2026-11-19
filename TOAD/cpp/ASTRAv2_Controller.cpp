@@ -32,16 +32,16 @@ Vector4 ASTRAv2_Controller(bool GND, const Vector15 &X_est, const Vector15 &X_tr
   Vector3 vel_err = X_est.segment<3>(7) - X_trg.segment<3>(7);
 
   // Leaked integration for the translational integral trim
-  I_trans = I_trans * 0.9999f +  constantsASTRA.K_I * pos_err * dT;
-  Vector3 MaxInt = (Vector3() << 0.35f, 0.35f, 0.35f).finished();
+  I_trans = I_trans * 0.999f + pos_err * dT;
+  Vector3 MaxInt = (Vector3() << 0.35f, 0.35f, 0.15f).finished();
   I_trans = I_trans.cwiseMin(MaxInt).cwiseMax(-MaxInt);
 
   Vector6 trans_err;
   trans_err << pos_err, vel_err;
-  Vector3 Delta_A = -constantsASTRA.K_trans * trans_err - I_trans;
+  Vector3 Delta_A = -constantsASTRA.K_trans * trans_err - constantsASTRA.K_I * I_trans;
 
   // Acceleration saturation limit
-  Vector3 MaxAccelCorr = (Vector3() << 3.5f, 3.5f, 5.0f).finished();
+  Vector3 MaxAccelCorr = (Vector3() << 1.5f, 1.5f, 4.0f).finished();
   Delta_A = Delta_A.cwiseMin(MaxAccelCorr).cwiseMax(-MaxAccelCorr);
 
   // Nominal Trajectory Acceleration
