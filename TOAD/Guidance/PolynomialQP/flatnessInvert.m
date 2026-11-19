@@ -47,21 +47,23 @@ function [X, Wrench, AccelCg] = flatnessInvert(QPTraj, t_vec, HDGRef, Constants,
         udd = (edd - 2 * ud * nd - u * ndd) / n;
 
         % Body triad [b1, b2, b3] with b3 = u and b2 = norm(b3 x x_C)
+        x_ref = x_C; % FIX-F27: the heading vector actually used for b2, reused for its derivatives
         c  = cross(u, x_C);
         nc = norm(c);
         if nc < 1e-6
             x_C_alt = [0; 1; 0];
             c  = cross(u, x_C_alt);
             nc = norm(c);
+            x_ref = x_C_alt; % FIX-F27: the fallback heading also drives b2d and b2dd
         end
         b2 = c / nc;
         b1 = cross(b2, u);
 
         % First and second time derivatives of b2 and b1
-        cd   = cross(ud, x_C);
+        cd   = cross(ud, x_ref); % FIX-F27: was cross(ud, x_C) even when the fallback heading was used
         ncd  = dot(b2, cd);
         b2d  = (cd - b2 * ncd) / nc;
-        cdd  = cross(udd, x_C);
+        cdd  = cross(udd, x_ref); % FIX-F27: was cross(udd, x_C) even when the fallback heading was used
         ncdd = dot(b2d, cd) + dot(b2, cdd);
         b2dd = (cdd - 2 * b2d * ncd - b2 * ncdd) / nc;
 

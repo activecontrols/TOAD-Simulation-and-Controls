@@ -52,17 +52,23 @@ function Plan = resolveWaypoints(Waypoints, r, Limits)
     IsCruise    = false(1, MAX_SEG);
     SegMaxVel   = inf(3, MAX_SEG);
     SegMaxAccel = inf(3, MAX_SEG);
+    B3Knot      = nan(3, MAX_KNOTS); % FIX-F03: per-knot B3BC (NaN: b3 = e3)
+    B3DotKnot   = nan(3, MAX_KNOTS); % FIX-F03: per-knot B3DotBC (NaN: not applied)
 
     % Helper to populate a knot's BCs from a waypoint
     nKnots = 1;
     nSegs  = 0;
     [FixCg(:, 1:r, 1), KnotIsRest(1)] = wpToFix(Waypoints(1), r);
+    B3Knot(:, 1) = Waypoints(1).B3BC; % FIX-F03: knot attitude from the waypoint
+    B3DotKnot(:, 1) = Waypoints(1).B3DotBC; % FIX-F03: knot attitude from the waypoint
 
     % If first waypoint has a positive HoldTime, insert initial hold segment
     if ~Waypoints(1).IsPassAndGo && Waypoints(1).HoldTime > 0
         nSegs = nSegs + 1;
         nKnots = nKnots + 1;
         FixCg(:, 1:r, nKnots) = FixCg(:, 1:r, nKnots - 1);
+        B3Knot(:, nKnots) = B3Knot(:, nKnots - 1); % FIX-F03: a hold keeps the knot attitude
+        B3DotKnot(:, nKnots) = B3DotKnot(:, nKnots - 1); % FIX-F03: a hold keeps the knot attitude
         KnotIsRest(nKnots) = true;
         SegT(nSegs) = Waypoints(1).HoldTime;
         IsHold(nSegs) = true;
@@ -157,6 +163,8 @@ function Plan = resolveWaypoints(Waypoints, r, Limits)
                         nSegs = nSegs + 1;
                         nKnots = nKnots + 1;
                         [FixCg(:, 1:r, nKnots), KnotIsRest(nKnots)] = wpToFix(wpB, r);
+                        B3Knot(:, nKnots) = wpB.B3BC; % FIX-F03: knot attitude from the waypoint
+                        B3DotKnot(:, nKnots) = wpB.B3DotBC; % FIX-F03: knot attitude from the waypoint
                         if wpB.StraightLine
                             FixCg(:, 1:r, nKnots) = pinTransverse(FixCg(:, 1:r, nKnots), dp, r);
                         end
@@ -174,6 +182,8 @@ function Plan = resolveWaypoints(Waypoints, r, Limits)
             nSegs = nSegs + 1;
             nKnots = nKnots + 1;
             [FixCg(:, 1:r, nKnots), KnotIsRest(nKnots)] = wpToFix(wpB, r);
+            B3Knot(:, nKnots) = wpB.B3BC; % FIX-F03: knot attitude from the waypoint
+            B3DotKnot(:, nKnots) = wpB.B3DotBC; % FIX-F03: knot attitude from the waypoint
             if wpB.StraightLine && all(~isnan(dp)) && norm(dp) > 1e-6
                 FixCg(:, 1:r, nKnots) = pinTransverse(FixCg(:, 1:r, nKnots), dp, r);
             end
@@ -193,6 +203,8 @@ function Plan = resolveWaypoints(Waypoints, r, Limits)
             nSegs = nSegs + 1;
             nKnots = nKnots + 1;
             FixCg(:, 1:r, nKnots) = FixCg(:, 1:r, nKnots - 1);
+            B3Knot(:, nKnots) = B3Knot(:, nKnots - 1); % FIX-F03: a hold keeps the knot attitude
+            B3DotKnot(:, nKnots) = B3DotKnot(:, nKnots - 1); % FIX-F03: a hold keeps the knot attitude
             KnotIsRest(nKnots) = true;
             SegT(nSegs) = wpB.HoldTime;
             IsHold(nSegs) = true;
@@ -242,7 +254,9 @@ function Plan = resolveWaypoints(Waypoints, r, Limits)
         'LegCount',    nLegs, ...
         'LegStartSeg', LegStartSeg, ...
         'LegEndSeg',   LegEndSeg, ...
-        'HDGRef',      hdg0 ...
+        'HDGRef',      hdg0, ...
+        'B3BC',        B3Knot, ... % FIX-F03: per-knot attitude for the P-space BC
+        'B3DotBC',     B3DotKnot ... % FIX-F03: per-knot attitude rate for the P-space BC
     );
 end
 

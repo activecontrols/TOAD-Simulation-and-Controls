@@ -11,6 +11,8 @@ function wp = TOADWaypoint(pos, options)
         options.StraightLine   (1,1) logical = false
         options.HDGRef         (3,1) double = [1; 0; 0]
         options.Label          (1,:) char   = ''
+        options.B3BC           (3,1) double = [nan; nan; nan] % FIX-F03: thrust axis b3 at this knot for the P-space BC (NaN: b3 = e3)
+        options.B3DotBC        (3,1) double = [nan; nan; nan] % FIX-F03: db3/dt at this knot for the P-space velocity BC (NaN: not applied)
     end
 
     % Fixed-length 9-character label for codegen
@@ -51,6 +53,8 @@ function wp = TOADWaypoint(pos, options)
         'StraightLine', options.StraightLine, ...
         'HDGRef',       options.HDGRef, ...
         'Label',        finalLabel, ...
-        'IsPassAndGo',  isPassAndGo ...
+        'IsPassAndGo',  isPassAndGo, ...
+        'B3BC',         options.B3BC, ... % FIX-F03: optional knot attitude for the P-space BC
+        'B3DotBC',      options.B3DotBC ... % FIX-F03: optional knot attitude rate for the P-space BC
     );
 end

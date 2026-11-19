@@ -1,4 +1,4 @@
-function Limits = buildVehicleLimits(Constants)
+function Limits = buildVehicleLimits(Constants, Opts)
 %% Build Vehicle Limits and Flatness Parameters
     % Fixed planner constants
     ThrustMargin = 0.10;
@@ -18,6 +18,13 @@ function Limits = buildVehicleLimits(Constants)
         minThrottle = 0.50;
         m_lox0 = Constants.OxMass;
         m_ipa0 = Constants.FuMass;
+        % FIX-F29: start from the estimated propellant when given (Constants.OxMass/FuMass stay the full-tank reference for ComputeJtot)
+        if nargin >= 2 && isfield(Opts, 'InitOxMass') && ~isempty(Opts.InitOxMass) && isfinite(Opts.InitOxMass)
+            m_lox0 = Opts.InitOxMass;
+        end
+        if nargin >= 2 && isfield(Opts, 'InitFuMass') && ~isempty(Opts.InitFuMass) && isfinite(Opts.InitFuMass)
+            m_ipa0 = Opts.InitFuMass;
+        end
         defAccel = [2.0; 2.0; 3.0];
     else
         MaxThrustRate = 30;

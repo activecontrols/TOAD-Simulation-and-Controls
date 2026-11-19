@@ -34,6 +34,12 @@ function [EvalOut, Feasible] = evaluateConstraints(QPTraj, Plan, Constants, Limi
         seg_idx(k) = m_found;
     end
 
+    % FIX-F01: first grid sample of each segment, whose CG velocity is the plan's start velocity for D3
+    kFirst = zeros(1, M);
+    for k = nGrid:-1:1
+        kFirst(seg_idx(k)) = k;
+    end
+
     % Zero finite-difference actuator rates at hold/cruise segment boundaries
     for k = 1:(nGrid - 1)
         m1 = seg_idx(k);
@@ -66,7 +72,19 @@ function [EvalOut, Feasible] = evaluateConstraints(QPTraj, Plan, Constants, Limi
         mk = Limits.m_dry + X(14, k) + X(15, k);
 
         % 1. Velocity utilisation (k = 1)
-        u_vel = max(vk ./ Plan.SegMaxVel(:, m));
+        % FIX-F01: a pinned start-knot velocity raises that axis's cap to the larger of |v_BC| and the plan's CG speed at the segment start (D3)
+        vCap = Plan.SegMaxVel(:, m);
+        vBC = abs(Plan.FixCg(:, 2, m));
+        vStart = zeros(3, 1);
+        if kFirst(m) > 0
+            vStart = abs(X(8:10, kFirst(m)));
+        end
+        for d = 1:3
+            if ~isnan(vBC(d))
+                vCap(d) = max([vCap(d), vBC(d), vStart(d)]);
+            end
+        end
+        u_vel = max(vk ./ vCap); % FIX-F01: cap raised per D3
 
         % 2. Acceleration utilisation (k = 2)
         u_acc = max(abs(ak) ./ Plan.SegMaxAccel(:, m));

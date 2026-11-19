@@ -13,7 +13,7 @@ function [InitialGuess, QPTraj, Report] = PolyQP(Waypoints, Constants, Opts)
     end
 
     % 1. Build vehicle limits and resolve waypoints
-    Limits = buildVehicleLimits(Constants);
+    Limits = buildVehicleLimits(Constants, Opts); % FIX-F29: Opts.InitOxMass/InitFuMass set the initial propellant
     Plan = resolveWaypoints(Waypoints, r, Limits);
     [A0, ~, H0] = assembleQP(r);
 
@@ -140,13 +140,20 @@ function [Plan, QPTraj] = solveAllLegs(Plan, A0, H0, Limits, doAllocateTimes)
     % Initialize P-space boundary conditions: P = r_cg + rho * b3 (init b3 = e3)
     FixP = Plan.FixCg(:, 1:r, 1:K);
     for k = 1:K
+        hasB3 = all(~isnan(Plan.B3BC(:, k))); % FIX-F03: a knot with a given attitude uses P = r_cg + rho * b3
+        hasB3Dot = all(~isnan(Plan.B3DotBC(:, k))); % FIX-F03: and dP/dt = v_cg + rho * db3/dt where the velocity is fixed
         for d = 1:3
             if ~isnan(FixP(d, 1, k))
-                if d == 3
+                if hasB3 % FIX-F03: P = r_cg + rho * b3 with the given attitude
+                    FixP(d, 1, k) = Plan.FixCg(d, 1, k) + rho * Plan.B3BC(d, k);
+                elseif d == 3
                     FixP(d, 1, k) = Plan.FixCg(d, 1, k) + rho;
                 else
                     FixP(d, 1, k) = Plan.FixCg(d, 1, k);
                 end
+            end
+            if hasB3Dot && ~isnan(FixP(d, 2, k)) % FIX-F03: dP/dt = v_cg + rho * db3/dt
+                FixP(d, 2, k) = Plan.FixCg(d, 2, k) + rho * Plan.B3DotBC(d, k);
             end
         end
     end
@@ -214,7 +221,7 @@ function [Plan, QPTraj] = solveAllLegs(Plan, A0, H0, Limits, doAllocateTimes)
         % Update P = r_cg + rho * b3 at pass-through knots using solved acceleration
         if pass < nPasses
             for k = 2:(K - 1)
-                if ~Plan.KnotIsRest(k)
+                if ~Plan.KnotIsRest(k) && any(isnan(Plan.B3BC(:, k))) % FIX-F03: a given knot attitude is not overwritten by the refinement
                     a_k = DerivAll(:, 3, k);
                     e_k = a_k + [0; 0; g];
                     ne  = norm(e_k);
