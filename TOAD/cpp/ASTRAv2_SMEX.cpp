@@ -8,6 +8,7 @@
 #include "matlab_funcs.h"
 
 static void mdlInitializeSizes(SimStruct *S) {
+    // Zero parameters needed for MVP (assumes 1 kHz / 0.001 s loop)
     ssSetNumSFcnParams(S, 0);
     if (ssGetNumSFcnParams(S) != ssGetSFcnParamsCount(S)) {
         return; // Parameter mismatch
