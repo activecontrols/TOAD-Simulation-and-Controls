@@ -7,7 +7,7 @@ q = X(1:4);
 % UPDATE WIND FCN TO USE ACTUAL MASS
 mass = constantsTOAD.m_wet;
 MoI = constantsTOAD.J;
-moment = [0, 0, 0.120] * quatRot(q); % Distance from CoM to CoP rotated by Earth to Body DCM
+moment = [0, 0, 0.100] * quatRot(q); % Distance from CoM to CoP rotated by Earth to Body DCM
 
 rel_vel = wind_vel + ASTRA_vel;
 
@@ -15,14 +15,13 @@ rel_vel = wind_vel + ASTRA_vel;
 if constantsTOAD.Vehicle == 1
     AREA = 1.115;
 else
-    AREA = 0.07 * 0.8;      % Lateral surface area of TOAD - m^2 (Vincent said 12 ft^2)
+    AREA = 0.07 * 0.4;      % Lateral surface area of TOAD - m^2 (Vincent said 12 ft^2)
 end
 AIR_DENSITY = 1.246656;     % Estimated air desnsity - kg/m^3
 Cd = 0.95;                  % Estimated Drag coefficient
 
 % Calculates component accelerations from drag equation and wind velocity
 wind_force = sign(rel_vel) .* (1/2) .* rel_vel.^2 * AREA * AIR_DENSITY * Cd;
-
 
 % Turning South-West Earth coordinate output of function to North-West Earth coordinate system
 WtE = [-1, 0, 0; 

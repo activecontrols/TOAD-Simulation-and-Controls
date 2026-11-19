@@ -29,7 +29,7 @@ fprintf('=======================================================================
 
 %% Define Mission Waypoints
 dummyWP   = TOADWaypoint([0; 0; 0]);
-Waypoints = repmat(dummyWP, 1, 3);
+Waypoints = repmat(dummyWP, 1, 9);
 Radius = 5;
 Height = 7;
 

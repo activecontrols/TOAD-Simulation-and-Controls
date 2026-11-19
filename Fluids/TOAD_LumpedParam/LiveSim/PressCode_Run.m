@@ -95,7 +95,7 @@ State.COPV_Flowing = false;
 % Step until both tanks reach operating pressure (>= 540 psi), then hold for settling
 isPrepressed = false;
 t_prepress_done = 0.0;
-t_settle_hold   = 150.0; 
+t_settle_hold   = 10.0; 
 
 max_pad_steps = ceil(20.0 / dt);
 log_pad_t        = zeros(1, max_pad_steps);
@@ -203,6 +203,7 @@ hist_scfm_fu       = zeros(1, N_flight_steps);
 hist_scfm_tot      = zeros(1, N_flight_steps);
 hist_collapse_ox   = zeros(1, N_flight_steps);
 hist_collapse_fu   = zeros(1, N_flight_steps);
+hist_T_ox_tk       = zeros(1, N_flight_steps);
 
 while t_flight <= totalTime
     step = step + 1;
@@ -303,6 +304,7 @@ while t_flight <= totalTime
     hist_scfm_tot(step)     = scfm_tot_val;
     hist_collapse_ox(step)  = c_ox;
     hist_collapse_fu(step)  = c_fu;
+    hist_T_ox_tk(step)      = State.Nodes.TK_O2_01.Liquid.T;
 
     if mod(step, 200) == 0 || step == 1
         fprintf('  [Flight t = %5.2f s / %5.2f s] P_COPV = %6.1f psi | P_OX = %5.1f psi | T_OX_Ull = %5.1f K | N2_Mdot = %5.3f lb/s\n', ...
@@ -336,6 +338,7 @@ hist_scfm_fu      = hist_scfm_fu(idx_valid);
 hist_scfm_tot     = hist_scfm_tot(idx_valid);
 hist_collapse_ox  = hist_collapse_ox(idx_valid);
 hist_collapse_fu  = hist_collapse_fu(idx_valid);
+hist_T_ox_tk      = hist_T_ox_tk(idx_valid);
 
 %% Final Results & N2 Consumption Summary
 m_copv_final       = State.Nodes.TK_N2.m;
@@ -367,133 +370,76 @@ fprintf('Mean LOX Press Collapse Factor:    %.2f\n', mean(hist_collapse_ox(hist_
 fprintf('Mean Fuel Press Collapse Factor:   %.2f\n', mean(hist_collapse_fu(hist_t_fl > 1.0)));
 fprintf('=================================================================\n');
 
-%% 4-Panel Output Figure (Matching Baseline Format)
+%% Combine Phase 1 (Pre-Press) and Phase 2 (Flight) Histories
+t_pad_valid = log_pad_t(1:pad_step);
+t_combined  = [t_pad_valid, t_pad_total + hist_t_fl];
+t_end_total = ceil(t_combined(end));
+
+% 1. COPV Pressure
+P_copv_combined = [log_pad_P_copv(1:pad_step), hist_P_copv];
+
+% 2. Pressurant SCFM (convert Phase 1 lbm/s to kg/s, then to SCFM)
+scfm_pad_ox   = ((log_pad_flow_ox(1:pad_step) * lbm_to_kg) / rho_std) * m3s_to_scfm;
+scfm_pad_fu   = ((log_pad_flow_fu(1:pad_step) * lbm_to_kg) / rho_std) * m3s_to_scfm;
+scfm_pad_tot  = scfm_pad_ox + scfm_pad_fu;
+
+scfm_fu_combined  = [scfm_pad_fu, hist_scfm_fu];
+scfm_ox_combined  = [scfm_pad_ox, hist_scfm_ox];
+scfm_tot_combined = [scfm_pad_tot, hist_scfm_tot];
+
+% 3. COPV Temperature
+T_copv_combined = [log_pad_T_copv(1:pad_step), hist_T_copv];
+
+% 4. Collapse Factor (undefined/NaN during pre-press since outflow is zero)
+c_fu_combined = [nan(1, pad_step), min(hist_collapse_fu, 5.0)];
+c_ox_combined = [nan(1, pad_step), min(hist_collapse_ox, 10.0)];
+
+%% 4-Panel Output Figure (Pre-Press + Flight Burn)
 fig = figure('Color', 'w', 'Position', [60, 60, 1350, 880]);
 
 % --- Subplot 1: COPV Pressure vs. Time ---
 subplot(2, 2, 1);
-plot(hist_t_fl, hist_P_copv, 'LineWidth', 1.8, 'Color', [0.15, 0.45, 0.8]);
+plot(t_combined, P_copv_combined, 'LineWidth', 1.8, 'Color', [0.15, 0.45, 0.8]); hold on;
+xline(t_pad_total, 'k--', 'Liftoff', 'LineWidth', 1.4, 'LabelVerticalAlignment', 'bottom', 'FontSize', 9);
 ylabel('COPV Pressure (psia)', 'FontSize', 10, 'FontWeight', 'bold');
-xlabel('Time (sec.)', 'FontSize', 10);
+xlabel('Total Time (sec.)', 'FontSize', 10);
 title('COPV Pressure vs. Time', 'FontSize', 11, 'FontWeight', 'bold');
-xlim([0, ceil(totalTime)]);
-ylim([floor(min(hist_P_copv)/100)*100 - 100, 4600]);
+xlim([0, t_end_total]);
+ylim([floor(min(P_copv_combined)/100)*100 - 100, 4600]);
 grid on;
 
-% --- Subplot 2: Ullage Volume Temperature vs. Time ---
-% subplot(2, 2, 2);
-% plot(hist_t_fl, hist_T_fu_ull, 'r-', 'LineWidth', 1.8); hold on;
-% plot(hist_t_fl, hist_T_ox_ull, 'b-', 'LineWidth', 1.8);
-% ylabel('Ullage Volume Temperature (K)', 'FontSize', 10, 'FontWeight', 'bold');
-% xlabel('Time (sec.)', 'FontSize', 10);
-% title('Ullage Volume Temperature vs. Time', 'FontSize', 11, 'FontWeight', 'bold');
-% legend('Fuel Ullage', 'Ox Ullage', 'Location', 'best', 'FontSize', 9);
-% xlim([0, ceil(totalTime)]);
-% ylim([70, max([hist_T_fu_ull, hist_T_ox_ull]) + 20]);
-% grid on;
-
-% --- Subplot 3: Pressurant SCFM vs. Time ---
+% --- Subplot 2: Pressurant SCFM vs. Time ---
 subplot(2, 2, 2);
-plot(hist_t_fl, hist_scfm_fu, 'r-', 'LineWidth', 1.6); hold on;
-plot(hist_t_fl, hist_scfm_ox, 'b-', 'LineWidth', 1.6);
-plot(hist_t_fl, hist_scfm_tot, 'g-', 'LineWidth', 1.8);
+plot(t_combined, scfm_fu_combined, 'r-', 'LineWidth', 1.6); hold on;
+plot(t_combined, scfm_ox_combined, 'b-', 'LineWidth', 1.6);
+plot(t_combined, scfm_tot_combined, 'g-', 'LineWidth', 1.8);
+xline(t_pad_total, 'k--', 'Liftoff', 'LineWidth', 1.4, 'LabelVerticalAlignment', 'top', 'FontSize', 9);
 ylabel('Press Flow Rates (ft^3/min)', 'FontSize', 10, 'FontWeight', 'bold');
-xlabel('Time (sec.)', 'FontSize', 10);
+xlabel('Total Time (sec.)', 'FontSize', 10);
 title('Pressurant SCFM vs. Time', 'FontSize', 11, 'FontWeight', 'bold');
 legend('Fuel Press', 'Ox Press', 'Combined', 'Location', 'best', 'FontSize', 9);
-xlim([0, ceil(totalTime)]);
+xlim([0, t_end_total]);
 grid on;
 
-% --- Subplot 4: COPV Temperature vs. Time ---
+% --- Subplot 3: COPV Temperature vs. Time ---
 subplot(2, 2, 3);
-plot(hist_t_fl, hist_T_copv, 'LineWidth', 1.8, 'Color', [0.15, 0.45, 0.8]);
+plot(t_combined, T_copv_combined, 'LineWidth', 1.8, 'Color', [0.15, 0.45, 0.8]); hold on;
+xline(t_pad_total, 'k--', 'Liftoff', 'LineWidth', 1.4, 'LabelVerticalAlignment', 'bottom', 'FontSize', 9);
 ylabel('COPV Temperature (K)', 'FontSize', 10, 'FontWeight', 'bold');
-xlabel('Time (sec.)', 'FontSize', 10);
+xlabel('Total Time (sec.)', 'FontSize', 10);
 title('COPV Temperature vs. Time', 'FontSize', 11, 'FontWeight', 'bold');
-xlim([0, ceil(totalTime)]);
+xlim([0, t_end_total]);
 grid on;
 
-% --- Subplot 6: Collapse Factor vs. Time ---
+% --- Subplot 4: Collapse Factor vs. Time ---
 subplot(2, 2, 4);
-c_fu_plot = min(hist_collapse_fu, 5.0);
-c_ox_plot = min(hist_collapse_ox, 10.0);
-plot(hist_t_fl, c_fu_plot, 'r-', 'LineWidth', 1.8); hold on;
-plot(hist_t_fl, c_ox_plot, 'b-', 'LineWidth', 1.8);
+plot(t_combined, c_fu_combined, 'r-', 'LineWidth', 1.8); hold on;
+plot(t_combined, c_ox_combined, 'b-', 'LineWidth', 1.8);
+xline(t_pad_total, 'k--', 'Liftoff', 'LineWidth', 1.4, 'LabelVerticalAlignment', 'top', 'FontSize', 9);
 ylabel('Tank Press Collapse Factors', 'FontSize', 10, 'FontWeight', 'bold');
-xlabel('Time (sec.)', 'FontSize', 10);
+xlabel('Total Time (sec.)', 'FontSize', 10);
 title('Collapse Factor vs. Time', 'FontSize', 11, 'FontWeight', 'bold');
 legend('Fuel Press', 'Ox Press', 'Location', 'best', 'FontSize', 9);
-xlim([0, ceil(totalTime)]);
+xlim([0, t_end_total]);
 ylim([0.5, 8.5]);
 grid on;
-
-%% 8. Standalone 6-Panel Pre-Press Diagnostics Figure
-fig_prepress = figure('Color', 'w', 'Position', [80, 80, 1100, 800]);
-
-% Subplot 1: Pressure Evolution
-subplot(2, 2, 1);
-plot(log_pad_t(1:pad_step), log_pad_P_ox(1:pad_step), 'b-', 'LineWidth', 2.0); hold on;
-plot(log_pad_t(1:pad_step), log_pad_P_fu(1:pad_step), 'r-', 'LineWidth', 2.0);
-plot(log_pad_t(1:pad_step), log_pad_P_man(1:pad_step), 'm--', 'LineWidth', 1.0);
-yline(550.0, 'k:', '550 psi Setpoint', 'LineWidth', 1.2, 'FontSize', 9);
-if t_prepress_done > 0
-    xline(t_prepress_done, 'g--', sprintf('540 psi @ %.2fs', t_prepress_done), 'LineWidth', 1.2, 'FontSize', 9);
-end
-grid on; box on;
-xlabel('Time from Valve Open (s)', 'FontSize', 10, 'FontWeight', 'bold');
-ylabel('Pressure (psia)', 'FontSize', 10, 'FontWeight', 'bold');
-title('Tank & Manifold Pressure Evolution (14.7 -> 550 psia)', 'FontSize', 11, 'FontWeight', 'bold');
-legend('LOX Tank Ullage', 'Fuel Tank Ullage', 'Press Manifold', 'Location', 'best');
-ylim([0, 600]);
-xlim([0, 5 * t_prepress_done]);
-
-% Subplot 2: Temperature Evolution
-subplot(2, 2, 2);
-plot(log_pad_t(1:pad_step), log_pad_T_ox_ull(1:pad_step), 'b-', 'LineWidth', 2.0); hold on;
-plot(log_pad_t(1:pad_step), log_pad_T_fu_ull(1:pad_step), 'r-', 'LineWidth', 2.0);
-plot(log_pad_t(1:pad_step), log_pad_T_copv(1:pad_step), 'k-.', 'LineWidth', 1.5);
-yline(90.17, 'c--', 'LOX Wall Saturation (90.17 K)', 'LineWidth', 1.2, 'FontSize', 9);
-yline(293.15, 'm:', 'Ambient (293.15 K)', 'LineWidth', 1.2, 'FontSize', 9);
-if t_prepress_done > 0
-    xline(t_prepress_done, 'g--', 'LineWidth', 1.2);
-end
-grid on; box on;
-xlabel('Time from Valve Open (s)', 'FontSize', 10, 'FontWeight', 'bold');
-ylabel('Temperature (K)', 'FontSize', 10, 'FontWeight', 'bold');
-title('Ullage & Supply Temperature Evolution', 'FontSize', 11, 'FontWeight', 'bold');
-legend('LOX Ullage T', 'Fuel Ullage T', 'COPV Gas T', 'Location', 'best');
-ylim([70, 500]);
-
-% Subplot 3: Inflow Rates
-subplot(2, 2, 3);
-plot(log_pad_t(1:pad_step), log_pad_flow_ox(1:pad_step), 'b-', 'LineWidth', 1.8); hold on;
-plot(log_pad_t(1:pad_step), log_pad_flow_fu(1:pad_step), 'r-', 'LineWidth', 1.8);
-if t_prepress_done > 0
-    xline(t_prepress_done, 'g--', 'LineWidth', 1.2);
-end
-grid on; box on;
-xlabel('Time from Valve Open (s)', 'FontSize', 10, 'FontWeight', 'bold');
-ylabel('Inflow Rate (lbm/s)', 'FontSize', 10, 'FontWeight', 'bold');
-title('Pressurant Flow Rates into Tanks', 'FontSize', 11, 'FontWeight', 'bold');
-legend('LOX Check Valve Flow', 'Fuel Check Valve Flow', 'Location', 'best');
-xlim([0, 5 * t_prepress_done]);
-
-% Subplot 4: Cumulative N2 Consumed & COPV Pressure
-subplot(2, 2, 4);
-m_pad_n2_used = (m_copv_initial - log_pad_m_copv(1:pad_step)) * kg_to_lbm;
-yyaxis left;
-plot(log_pad_t(1:pad_step), m_pad_n2_used, 'k-', 'LineWidth', 2.0);
-ylabel('N2 Used (lbm)', 'FontSize', 10, 'FontWeight', 'bold');
-ylim([0, max(m_pad_n2_used)*1.2 + 0.1]);
-
-yyaxis right;
-plot(log_pad_t(1:pad_step), log_pad_P_copv(1:pad_step), 'b--', 'LineWidth', 1.8);
-ylabel('COPV Pressure (psia)', 'FontSize', 10, 'FontWeight', 'bold');
-ylim([3800, 4600]);
-
-if t_prepress_done > 0
-    xline(t_prepress_done, 'g--', 'LineWidth', 1.2);
-end
-grid on; box on;
-xlabel('Time from Valve Open (s)', 'FontSize', 10, 'FontWeight', 'bold');
-title('Pre-Press N2 Mass Used & COPV Blowdown', 'FontSize', 11, 'FontWeight', 'bold');

@@ -93,11 +93,14 @@ RMSE_Wind_all   = zeros(1, num_sims);
 %% Preallocate interpolated state histories
 t_sim = 60;
 t_common = (0:0.1:t_sim)';
+t_u      = (0:0.02:t_sim)';
 
 pos_all   = nan(num_sims, length(t_common), 3);
 vel_all   = nan(num_sims, length(t_common), 3);
 quat_all  = nan(num_sims, length(t_common), 4);
 rates_all = nan(num_sims, length(t_common), 3);
+wind_all  = nan(num_sims, length(t_common), 3);
+u_cmd_all = nan(num_sims, length(t_u), 4);
 
 target_state_all = [];
 
@@ -183,14 +186,16 @@ for i = 1:num_sims
         [model_name '/target_pos_log'], 'Commented', 'off');
     simIn(i) = simIn(i).setBlockParameter( ...
         [model_name '/target_pos_log'], 'SampleTime', '0.1');
+    simIn(i) = simIn(i).setBlockParameter( ...
+        [model_name '/input_log'], 'Commented', 'off');
+    simIn(i) = simIn(i).setBlockParameter( ...
+        [model_name '/input_log'], 'SampleTime', '0.02');
 
     % Disable unused high-rate logs to minimize parsim worker transfer overhead
     simIn(i) = simIn(i).setBlockParameter( ...
         [model_name '/meas_log'], 'Commented', 'on');
     simIn(i) = simIn(i).setBlockParameter( ...
         [model_name '/inputCMD'], 'Commented', 'on');
-    simIn(i) = simIn(i).setBlockParameter( ...
-        [model_name '/input_log'], 'Commented', 'on');
 end
 
 %% Base simulation variables
@@ -227,9 +232,32 @@ for i = 1:num_sims
         % Filter Attitude RMSE from SSE_Filter
         RMSE_Filter_all(:, i) = sqrt(out(i).SSE_Filter(:) ./ t_sim);
 
-        % Wind metric: SSE_Wind as a timeseries of wind velocity vector
-        w_data = squeeze(out(i).SSE_Wind(:));
-        RMSE_Wind_all(i) = sqrt(mean(sum(w_data.^2, 2)));
+        % Wind time-series extraction & true vector-norm RMS speed
+        w_raw = out(i).SSE_Wind;
+        if isa(w_raw, 'timeseries')
+            w_t   = w_raw.Time(:);
+            w_vec = squeeze(w_raw.Data);
+            if size(w_vec, 1) ~= numel(w_t), w_vec = w_vec.'; end
+        else
+            w_vec = squeeze(w_raw);
+            if size(w_vec, 1) == 3 && size(w_vec, 2) ~= 3, w_vec = w_vec.'; end
+            w_t = linspace(0, t_sim, size(w_vec, 1))';
+        end
+        RMSE_Wind_all(i) = sqrt(mean(sum(w_vec.^2, 2), 'omitnan'));
+        for dim = 1:3
+            wind_all(i,:,dim) = interp1(w_t, w_vec(:,dim), t_common, 'linear', 'extrap');
+        end
+
+        % Actuator command extraction (50 Hz for gimbal frequency analysis)
+        ts_in = out(i).input_log;
+        t_in  = ts_in.Time(:);
+        u_raw = squeeze(ts_in.Data);
+        if size(u_raw, 1) ~= numel(t_in), u_raw = u_raw.'; end
+        if size(u_raw, 2) >= 4
+            for dim = 1:4
+                u_cmd_all(i,:,dim) = interp1(t_in, u_raw(:,dim), t_u, 'linear', 'extrap');
+            end
+        end
 
         % Actual state extraction
         ts_state = out(i).state_log;
@@ -365,10 +393,6 @@ Att_Err_Max = max(att_err_deg(:, eval_idx), [], 2);            % deg
 
 Fail_Error    = ~ok(:);
 Fail_NoData   = isnan(Pos_Err_Max) | isnan(Att_Err_Max);
-
-% Quick override for failiure anaysis, failure errors are 2 sigma bounds
-pos_err_fail = std(Pos_Err_Max) * 2;
-att_err_fail = std(Att_Err_Max) * 2;
 Fail_Position = Pos_Err_Max > pos_err_fail;
 Fail_Attitude = Att_Err_Max > att_err_fail;
 MC_Fail = Fail_Error | Fail_NoData | Fail_Position | Fail_Attitude;

@@ -1,11 +1,12 @@
-function PlotMC_v5(filename)
+function PlotMC_v5(filename, withinValidWind, windLimit)
 % PlotMC_v5
 % Monte Carlo plotting for the V5 framework (built around per-run
 % pass/fail, physical wind envelope and verified plant disturbances).
 % Compatible with TOAD_Simulation_CPP To Workspace log blocks.
 %
-%   PlotMC_v5                  % after MonteCarlo_v5: reads the base workspace
-%   PlotMC_v5('MC5_...mat')    % reads a saved run
+%   PlotMC_v5                        % after MonteCarlo_v5: reads the base workspace
+%   PlotMC_v5('MC5_...mat')          % reads a saved run
+%   PlotMC_v5('MC5_...mat', true, 6) % optionally restrict to mean wind < 6 m/s
 %
 % Figures
 %   1  Summary: failure rate (90% Clopper-Pearson), failure modes, max errors
@@ -16,11 +17,18 @@ function PlotMC_v5(filename)
 %   6  Wind envelope: failure rate vs mean wind, wind direction
 %   7  Failure drivers: ranking + top-driver scatters
 %   8  Sensor disturbance diagnostics (Accel bias, Gyro bias, Soft iron)
-%   9  Vehicle / actuator disturbance diagnostics (Radial/Axial lever, Inertia)
-%   10 Filter RMSE
+%   9  Wind analysis: 3-axis wind timeseries + wind-speed error/gimbal correlations
+%   10 Controls: gimbal command timeseries + frequency PSD (oscillatory modes)
 %   11 Landing angular rates
 
 close all;
+if nargin < 2 || isempty(withinValidWind)
+    withinValidWind = false;   % true: plot & evaluate only runs with mean wind < windLimit
+end
+if nargin < 3 || isempty(windLimit)
+    windLimit       = 6;       % m/s, upper mean-wind cutoff when withinValidWind is true
+end
+
 bkgColor = 'w';
 alphaVal = 0.12;
 
@@ -36,7 +44,8 @@ bandColor = [0.30 0.50 0.80];
 clr.pass = passColor; clr.fail = failColor; clr.band = bandColor;
 
 %% 1. Load Data
-varList = {'t_common', 'pos_all', 'vel_all', 'quat_all', 'rates_all', 'target_state_all', 'ok', ...
+varList = {'t_common', 't_u', 'pos_all', 'vel_all', 'quat_all', 'rates_all', 'wind_all', 'u_cmd_all', ...
+           'target_state_all', 'ok', ...
            'seed', 'pad_hold_time', 'pos_err_fail', 'att_err_fail', ...
            'wind_sweep', 'dryden_W6', ...
            'Wind_Mean_all', 'Wind_Dir_all', 'Wind_Gain_all', 'Wind_Covar_all', ...
@@ -53,9 +62,9 @@ if nargin < 1 || isempty(filename)
         end
     end
 else
-    w = warning('off', 'MATLAB:load:variableNotFound');
-    S = load(filename, varList{:});
-    warning(w);
+    avail = {whos('-file', filename).name};
+    toLoad = varList(ismember(varList, avail));
+    S = load(filename, toLoad{:});
 end
 
 reqVars = {'t_common', 'pos_all', 'quat_all', 'target_state_all'};
@@ -68,6 +77,23 @@ end
 
 t_common = S.t_common(:);
 T        = numel(t_common);
+num_sims_total = size(S.pos_all, 1);
+
+if withinValidWind
+    if ~isfield(S, 'Wind_Mean_all') || numel(S.Wind_Mean_all) ~= num_sims_total
+        error('PlotMC_v5:MissingWind', ...
+            'Wind_Mean_all is required when withinValidWind is true.');
+    end
+    W_raw = reshape(S.Wind_Mean_all, [], 1);
+    keep  = isfinite(W_raw) & (W_raw < windLimit);
+    if ~any(keep)
+        error('PlotMC_v5:NoRunsWithinWind', ...
+            'No simulations have mean wind below %.2f m/s (min sampled: %.2f m/s).', ...
+            windLimit, min(W_raw));
+    end
+    S = filterStructRuns(S, keep, num_sims_total);
+end
+
 pos_all  = S.pos_all;
 num_sims = size(pos_all, 1);
 quat_all = S.quat_all;
@@ -76,8 +102,8 @@ vel_all  = getField(S, 'vel_all', nan(num_sims, T, 3));
 ok       = logical(reshape(getField(S, 'ok', true(num_sims, 1)), [], 1));
 
 pad_hold_time = getField(S, 'pad_hold_time', 15);
-pos_err_fail  = getField(S, 'pos_err_fail', 2.0);
-att_err_fail  = getField(S, 'att_err_fail', 15);
+pos_err_fallback = getField(S, 'pos_err_fail', 2.0);
+att_err_fallback = getField(S, 'att_err_fail', 15);
 
 %% 2. Derived Errors & Pass/Fail
 eval_idx = t_common >= pad_hold_time;
@@ -108,6 +134,11 @@ Att_Err_Max   = max(att_err(:, eval_idx), [], 2);
 
 Fail_Error    = ~ok;
 Fail_NoData   = ~Fail_Error & (isnan(Pos_Err_Max) | isnan(Att_Err_Max));
+
+validStats = ~Fail_Error & ~Fail_NoData;
+[pos_err_fail, pos_mu, pos_sig] = twoSigmaLimit(Pos_Err_Max(validStats), pos_err_fallback);
+[att_err_fail, att_mu, att_sig] = twoSigmaLimit(Att_Err_Max(validStats), att_err_fallback);
+
 Fail_Position = Pos_Err_Max > pos_err_fail;
 Fail_Attitude = Att_Err_Max > att_err_fail;
 MC_Fail = Fail_Error | Fail_NoData | Fail_Position | Fail_Attitude;
@@ -131,38 +162,48 @@ if isempty(firstValid)
 end
 target_pos_ref = reshape(tgt_pos(firstValid,:,:), T, 3);
 
-fprintf('\n=== PlotMC_v5: %d runs, %d failed (%.1f%%), 90%% CI on P(fail) [%.3f, %.3f] ===\n', ...
-    num_sims, nFail, 100 * nFail / num_sims, ciLo, ciHi);
-fprintf('   sim error %d | no data %d | position > %.2f m %d | attitude > %.1f deg %d\n', ...
-    nnz(Fail_Error), nnz(Fail_NoData), pos_err_fail, nnz(Fail_Position), ...
-    att_err_fail, nnz(Fail_Attitude));
+if withinValidWind
+    windNote = sprintf(' (of %d, wind < %.1f m/s)', num_sims_total, windLimit);
+else
+    windNote = '';
+end
+fprintf('\n=== PlotMC_v5: %d runs%s, %d failed (%.1f%%), 90%% CI on P(fail) [%.3f, %.3f] ===\n', ...
+    num_sims, windNote, nFail, 100 * nFail / num_sims, ciLo, ciHi);
+fprintf('   sim error %d | no data %d | pos > %.2f m (mu=%.2f, 2sig=%.2f) %d | att > %.1f deg (mu=%.1f, 2sig=%.1f) %d\n', ...
+    nnz(Fail_Error), nnz(Fail_NoData), pos_err_fail, pos_mu, 2 * pos_sig, nnz(Fail_Position), ...
+    att_err_fail, att_mu, 2 * att_sig, nnz(Fail_Attitude));
 
 %% 3. Summary (Figure 1)
 figure('Name', 'V5 Summary', 'Color', bkgColor, 'WindowStyle', 'docked');
 tl = tiledlayout(2, 3, 'TileSpacing', 'compact', 'Padding', 'compact');
 
 ax = nexttile(tl); axis(ax, 'off');
-txt = {sprintf('Runs:             %d', num_sims), ...
-       sprintf('Failed:           %d (%.1f%%)', nFail, 100 * nFail / num_sims), ...
-       sprintf('P(fail) 90%% CI:   [%.3f, %.3f]', ciLo, ciHi), ...
-       sprintf('Position limit:   %.2f m', pos_err_fail), ...
-       sprintf('Attitude limit:   %.1f deg', att_err_fail), ...
-       sprintf('Evaluated after:  t = %.1f s', pad_hold_time)};
+if withinValidWind
+    runsTxt = sprintf('Runs:          %d/%d (<%.1f m/s)', num_sims, num_sims_total, windLimit);
+else
+    runsTxt = sprintf('Runs:          %d', num_sims);
+end
+txt = {runsTxt, ...
+       sprintf('Failed:        %d (%.1f%%)', nFail, 100 * nFail / num_sims), ...
+       sprintf('P(fail) 90CI:  [%.3f, %.3f]', ciLo, ciHi), ...
+       sprintf('Pos lim 2sig:  %.2f m', pos_err_fail), ...
+       sprintf('Att lim 2sig:  %.1f deg', att_err_fail), ...
+       sprintf('Eval after:    t = %.1f s', pad_hold_time)};
 if isfield(S, 'seed')
-    txt{end+1} = sprintf('Master seed:      %.0f', double(S.seed));
+    txt{end+1} = sprintf('Master seed:   %.0f', double(S.seed));
 end
 if isfield(S, 'wind_sweep')
     if S.wind_sweep
-        txt{end+1} = 'Wind campaign:    envelope sweep';
+        txt{end+1} = 'Wind campaign: envelope';
     else
-        txt{end+1} = 'Wind campaign:    operational (Weibull)';
+        txt{end+1} = 'Wind campaign: Weibull';
     end
 end
 if nFail == 0
-    txt{end+1} = sprintf('0 failures: P(fail) < %.2f%% (95%%, rule of 3)', 300 / num_sims);
+    txt{end+1} = sprintf('0 fails: P < %.2f%% (95%%, rule3)', 300 / num_sims);
 end
 text(ax, 0, 1, txt, 'VerticalAlignment', 'top', 'FontName', 'FixedWidth', ...
-    'Interpreter', 'none', 'FontSize', 10);
+    'Interpreter', 'none', 'FontSize', 8.5);
 title(ax, 'Campaign');
 
 ax = nexttile(tl); hold(ax, 'on'); grid(ax, 'on');
@@ -185,12 +226,12 @@ legend(ax, 'Location', 'best');
 
 ax = nexttile(tl);
 plotSmartHistogram(ax, Pos_Err_Max, axColors{1}, 'Max |pos err|');
-xline(ax, pos_err_fail, 'r--', 'LineWidth', 1.5, 'DisplayName', 'Limit');
+xline(ax, pos_err_fail, 'r--', 'LineWidth', 1.5, 'DisplayName', '2\sigma Limit');
 title(ax, 'Max Position Error (after pad hold)'); xlabel(ax, 'm'); grid(ax, 'on'); legend(ax, 'show');
 
 ax = nexttile(tl);
 plotSmartHistogram(ax, Att_Err_Max, axColors{2}, 'Max att err');
-xline(ax, att_err_fail, 'r--', 'LineWidth', 1.5, 'DisplayName', 'Limit');
+xline(ax, att_err_fail, 'r--', 'LineWidth', 1.5, 'DisplayName', '2\sigma Limit');
 title(ax, 'Max Attitude Error (after pad hold)'); xlabel(ax, 'deg'); grid(ax, 'on'); legend(ax, 'show');
 
 ax = nexttile(tl); hold(ax, 'on'); grid(ax, 'on');
@@ -273,7 +314,7 @@ for k = 1:4
     plotBands(ax, t_common, errSets{k}, bandColor);
     plotFailedRuns(ax, t_common, errSets{k}, MC_Fail, failColor);
     if isfinite(errThr(k))
-        yline(ax, errThr(k), 'r--', 'LineWidth', 1.5, 'DisplayName', 'Limit');
+        yline(ax, errThr(k), 'r--', 'LineWidth', 1.5, 'DisplayName', '2\sigma Limit');
     end
     shadePadHold(ax, t_common(1), pad_hold_time);
     title(ax, errTtl{k}); xlabel(ax, 'Time (s)'); ylabel(ax, errLbl{k});
@@ -460,10 +501,10 @@ if nd > 0
         ax = nexttile;
         if abs(rhoA(d)) > abs(rhoP(d))
             plotPassFail(ax, drv(d).x, Att_Err_Max, MC_Fail, drv(d).name, 'Max att err [deg]', ...
-                sprintf('#%d  (\rho = %.2f)', k, rhoA(d)), att_err_fail, clr);
+                sprintf('#%d  (\\rho = %.2f)', k, rhoA(d)), att_err_fail, clr);
         else
             plotPassFail(ax, drv(d).x, Pos_Err_Max, MC_Fail, drv(d).name, 'Max |pos err| [m]', ...
-                sprintf('#%d  (\rho = %.2f)', k, rhoP(d)), pos_err_fail, clr);
+                sprintf('#%d  (\\rho = %.2f)', k, rhoP(d)), pos_err_fail, clr);
         end
         if k == 1, legend(ax, 'Location', 'best'); end
     end
@@ -475,29 +516,122 @@ sensorPairs = {'Accel bias |b| [m/s^2]',    Pos_Err_Max, 'Max |pos err| [m]', po
                'Soft iron deviation [-]',   Att_Err_Max, 'Max att err [deg]', att_err_fail};
 plotDiagGrid('Sensor Disturbance Diagnostics', sensorPairs, drv, MC_Fail, clr, bkgColor);
 
-%% 11. Vehicle / Actuator Disturbance Diagnostics (Figure 9 / Grid)
-vehPairs = {'Radial lever [m]',   Pos_Err_Max,  'Max |pos err| [m]',   pos_err_fail;
-            'Radial lever [m]',   Att_Err_Max,  'Max att err [deg]',   att_err_fail;
-            'Axial lever [m]',    Att_Err_Max,  'Max att err [deg]',   att_err_fail;
-            'dJxx [kg m^2]',      Att_Err_Max,  'Max att err [deg]',   att_err_fail;
-            'dJyy [kg m^2]',      Att_Err_Max,  'Max att err [deg]',   att_err_fail;
-            'dJzz [kg m^2]',      Att_Err_Max,  'Max att err [deg]',   att_err_fail};
-plotDiagGrid('Vehicle & Actuator Diagnostics', vehPairs, drv, MC_Fail, clr, bkgColor);
+%% 11. Wind Time Series & Correlations (Figure 9)
+wind_all = extractWindAll(S, t_common, num_sims, ok);
+[u_cmd_all, t_u] = extractCmdAll(S, t_common, num_sims, ok);
+if ~isempty(u_cmd_all)
+    gimbal_deg = u_cmd_all(:, :, 1:2) * (180 / pi);
+    u_eval_idx = t_u >= pad_hold_time;
+    if ~any(u_eval_idx), u_eval_idx(:) = true; end
+else
+    gimbal_deg = [];
+    u_eval_idx = [];
+end
 
-%% 12. Filter Attitude RMSE Distribution (Figure 10)
-if isfield(S, 'RMSE_Filter_all') && size(S.RMSE_Filter_all, 1) >= 3
-    RF = S.RMSE_Filter_all;
-    if any(imag(RF(:)) ~= 0)
-        warning('PlotMC_v5:ComplexRMSE', ['RMSE_Filter_all is complex: SSE_Filter went negative, ' ...
-            'so it is not integrating a squared error. Plotting the real part only.']);
+if ~isempty(wind_all) || isfield(S, 'Wind_Mean_all')
+    if ~isempty(wind_all)
+        w_mag = sqrt(sum(wind_all(:, eval_idx, :).^2, 3));
+        W_spd = mean(w_mag, 2, 'omitnan');
+        wSpdLbl = 'Mean Flight Wind Speed [m/s]';
+    else
+        W_spd = reshape(S.Wind_Mean_all, [], 1);
+        wSpdLbl = 'Mean Wind [m/s]';
     end
-    figure('Name', 'Filter Attitude RMSE', 'Color', bkgColor, 'WindowStyle', 'docked');
-    tiledlayout(3, 1, 'TileSpacing', 'compact');
-    filter_lbls = {'Filter Attitude RMSE X', 'Filter Attitude RMSE Y', 'Filter Attitude RMSE Z'};
-    for c = 1:3
+
+    figure('Name', 'Wind Analysis', 'Color', bkgColor, 'WindowStyle', 'docked');
+    tiledlayout(2, 2, 'TileSpacing', 'compact', 'Padding', 'compact');
+
+    ax = nexttile; hold(ax, 'on'); grid(ax, 'on');
+    if ~isempty(wind_all)
+        plotOverlayBands(ax, t_common, wind_all, axColors, axis_lbls);
+        shadePadHold(ax, t_common(1), pad_hold_time);
+        xlabel(ax, 'Time (s)'); ylabel(ax, 'Wind Velocity (m/s)');
+        title(ax, '3-Axis Wind Time Series (Median & 5-95%)');
+        legend(ax, 'Location', 'best');
+    else
+        axis(ax, 'off');
+        text(ax, 0.5, 0.5, 'Wind time series (SSE_Wind / wind_all) unavailable', ...
+            'HorizontalAlignment', 'center', 'Units', 'normalized', 'Interpreter', 'none');
+        title(ax, '3-Axis Wind Time Series');
+    end
+
+    ax = nexttile;
+    plotPassFail(ax, W_spd, Pos_Err_Max, MC_Fail, wSpdLbl, 'Max |pos err| [m]', ...
+        sprintf('Pos Error vs Wind Speed  (\\rho = %.2f)', spearmanRho(W_spd, Pos_Err_Max)), ...
+        pos_err_fail, clr);
+    legend(ax, 'Location', 'best');
+
+    ax = nexttile;
+    plotPassFail(ax, W_spd, Att_Err_Max, MC_Fail, wSpdLbl, 'Max att err [deg]', ...
+        sprintf('Att Error vs Wind Speed  (\\rho = %.2f)', spearmanRho(W_spd, Att_Err_Max)), ...
+        att_err_fail, clr);
+
+    ax = nexttile;
+    if ~isempty(gimbal_deg)
+        Gimbal_Max = max(max(abs(gimbal_deg(:, u_eval_idx, :)), [], 3), [], 2);
+        plotPassFail(ax, W_spd, Gimbal_Max, MC_Fail, wSpdLbl, 'Max |gimbal cmd| [deg]', ...
+            sprintf('Gimbal Cmd vs Wind Speed  (\\rho = %.2f)', spearmanRho(W_spd, Gimbal_Max)), ...
+            NaN, clr);
+        yline(ax, 10, 'r--', 'LineWidth', 1.2, 'DisplayName', '10\circ Limit');
+        legend(ax, 'Location', 'best');
+    else
+        axis(ax, 'off');
+        text(ax, 0.5, 0.5, {'Gimbal commands not logged in this file.', ...
+            'Enable input_log in MonteCarlo_v5 for correlation.'}, ...
+            'HorizontalAlignment', 'center', 'Units', 'normalized', 'Interpreter', 'none');
+        title(ax, 'Gimbal Cmd vs Wind Speed');
+    end
+end
+
+%% 12. Controls: Gimbal Commands & Frequency Analysis (Figure 10)
+if ~isempty(gimbal_deg) || ~isempty(rates_all)
+    figure('Name', 'Gimbal & Frequency Analysis', 'Color', bkgColor, 'WindowStyle', 'docked');
+    tiledlayout(2, 2, 'TileSpacing', 'compact', 'Padding', 'compact');
+
+    if ~isempty(gimbal_deg)
+        gim_lbls = {'Gimbal \theta (Ch 1)', 'Gimbal \phi (Ch 2)'};
+        for c = 1:2
+            ax = nexttile; hold(ax, 'on'); grid(ax, 'on');
+            X = gimbal_deg(:, :, c);
+            plotBands(ax, t_u, X, bandColor);
+            plotFailedRuns(ax, t_u, X, MC_Fail, failColor);
+            yline(ax, 10, 'r--', 'LineWidth', 1.2, 'DisplayName', '\pm10\circ Limit');
+            yline(ax, -10, 'r--', 'LineWidth', 1.2, 'HandleVisibility', 'off');
+            shadePadHold(ax, t_u(1), pad_hold_time);
+            nSat = nnz(max(abs(X(:, u_eval_idx)), [], 2) >= 9.95);
+            title(ax, sprintf('%s (%d/%d hit \\pm10\\circ)', gim_lbls{c}, nSat, num_sims));
+            xlabel(ax, 'Time (s)'); ylabel(ax, 'Command (deg)');
+            if c == 1, legend(ax, 'Location', 'best'); end
+        end
+
         ax = nexttile;
-        plotSmartHistogram(ax, real(RF(c,:)), axColors{c}, filter_lbls{c});
-        title(ax, filter_lbls{c}); xlabel(ax, 'RMSE (as logged)'); grid(ax, 'on'); legend(ax, 'show');
+        plotPSDGroup(ax, t_u, gimbal_deg, u_eval_idx, [1 2], {'\theta cmd', '\phi cmd'}, ...
+            {oranX, blueY}, MC_Fail, failColor, 'deg', 'Gimbal Command PSD (Active Flight)');
+    else
+        for k = 1:3
+            ax = nexttile; axis(ax, 'off');
+            if k <= 2
+                ttl = sprintf('Gimbal Ch %d Command', k);
+            else
+                ttl = 'Gimbal Command PSD';
+            end
+            text(ax, 0.5, 0.5, {'Gimbal commands (input_log / u_cmd_all) unavailable.', ...
+                'Re-run MonteCarlo_v5 with input_log enabled.'}, ...
+                'HorizontalAlignment', 'center', 'Units', 'normalized', 'Interpreter', 'none');
+            title(ax, ttl);
+        end
+    end
+
+    ax = nexttile;
+    if ~isempty(rates_all)
+        plotPSDGroup(ax, t_common, rates_all * (180/pi), eval_idx, [1 2 3], ...
+            {'Rate X', 'Rate Y', 'Rate Z'}, axColors, MC_Fail, failColor, 'deg/s', ...
+            'Body Angular Rate PSD (Active Flight)');
+    else
+        axis(ax, 'off');
+        text(ax, 0.5, 0.5, 'Angular rate logs unavailable', ...
+            'HorizontalAlignment', 'center', 'Units', 'normalized');
+        title(ax, 'Body Angular Rate PSD');
     end
 end
 
@@ -534,6 +668,48 @@ end
 end
 
 %% ======================= Local Helpers =======================
+function S = filterStructRuns(S, keep, N)
+    % Subset all per-run arrays by logical mask keep without touching scalars/time.
+    runFields = {'pos_all', 'vel_all', 'quat_all', 'rates_all', 'wind_all', 'u_cmd_all', ...
+                 'target_state_all', 'ok', ...
+                 'Wind_Mean_all', 'Wind_Dir_all', 'Wind_Gain_all', 'Wind_Covar_all', ...
+                 'Lever_Radial', 'Lever_Axial', 'J_d_vals', ...
+                 'AccelBias_Mag', 'GyroBias_Mag', 'SoftIron_Dev', 'RMSE_Wind_all', 'out'};
+    for k = 1:numel(runFields)
+        fn = runFields{k};
+        if ~isfield(S, fn) || isempty(S.(fn)), continue; end
+        v = S.(fn);
+        if isvector(v) && numel(v) == N
+            S.(fn) = v(keep);
+        elseif size(v, 1) == N
+            idx = repmat({':'}, 1, ndims(v));
+            idx{1} = keep;
+            S.(fn) = v(idx{:});
+        end
+    end
+    if isfield(S, 'RMSE_Filter_all') && size(S.RMSE_Filter_all, 2) == N
+        S.RMSE_Filter_all = S.RMSE_Filter_all(:, keep);
+    end
+end
+
+function [lim, mu, sig] = twoSigmaLimit(vals, fallback)
+    % Upper 2-sigma bound (mean + 2*std) on valid finite run-level peak errors.
+    vals = vals(isfinite(vals));
+    if numel(vals) >= 2
+        mu  = mean(vals);
+        sig = std(vals, 0);
+        lim = mu + 2 * sig;
+    elseif isscalar(vals)
+        mu  = vals;
+        sig = 0;
+        lim = fallback;
+    else
+        mu  = NaN;
+        sig = NaN;
+        lim = fallback;
+    end
+end
+
 function v = getField(S, name, default)
     if isfield(S, name) && ~isempty(S.(name))
         v = S.(name);
@@ -643,7 +819,7 @@ function plotPassFail(ax, x, y, fail, xlbl, ylbl, ttl, thr, clr)
             'MarkerFaceAlpha', 0.85, 'MarkerEdgeColor', 'none', 'DisplayName', 'Fail');
     end
     if isfinite(thr)
-        yline(ax, thr, 'r--', 'LineWidth', 1.2, 'DisplayName', 'Limit');
+        yline(ax, thr, 'r--', 'LineWidth', 1.2, 'DisplayName', '2\sigma Limit');
     end
     xlabel(ax, xlbl); ylabel(ax, ylbl); title(ax, ttl);
 end
@@ -694,7 +870,7 @@ function plotDiagGrid(figName, pairs, drv, fail, clr, bkgColor)
         y = pairs{r,2};
         ax = nexttile;
         plotPassFail(ax, x, y, fail, pairs{r,1}, pairs{r,3}, ...
-            sprintf('%s  (\rho = %.2f)', pairs{r,3}, spearmanRho(x, y)), pairs{r,4}, clr);
+            sprintf('%s  (\\rho = %.2f)', pairs{r,3}, spearmanRho(x, y)), pairs{r,4}, clr);
         if j == 1, legend(ax, 'Location', 'best'); end
     end
 end
@@ -756,11 +932,11 @@ function plotSmartHistogram(ax, data, clr, name)
     bar(ax, centers, counts, 1, 'FaceColor', clr, 'FaceAlpha', 0.85, 'EdgeColor', 'k', 'DisplayName', name);
 
     if underflow > 0
-        bar(ax, loB - binW, underflow, binW, 'FaceColor', [0.4 0.4 0.4], 'FaceAlpha', 0.6, 'EdgeColor', 'k', 'HandleVisibility', 'off');
+        bar(ax, [loB - binW, loB], [underflow, 0], 1, 'FaceColor', [0.4 0.4 0.4], 'FaceAlpha', 0.6, 'EdgeColor', 'k', 'HandleVisibility', 'off');
         text(ax, loB - binW, underflow, num2str(underflow), 'HorizontalAlignment', 'center', 'VerticalAlignment', 'bottom', 'FontSize', 7);
     end
     if overflow > 0
-        bar(ax, hiB + binW, overflow, binW, 'FaceColor', [0.4 0.4 0.4], 'FaceAlpha', 0.6, 'EdgeColor', 'k', 'HandleVisibility', 'off');
+        bar(ax, [hiB, hiB + binW], [0, overflow], 1, 'FaceColor', [0.4 0.4 0.4], 'FaceAlpha', 0.6, 'EdgeColor', 'k', 'HandleVisibility', 'off');
         text(ax, hiB + binW, overflow, num2str(overflow), 'HorizontalAlignment', 'center', 'VerticalAlignment', 'bottom', 'FontSize', 7);
     end
 
@@ -787,4 +963,178 @@ function drawMCTraj_v5(ax, pos_all, target_pos, x_idx, y_idx, x_lbl, y_lbl, alph
     end
     plot(ax, target_pos(:, x_idx), target_pos(:, y_idx), 'b--', 'LineWidth', 2);
     xlabel(ax, x_lbl); ylabel(ax, y_lbl);
+end
+
+function tf = hasOutVar(obj, name)
+    if isstruct(obj)
+        tf = isfield(obj, name);
+    else
+        tf = any(strcmp(who(obj), name));
+    end
+end
+
+function wind_all = extractWindAll(S, t_common, num_sims, ok)
+    wind_all = getField(S, 'wind_all', []);
+    if ~isempty(wind_all) && size(wind_all, 1) == num_sims
+        return;
+    end
+    wind_all = [];
+    if ~isfield(S, 'out') || isempty(S.out), return; end
+    buf = nan(num_sims, numel(t_common), 3);
+    found = false;
+    for i = 1:min(num_sims, numel(S.out))
+        if ~ok(i) || ~hasOutVar(S.out(i), 'SSE_Wind'), continue; end
+        w_raw = S.out(i).SSE_Wind;
+        if isa(w_raw, 'timeseries')
+            w_t = w_raw.Time(:);
+            w_vec = extractLoggedState(w_raw);
+        else
+            w_vec = squeeze(w_raw);
+            if size(w_vec, 1) == 3 && size(w_vec, 2) ~= 3, w_vec = w_vec.'; end
+            w_t = linspace(t_common(1), t_common(end), size(w_vec, 1))';
+        end
+        if size(w_vec, 2) >= 3 && numel(w_t) >= 2
+            buf(i, :, :) = interp1(w_t, w_vec(:, 1:3), t_common, 'linear', NaN);
+            found = true;
+        end
+    end
+    if found, wind_all = buf; end
+end
+
+function [u_cmd_all, t_u] = extractCmdAll(S, t_common, num_sims, ok)
+    u_cmd_all = getField(S, 'u_cmd_all', []);
+    if ~isempty(u_cmd_all) && size(u_cmd_all, 1) == num_sims
+        t_u = reshape(getField(S, 't_u', linspace(t_common(1), t_common(end), size(u_cmd_all, 2))'), [], 1);
+        return;
+    end
+    u_cmd_all = []; t_u = [];
+    if ~isfield(S, 'out') || isempty(S.out), return; end
+    for i = 1:min(num_sims, numel(S.out))
+        if ok(i) && hasOutVar(S.out(i), 'input_log') && ~isempty(S.out(i).input_log)
+            ts = S.out(i).input_log;
+            if numel(ts.Time) >= 2
+                t_u = ts.Time(:);
+                break;
+            end
+        end
+    end
+    if isempty(t_u), return; end
+    buf = nan(num_sims, numel(t_u), 4);
+    found = false;
+    for i = 1:min(num_sims, numel(S.out))
+        if ~ok(i) || ~hasOutVar(S.out(i), 'input_log'), continue; end
+        ts = S.out(i).input_log;
+        u_raw = extractLoggedState(ts);
+        if size(u_raw, 2) >= 2 && numel(ts.Time) >= 2
+            nCh = min(4, size(u_raw, 2));
+            buf(i, :, 1:nCh) = interp1(ts.Time(:), u_raw(:, 1:nCh), t_u, 'linear', NaN);
+            found = true;
+        end
+    end
+    if found, u_cmd_all = buf; else, t_u = []; end
+end
+
+function plotOverlayBands(ax, t, data3d, axColors, axis_lbls)
+    % Draw 5-95% shaded bands first, then medians on top using axis colors.
+    C = size(data3d, 3);
+    P_all = cell(1, C);
+    g_all = cell(1, C);
+    for c = 1:C
+        P = pctlCols(data3d(:, :, c), [5 50 95]);
+        good = all(isfinite(P), 1);
+        P_all{c} = P(:, good);
+        g_all{c} = t(good)';
+        if any(good)
+            fill(ax, [g_all{c}, fliplr(g_all{c})], [P_all{c}(1,:), fliplr(P_all{c}(3,:))], ...
+                axColors{c}, 'FaceAlpha', 0.22, 'EdgeColor', 'none', 'HandleVisibility', 'off');
+        end
+    end
+    for c = 1:C
+        if ~isempty(g_all{c})
+            plot(ax, g_all{c}, P_all{c}(2,:), '-', 'Color', axColors{c}, ...
+                'LineWidth', 1.6, 'DisplayName', axis_lbls{c});
+        end
+    end
+end
+
+function plotPSDGroup(ax, t_sig, data3d, evalMask, chIdx, chNames, chColors, failMask, failColor, unitLbl, ttl)
+    % Hann-windowed one-sided PSD (median + 5-95% band) in pure base MATLAB.
+    hold(ax, 'on'); grid(ax, 'on');
+    dt_sig = median(diff(t_sig));
+    M = nnz(evalMask);
+    if ~(dt_sig > 0) || M < 8
+        axis(ax, 'off');
+        text(ax, 0.5, 0.5, 'Insufficient samples for PSD', 'HorizontalAlignment', 'center', 'Units', 'normalized');
+        title(ax, ttl); return;
+    end
+
+    fs = 1 / dt_sig;
+    win = 0.5 * (1 - cos(2 * pi * (0:M-1)' / max(1, M - 1)));
+    nfft = max(2^nextpow2(M), 1024);
+    f = (0:nfft/2)' * (fs / nfft);
+    fKeep = f >= max(0.05, f(2));
+    fp = f(fKeep)';
+
+    P_med_all = zeros(numel(chIdx), numel(fp));
+    Pf_overlay = [];
+    anyPlotted = false;
+    for k = 1:numel(chIdx)
+        X = data3d(:, evalMask, chIdx(k));
+        good = all(isfinite(X), 2);
+        if ~any(good), continue; end
+        Xg = X(good, :) - mean(X(good, :), 2);
+        Xf = fft(Xg .* win', nfft, 2);
+        Pxx = (abs(Xf(:, 1:nfft/2+1)).^2) / (fs * sum(win.^2));
+        Pxx(:, 2:end-1) = 2 * Pxx(:, 2:end-1);
+        Ps = max(pctlCols(Pxx(:, fKeep), [5 50 95]), 1e-12);
+        fill(ax, [fp, fliplr(fp)], [Ps(1,:), fliplr(Ps(3,:))], chColors{k}, ...
+            'FaceAlpha', 0.16, 'EdgeColor', 'none', 'HandleVisibility', 'off');
+        plot(ax, fp, Ps(2,:), '-', 'Color', chColors{k}, 'LineWidth', 1.6, 'DisplayName', chNames{k});
+        P_med_all(k, :) = Ps(2, :);
+        anyPlotted = true;
+
+        if k == 1 && any(failMask(:) & good) && any(~failMask(:) & good)
+            Pf_overlay = max(pctlCols(Pxx(failMask(:) & good, fKeep), 50), 1e-12);
+        end
+    end
+
+    if ~anyPlotted
+        axis(ax, 'off');
+        text(ax, 0.5, 0.5, 'No finite data for PSD', 'HorizontalAlignment', 'center', 'Units', 'normalized');
+        title(ax, ttl); return;
+    end
+    if ~isempty(Pf_overlay)
+        plot(ax, fp, Pf_overlay(1,:), '--', 'Color', failColor, 'LineWidth', 1.3, ...
+            'DisplayName', sprintf('%s (failed)', chNames{1}));
+    end
+
+    % Highlight top 2 distinct oscillatory peaks above 0.25 Hz (skipping DC/circle fundamental)
+    env = max(P_med_all, [], 1);
+    oscMask = fp >= 0.25;
+    if nnz(oscMask) >= 3
+        fo = fp(oscMask); eo = env(oscMask);
+        pkIdx = find(eo(2:end-1) > eo(1:end-2) & eo(2:end-1) >= eo(3:end)) + 1;
+        if ~isempty(pkIdx)
+            [~, ord] = sort(eo(pkIdx), 'descend');
+            sel = [];
+            for m = ord
+                if isempty(sel) || all(abs(log10(fo(pkIdx(m)) ./ fo(sel))) >= 0.15)
+                    sel(end+1) = pkIdx(m); %#ok<AGROW>
+                end
+                if numel(sel) >= 2, break; end
+            end
+            for j = 1:numel(sel)
+                fx = fo(sel(j)); fy = eo(sel(j));
+                plot(ax, fx, fy, 'ko', 'MarkerSize', 5, 'MarkerFaceColor', 'w', 'HandleVisibility', 'off');
+                text(ax, fx, fy * (1.45 + 0.45 * mod(j - 1, 2)), sprintf('%.2f Hz', fx), ...
+                    'HorizontalAlignment', 'center', 'FontSize', 7.5);
+            end
+        end
+    end
+
+    set(ax, 'XScale', 'log', 'YScale', 'log');
+    xlim(ax, [fp(1), fs / 2]);
+    xlabel(ax, 'Frequency (Hz)'); ylabel(ax, sprintf('PSD ((%s)^2/Hz)', unitLbl));
+    title(ax, ttl);
+    legend(ax, 'Location', 'southwest');
 end
