@@ -12,13 +12,13 @@ function [SegTimes, Cost] = allocateTimes(FixLeg, SegTimesInit, A0, H0, MinSegTi
     nc = 2 * r;
     Ttot = sum(SegTimes);
     a_log = log(SegTimes(:));
-    MaxIter = 12;
+    MaxIter = 25;
 
     % Derivative order vector k_i for segment endpoint vector [0..r-1, 0..r-1]
-    % Under T_m^(-1) normalized segment weighting, H_m(T_m) = T_m^(k_i + k_j - 1) * H0
+    % Physical integral Hessian: H_m(T_m) = T_m^(k_i + k_j + 1 - 2r) * H0
     k_vec = [0:(r - 1), 0:(r - 1)].';
     K_sum = bsxfun(@plus, k_vec, k_vec.');
-    ExpMat = -1 + K_sum;
+    ExpMat = (1 - 2 * r) + K_sum;
 
     for it = 1:MaxIter
         % Solve QP at current durations to get optimal endpoint derivatives d*

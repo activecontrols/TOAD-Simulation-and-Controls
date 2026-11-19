@@ -47,7 +47,7 @@ function [EvalOut, Feasible] = evaluateConstraints(QPTraj, Plan, Constants, Limi
     % Utilisation arrays per segment:
     % Rows: 1=Vel, 2=Accel, 3=ThrustHi, 4=ThrustLo, 5=Gimbal, 6=GimbalRate, 7=ThrustRate, 8=Roll, 9=Tilt
     SegUtil     = zeros(9, M);
-    SegDilate   = ones(1, M);
+    SegDilate   = zeros(1, M);
 
     g = Limits.g;
     G_vec = [0; 0; g];
@@ -102,28 +102,30 @@ function [EvalOut, Feasible] = evaluateConstraints(QPTraj, Plan, Constants, Limi
         u_col = [u_vel; u_acc; u_thi; u_tlo; u_gim; u_grate; u_trate; u_roll; u_tilt];
         SegUtil(:, m) = max(SegUtil(:, m), u_col);
 
-        % Compute required segment stretch ratio s >= 1 if any constraint is violated
+        % Compute bidirectional segment time-scale factor sigma_m = max_c (u_c)^(1/k_c)
         if ~Plan.IsCruise(m)
-            s_req = 1.0;
-            if u_vel > 1.0,   s_req = max(s_req, u_vel);        end
-            if u_acc > 1.0,   s_req = max(s_req, u_acc^(1/2));  end
-            if u_gim > 1.0,   s_req = max(s_req, u_gim^(1/4));  end
-            if u_grate > 1.0, s_req = max(s_req, u_grate^(1/5)); end
-            if u_trate > 1.0, s_req = max(s_req, u_trate^(1/3)); end
-            if u_roll > 1.0,  s_req = max(s_req, u_roll^(1/4)); end
-            if u_tilt > 1.0,  s_req = max(s_req, u_tilt^(1/2)); end
+            s_thi = solveThrustStretch(ak, G_vec, Limits.T_hi / mk, u_thi);
+            s_tlo = solveThrustFloorStretch(ak, G_vec, Limits.T_lo / mk, u_tlo);
 
-            % Closed-form quadratic thrust scaling for T > T_hi: |a*w + G| = T_allow / m, w = 1/s^2
-            if u_thi > 1.0
-                s_thi = solveThrustStretch(ak, G_vec, Limits.T_hi / mk, u_thi);
-                s_req = max(s_req, s_thi);
-            end
-            if u_tlo > 1.0
-                s_tlo = solveThrustFloorStretch(ak, G_vec, Limits.T_lo / mk, u_tlo);
-                s_req = max(s_req, s_tlo);
-            end
+            s_req = max([ ...
+                u_vel, ...
+                u_acc^(1/2), ...
+                s_thi, ...
+                s_tlo, ...
+                u_gim^(1/4), ...
+                u_grate^(1/5), ...
+                u_trate^(1/3), ...
+                u_roll^(1/4), ...
+                u_tilt^(1/2) ...
+            ]);
 
             SegDilate(m) = max(SegDilate(m), s_req);
+        end
+    end
+
+    for m = 1:M
+        if QPTraj.IsHold(m) || Plan.IsCruise(m) || SegDilate(m) <= 0
+            SegDilate(m) = 1.0;
         end
     end
 
@@ -140,40 +142,56 @@ function [EvalOut, Feasible] = evaluateConstraints(QPTraj, Plan, Constants, Limi
 end
 
 function s = solveThrustStretch(a, G_vec, e_allow, u_thi)
-%% Quadratic root for time stretch s when specific force exceeds e_allow
+%% Quadratic root for time scale s where specific force reaches e_allow
     g = G_vec(3);
     a2 = dot(a, a);
     aG = dot(a, G_vec);
     c  = g^2 - e_allow^2;
-    if a2 < 1e-8 || c >= 0
+    if c >= 0
         s = sqrt(u_thi);
+        return;
+    end
+    if a2 < 1e-8
+        s = 0.0;
         return;
     end
     disc = max(0, aG^2 - a2 * c);
     w = (-aG + sqrt(disc)) / a2;
-    if w > 0 && w < 1
+    if w > 0
         s = 1 / sqrt(w);
     else
         s = sqrt(u_thi);
     end
 end
 
-function s = solveThrustFloorStretch(a, G_vec, e_floor, ~)
-%% Time stretch s when downward acceleration causes thrust to drop below T_lo
+function s = solveThrustFloorStretch(a, G_vec, e_floor, u_tlo)
+%% Time scale s where downward acceleration causes thrust to reach T_lo
     g = G_vec(3);
     a2 = dot(a, a);
     aG = dot(a, G_vec);
     c  = g^2 - e_floor^2;
-    if a2 < 1e-8 || c <= 0
+    if c <= 0
         % Hover thrust m*g is already below T_lo: time dilation cannot raise thrust
         s = 1.0;
         return;
     end
-    disc = max(0, aG^2 - a2 * c);
+    if a2 < 1e-8 || aG >= 0
+        s = 0.0;
+        return;
+    end
+    disc = aG^2 - a2 * c;
+    if disc < 0
+        if u_tlo > 1.0
+            s = 1.0;
+        else
+            s = 0.0;
+        end
+        return;
+    end
     w = (-aG - sqrt(disc)) / a2;
-    if w > 0 && w < 1
+    if w > 0
         s = 1 / sqrt(w);
     else
-        s = 1.0;
+        s = 0.0;
     end
 end

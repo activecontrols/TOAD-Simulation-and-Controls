@@ -47,19 +47,23 @@ static void mdlInitializeSizes(SimStruct *S) {
     // Output Ports
     // Port 0: Actuator Commands U_cmd [pitch_deg; yaw_deg; thrust_N; roll_accel] = 4 floats
     // Port 1: Estimated State X_est [q(4); pos(3); vel(3); biases(9)] = 19 floats
-    if (!ssSetNumOutputPorts(S, 3)) return;
+    if (!ssSetNumOutputPorts(S, 4)) return;
 
     // Port 0: Commands
     ssSetOutputPortWidth(S, 0, 4);
     ssSetOutputPortDataType(S, 0, SS_SINGLE);
 
-    // Port 1: Telemetry / State Estimate
+    // Port 1: Controller State Estimate
     ssSetOutputPortWidth(S, 1, 15);
     ssSetOutputPortDataType(S, 1, SS_SINGLE);
 
     // Port 2: Disturbance Estimate
     ssSetOutputPortWidth(S, 2, 6);
     ssSetOutputPortDataType(S, 2, SS_SINGLE);
+
+    // Port 3: Full Estimator State
+    ssSetOutputPortWidth(S, 3, 19);
+    ssSetOutputPortDataType(S, 3, SS_SINGLE);
 
     // Timing & Engine Options
     ssSetNumSampleTimes(S, 1);
@@ -99,6 +103,7 @@ static void mdlOutputs(SimStruct *S, int_T tid) {
     real32_T *u_cmd = (real32_T*) ssGetOutputPortSignal(S, 0);
     real32_T *x_est = (real32_T*) ssGetOutputPortSignal(S, 1);
     real32_T *DistLESO = (real32_T*) ssGetOutputPortSignal(S, 2);
+    real32_T *x_est_full = (real32_T*) ssGetOutputPortSignal(S, 3);
 
     // Build Controller_Input struct
     Controller_Input ci{};
@@ -164,6 +169,27 @@ static void mdlOutputs(SimStruct *S, int_T tid) {
     x_est[12] = cs.filter_out[5] - cs.x_est.gyro_bias_roll;
     x_est[13] = 0.0f;
     x_est[14] = 0.0f;
+
+    // Assign full 19-state estimator vector
+    x_est_full[0]  = cs.x_est.q_vec_w;
+    x_est_full[1]  = cs.x_est.q_vec_x;
+    x_est_full[2]  = cs.x_est.q_vec_y;
+    x_est_full[3]  = cs.x_est.q_vec_z;
+    x_est_full[4]  = cs.x_est.est_pos_north;
+    x_est_full[5]  = cs.x_est.est_pos_west;
+    x_est_full[6]  = cs.x_est.est_pos_up;
+    x_est_full[7]  = cs.x_est.est_vel_north;
+    x_est_full[8]  = cs.x_est.est_vel_west;
+    x_est_full[9]  = cs.x_est.est_vel_up;
+    x_est_full[10] = cs.x_est.gyro_bias_yaw;
+    x_est_full[11] = cs.x_est.gyro_bias_pitch;
+    x_est_full[12] = cs.x_est.gyro_bias_roll;
+    x_est_full[13] = cs.x_est.accel_bias_x;
+    x_est_full[14] = cs.x_est.accel_bias_y;
+    x_est_full[15] = cs.x_est.accel_bias_z;
+    x_est_full[16] = cs.x_est.mag_bias_x;
+    x_est_full[17] = cs.x_est.mag_bias_y;
+    x_est_full[18] = cs.x_est.mag_bias_z;
 
     // Assign disturbance estimates
     DistLESO[0] = co.dist_accel_x;

@@ -4,16 +4,16 @@
 
 clear; clc; close all;
 
-%% 1. Mission & Solver Configuration
-Vehicle     = 0;            % 1 = TOAD (liquid biprop), 0 = ASTRA (electric testbed)
-MissionName = "Waypoint";   % Mission identifier for CSV output naming
-Version     = 1;            % Output version integer: formats as v001, v002, etc.
+%% Mission & Solver Config
+Vehicle     = 0;            % 1 = TOAD, 0 = ASTRA
+MissionName = "Circle";   % Mission identifier for CSV output naming
+Version     = 5;            % Output version integer: formats as v001, v002, etc.
 
-Opts = struct('R', 5);      % Minimum-jounce (R = 5, degree 9) polynomial order
-ExportCSVAndGains = true;   % Write 20-column CSV and generate TV-LQI / LESO gains
-ShowPlots         = true;   % Open 4-figure docked engineering dashboard
+Opts = struct('R', 5);      % Minimum-jounce
+ExportCSVAndGains = true;   
+ShowPlots         = true;   
 
-%% 2. Load Vehicle Constants
+%% Load Vehicle Constants
 constants6DoF = LoadTOADParams(Vehicle);
 if Vehicle == 1
     vehName = "TOAD";
@@ -27,26 +27,23 @@ fprintf('  Vehicle: %-6s | Mission: %-10s | Version: v%03d | Order: R = %d      
     vehName, MissionName, Version, Opts.R);
 fprintf('================================================================================\n\n');
 
-%% 3. Define Mission Waypoints (NWU Frame: +X North, +Y West, +Z Up)
+%% Define Mission Waypoints
 dummyWP   = TOADWaypoint([0; 0; 0]);
-Waypoints = repmat(dummyWP, 1, 5);
+Waypoints = repmat(dummyWP, 1, 9);
+Radius = 5;
+Height = 7;
 
-Waypoints(1) = TOADWaypoint([0; 0; 0], ...
-    'Label', 'PAD HLD 1', 'HoldTime', 10.0);
+Waypoints(1) = TOADWaypoint([0; 0; 0], 'Label', 'FLT STRT');
+Waypoints(2) = TOADWaypoint([0; 0; 2], 'Label', 'FLT 1', 'StraightLine', true);
+Waypoints(3) = TOADWaypoint([Radius; 0; Height], 'Label', 'FLT 2', 'VelBC', [NaN, NaN, 0]);
+Waypoints(4) = TOADWaypoint([0; Radius; Height], 'Label', 'FLT 3', 'VelBC', [NaN, NaN, 0]);
+Waypoints(5) = TOADWaypoint([-Radius; 0; Height], 'Label', 'FLT 4', 'VelBC', [NaN, NaN, 0]);
+Waypoints(6) = TOADWaypoint([0; -Radius; Height], 'Label', 'FLT 5', 'VelBC', [NaN, NaN, 0]);
+Waypoints(7) = TOADWaypoint([Radius; 0; Height], 'Label', 'FLT 6');
+Waypoints(8) = TOADWaypoint([0; 0; 2], 'Label', 'FLT 7', 'HoldTime', 1.0);
+Waypoints(9) = TOADWaypoint([0; 0; 0], 'Label', 'FLT END', 'HoldTime', 1.0, 'MaxVel', [3; 3; 1], 'StraightLine', true);
 
-Waypoints(2) = TOADWaypoint([0; 0; 2], ...
-    'Label', 'PAD DIV 1', 'MaxVel', [5; 5; 5], 'StraightLine', true);
-
-Waypoints(3) = TOADWaypoint([10; 0; 5], ...
-    'Label', 'FLT HOV 1', 'HoldTime', 6.0, 'MaxVel', [5; 5; 5]);
-
-Waypoints(4) = TOADWaypoint([10; 10; 3], ...
-    'Label', 'FLT HOV 3', 'MaxVel', [5; 5; 5], 'VelBC',[0, 0, NaN]);
-
-Waypoints(5) = TOADWaypoint([10; 10; 0], ...
-    'Label', 'FLT END 1', 'HoldTime', 1.0, 'MaxVel', [3; 3; 1], 'StraightLine', true);
-
-%% 4. Solve Closed-Form Polynomial Trajectory & Flatness Inversion
+%% Polynomial Trajectory & Flatness Inversion
 tic;
 [InitialGuess, QPTraj, Report] = PolyQP(Waypoints, constants6DoF, Opts);
 tSolveMs = toc * 1000;
@@ -69,7 +66,7 @@ fprintf('    Peak Utilization:    %.1f%% (Vel %.1f%%, Acc %.1f%%, ThrHi %.1f%%, 
     100 * Report.MaxOverallUtil, 100 * Report.UtilVel, 100 * Report.UtilAccel, ...
     100 * Report.UtilThrustHi, 100 * Report.UtilThrustLo, 100 * Report.UtilGimbal, 100 * Report.UtilTilt);
 
-%% 5. Export 20-Column Simulation CSV & Pre-Generate TV-LQI Gains
+%% Export CSV & Pre-Generate TV-LQI Gains
 if ExportCSVAndGains
     [~, csvPath, trajStem] = ExportTrajectoryCSV(InitialGuess, constants6DoF, ...
         'MissionName', MissionName, ...
@@ -80,7 +77,7 @@ if ExportCSVAndGains
     fprintf('    filename = "%s";\n\n', trajStem);
 end
 
-%% 6. Launch 4-Figure Docked Visualization Suite
+%% Plots
 if ShowPlots
     PlotTrajectoryQP(InitialGuess, QPTraj, Report, Waypoints, constants6DoF);
 end

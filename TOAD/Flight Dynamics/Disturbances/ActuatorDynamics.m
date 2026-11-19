@@ -2,7 +2,7 @@ function xdot = ActuatorDynamics(x, u)
     xdot = zeros(6, 1);
     
     % 1st-order gimbal dynamics (tau = 25 ms)
-    tau_gimbal = 0.025;
+    tau_gimbal = 0.020;
     xdot(1) = (1 / tau_gimbal) * (u(1) - x(1));  % dTheta/dt
     xdot(2) = 0;                                 % Unused 
     

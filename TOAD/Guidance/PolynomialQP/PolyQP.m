@@ -28,39 +28,75 @@ function [InitialGuess, QPTraj, Report] = PolyQP(Waypoints, Constants, Opts)
         return;
     end
 
-    % 4. Unified Evaluate -> Dilation Loop
+    % 4. Unified Evaluate -> Bidirectional Leg Time Scaling Loop
     MaxOuter = 40;
     stallCount = 0;
     outerIter = 0;
+
+    nLegs = Plan.LegCount;
+    legCanContract = true(1, nLegs);
+    for leg = 1:nLegs
+        m1 = Plan.LegStartSeg(leg);
+        m2 = Plan.LegEndSeg(leg);
+        % Only contract legs whose fixed derivative BCs (order >= 1) are homogeneous (0 or NaN)
+        dLeg = Plan.FixCg(:, 2:r, m1:(m2 + 1));
+        if any(dLeg(:) ~= 0 & ~isnan(dLeg(:)))
+            legCanContract(leg) = false;
+        end
+    end
+    legHasDilated = false(1, nLegs);
 
     [EvalOut, Feasible] = evaluateConstraints(QPTraj, Plan, Constants, Limits);
     bestUtil = EvalOut.MaxOverallUtil;
     bestSegT = Plan.SegT;
     prevSegUtil = max(EvalOut.SegUtil, [], 1);
 
-    while ~Feasible && outerIter < MaxOuter
-        outerIter = outerIter + 1;
+    while outerIter < MaxOuter
+        didScale = false;
+        didContract = false;
 
-        % Monotone per-segment dilation: T_m <- T_m * 1.02 * max_c (u_c)^(1/k_c)
-        didStretch = false;
-        M = Plan.SegCount;
-        for m = 1:M
-            if ~Plan.IsHold(m) && ~Plan.IsCruise(m) && EvalOut.SegDilate(m) > 1.0
-                s_apply = min(2.0, 1.02 * EvalOut.SegDilate(m));
-                Plan.SegT(m) = Plan.SegT(m) * s_apply;
-                didStretch = true;
+        for leg = 1:nLegs
+            m1 = Plan.LegStartSeg(leg);
+            m2 = Plan.LegEndSeg(leg);
+            s_leg = max(EvalOut.SegDilate(m1:m2));
+            if s_leg > 1.0
+                s_apply = min(2.0, 1.02 * s_leg);
+                Plan.SegT(m1:m2) = Plan.SegT(m1:m2) * s_apply;
+                legHasDilated(leg) = true;
+                didScale = true;
+            elseif Feasible && legCanContract(leg) && ~legHasDilated(leg) && (1.02 * s_leg < 0.97)
+                s_min_leg = max(Limits.MinSegTime ./ Plan.SegT(m1:m2));
+                s_apply = max([0.60, s_min_leg, 1.02 * s_leg]);
+                if s_apply < 1.0 - 1e-4
+                    Plan.SegT(m1:m2) = Plan.SegT(m1:m2) * s_apply;
+                    didScale = true;
+                    didContract = true;
+                end
             end
         end
 
-        if ~didStretch
+        if ~didScale
             break;
         end
 
-        % Re-solve legs with updated segment durations (no time redistribution inside loop)
+        outerIter = outerIter + 1;
+
+        % Re-solve legs with updated segment durations (preserving optimal relative time shares)
+        Plan.R = r;
         [Plan, QPTraj] = solveAllLegs(Plan, A0, H0, Limits, false);
         [EvalOut, Feasible] = evaluateConstraints(QPTraj, Plan, Constants, Limits);
 
-        % Stall detection: continue as long as any active segment's max utilisation improved
+        if didContract
+            bestUtil = EvalOut.MaxOverallUtil;
+            if Feasible
+                bestSegT = Plan.SegT;
+            end
+            prevSegUtil = max(EvalOut.SegUtil, [], 1);
+            stallCount = 0;
+            continue;
+        end
+
+        % Stall detection during dilation phase
         curSegUtil = max(EvalOut.SegUtil, [], 1);
         violMask = curSegUtil > 1.0 + 1e-3;
         madeProgress = (EvalOut.MaxOverallUtil < bestUtil - 1e-4) || ...
@@ -119,14 +155,14 @@ function [Plan, QPTraj] = solveAllLegs(Plan, A0, H0, Limits, doAllocateTimes)
     DerivAll = FixP;
     totalCost = 0;
 
-    % Optional one-time Richter time redistribution on multi-segment legs where intermediate knots have no pinned velocities
+    % Optional one-time Richter time redistribution on multi-segment legs where intermediate knots have at least one free velocity axis
     if doAllocateTimes
         for leg = 1:Plan.LegCount
             m1 = Plan.LegStartSeg(leg);
             m2 = Plan.LegEndSeg(leg);
             if m2 > m1
                 midVelBins = FixP(:, 2, (m1 + 1):m2);
-                if ~any(~isnan(midVelBins(:)))
+                if all(any(isnan(midVelBins), 1))
                     FixLeg = FixP(:, 1:r, m1:(m2 + 1));
                     T_leg = Plan.SegT(m1:m2);
                     [T_opt, ~] = allocateTimes(FixLeg, T_leg, A0, H0, Limits.MinSegTime);
@@ -211,7 +247,7 @@ function [Plan, QPTraj] = solveAllLegs(Plan, A0, H0, Limits, doAllocateTimes)
         'IsCruise',   Plan.IsCruise, ...
         'Fix',        FixOut, ...
         'Cost',       totalCost, ...
-        'T_total',     sum(Plan.SegT(1:M)), ...
+        'T_total',    sum(Plan.SegT(1:M)), ...
         'FlatOffset', rho ...
     );
 end
