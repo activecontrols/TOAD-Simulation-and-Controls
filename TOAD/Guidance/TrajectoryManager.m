@@ -19,7 +19,7 @@ function [X, U, K, LA, LT] = TrajectoryManager(t, X_est, constantsTOAD)
     end
 
     if ABORT > 0 && t > ABORT && ~abortCalculated
-        Opts = struct('R', 5);      % Minimum-jounce
+        Opts = struct('R', 5);      % Minimum-crackle
         dummyWP   = TOADWaypoint([0; 0; 0]);
         Waypoints = repmat(dummyWP, 1, 3);
 

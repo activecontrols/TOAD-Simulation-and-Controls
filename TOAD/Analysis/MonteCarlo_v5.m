@@ -45,7 +45,7 @@ J_frac = 0.15;
 
 % Mean wind, at the 6 m reference height used by the Dryden block
 wind_sweep         = false;   % true: uniform 0..wind_max (envelope search)
-wind_max           = 15;      % m/s, upper end of the envelope sweep
+wind_max           = 6;      % m/s, upper end of the envelope sweep
 wind_weibull_scale = 5.0;     % m/s, operational campaign
 wind_weibull_shape = 2.0;     % Rayleigh-like; matches measured surface wind
 dryden_W6          = 15;      % m/s, "Wind speed at 6 m" set in the Dryden block mask
