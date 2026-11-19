@@ -6,8 +6,8 @@ clear; clc; close all;
 
 %% Mission & Solver Config
 Vehicle     = 0;            % 1 = TOAD, 0 = ASTRA
-MissionName = "Circle";   % Mission identifier for CSV output naming
-Version     = 5;            % Output version integer: formats as v001, v002, etc.
+MissionName = "Hover";   % Mission identifier for CSV output naming
+Version     = 1;            % Output version integer: formats as v001, v002, etc.
 
 Opts = struct('R', 5);      % Minimum-jounce
 ExportCSVAndGains = true;   
@@ -29,19 +29,26 @@ fprintf('=======================================================================
 
 %% Define Mission Waypoints
 dummyWP   = TOADWaypoint([0; 0; 0]);
-Waypoints = repmat(dummyWP, 1, 9);
+Waypoints = repmat(dummyWP, 1, 4);
 Radius = 5;
 Height = 7;
 
-Waypoints(1) = TOADWaypoint([0; 0; 0], 'Label', 'FLT STRT');
-Waypoints(2) = TOADWaypoint([0; 0; 2], 'Label', 'FLT 1', 'StraightLine', true);
-Waypoints(3) = TOADWaypoint([Radius; 0; Height], 'Label', 'FLT 2', 'VelBC', [NaN, NaN, 0]);
-Waypoints(4) = TOADWaypoint([0; Radius; Height], 'Label', 'FLT 3', 'VelBC', [NaN, NaN, 0]);
-Waypoints(5) = TOADWaypoint([-Radius; 0; Height], 'Label', 'FLT 4', 'VelBC', [NaN, NaN, 0]);
-Waypoints(6) = TOADWaypoint([0; -Radius; Height], 'Label', 'FLT 5', 'VelBC', [NaN, NaN, 0]);
-Waypoints(7) = TOADWaypoint([Radius; 0; Height], 'Label', 'FLT 6');
-Waypoints(8) = TOADWaypoint([0; 0; 2], 'Label', 'FLT 7', 'HoldTime', 1.0);
-Waypoints(9) = TOADWaypoint([0; 0; 0], 'Label', 'FLT END', 'HoldTime', 1.0, 'MaxVel', [3; 3; 1], 'StraightLine', true);
+% Circle
+% Waypoints(1) = TOADWaypoint([0; 0; 0], 'Label', 'FLT STRT', 'HoldTime', 0);
+% Waypoints(2) = TOADWaypoint([0; 0; 2], 'Label', 'FLT 1', 'StraightLine', true);
+% Waypoints(3) = TOADWaypoint([Radius; 0; Height], 'Label', 'FLT 2', 'VelBC', [NaN, NaN, 0]);
+% Waypoints(4) = TOADWaypoint([0; Radius; Height], 'Label', 'FLT 3', 'VelBC', [NaN, NaN, 0]);
+% Waypoints(5) = TOADWaypoint([-Radius; 0; Height], 'Label', 'FLT 4', 'VelBC', [NaN, NaN, 0]);
+% Waypoints(6) = TOADWaypoint([0; -Radius; Height], 'Label', 'FLT 5', 'VelBC', [NaN, NaN, 0]);
+% Waypoints(7) = TOADWaypoint([Radius; 0; Height], 'Label', 'FLT 6');
+% Waypoints(8) = TOADWaypoint([0; 0; 2], 'Label', 'FLT 7', 'HoldTime', 1.0);
+% Waypoints(9) = TOADWaypoint([0; 0; 0], 'Label', 'FLT END', 'HoldTime', 1.0, 'MaxVel', [3; 3; 1], 'StraightLine', true);
+
+% Hover 
+Waypoints(1) = TOADWaypoint([0; 0; 0], 'Label', 'FLT STRT', 'HoldTime', 0);
+Waypoints(2) = TOADWaypoint([0; 0; 5], 'Label', 'FLT 1', 'StraightLine', true, 'HoldTime', 30);
+Waypoints(3) = TOADWaypoint([0; 0; 2], 'Label', 'FLT 2', 'HoldTime', 1.0);
+Waypoints(4) = TOADWaypoint([0; 0; 0], 'Label', 'FLT END', 'HoldTime', 1.0, 'MaxVel', [3; 3; 1], 'StraightLine', true);
 
 %% Polynomial Trajectory & Flatness Inversion
 tic;
