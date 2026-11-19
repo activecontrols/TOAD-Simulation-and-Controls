@@ -38,6 +38,17 @@ if isempty(P)
     lastZ = zeros(15,1);
 end
 
+% Sim reset
+if dT <= 0
+    P = eye(18); 
+    P(1:3, 1:3)     = 0.05  * eye(3);  % Attitude
+    P(10:12, 10:12) = 0.01 * eye(3);  % Gyro Bias
+    P(13:15, 13:15) = 0.01 * eye(3);  % Accel Bias
+    P(16:18, 16:18) = 0.01   * eye(3);  % Mag Bias
+    lastZ = zeros(15,1);
+    dT = 0;
+end
+
 % State Transition Matrix
 F = StateTransitionMat(z(1:3), z(4:6), R_b2i, 1);
 

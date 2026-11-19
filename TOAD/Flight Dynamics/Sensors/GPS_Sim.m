@@ -10,8 +10,13 @@ if isempty(error_pos)
     lastGPS = zeros(6,1);
     lastTime = 0;  % Update last GPS timestamp
 end
+if t <= 0 || (t - lastTime) < 0
+    error_pos = 0;
+    lastGPS = zeros(6,1);
+    lastTime = t;
+end
 
-dT = t - lastTime;
+dT = max(t - lastTime, 0);
 
 if t - lastTime > 1 / GPS_Rate
     % Correlated noise measurements (GMP)
@@ -24,7 +29,7 @@ if t - lastTime > 1 / GPS_Rate
     
     % Fake GPS Measurements (derivate velocity from GPS_Pos)
     GPS = zeros(6,1);
-    GPS(1:3) = PosVel(1:3) + error_pos;
+    GPS(1:3) = PosVel(1:3) + error_pos + R_b2i * [0 0 0.31]';
     GPS(4:6) = (PosVel(4:6) + gps_vel_covar * randn) + R_b2i * cross(Rate, [0 0 0.31]');
     lastGPS = GPS;
     lastTime = t;

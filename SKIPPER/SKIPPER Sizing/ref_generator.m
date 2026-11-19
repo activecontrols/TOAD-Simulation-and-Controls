@@ -1,7 +1,12 @@
-function ref = ref_generator(x, t)
+function ref = ref_generator(x, t, MaxAscentSpeed)
     
-    MaxAscentSpeed = 4.57;      %m/s
-    MaxDescentSpeed = -4.57;    %m/s
+    if nargin() <= 2
+        MaxAscentSpeed = 4.57;      %m/s
+        MaxDescentSpeed = -4.57;    %m/s
+    else
+        MaxDescentSpeed = -MaxAscentSpeed;
+    end
+    
     MaxLatSpeed = 2;            %m/s
     MaxAngularVel = 5 * pi/180; %rad/s
     HoldTimeReqs = [5, 0.2, 0.2];    % Time needed to hold at each checkpoint

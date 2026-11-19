@@ -1,0 +1,617 @@
+function PlotMC_v4(filename)
+% PlotMC_v4
+% Focused Monte Carlo plotting for the V4 full-state target architecture.
+
+close all;
+bkgColor = 'w';
+alphaVal = 0.12;
+
+winStyle = 'normal';
+if usejava('desktop')
+    winStyle = 'docked';
+end
+
+% Convention: Pitch (X), Yaw (Y), Roll (Z)
+oranPitch = [0.85 0.60 0.45];
+blueYaw   = [0.55 0.71 0.84];
+yellRoll  = [0.93 0.81 0.54];
+pyrColors = {oranPitch, blueYaw, yellRoll}; 
+
+%% 1. Load Data
+if nargin < 1 || isempty(filename)
+    reqVars = {'out', 't_common', 'Lever_Radial', 'Lever_Axial', ...
+               'J_Trans_Scale', 'J_Axial_Scale', 'J_Wobble_Coup', 'J_Trans_Coup', ...
+               'Wind_Gain_all', 'Wind_Covar_all', 'RMSE_Wind_all', ...
+               'RMSE_Controls_all', 'RMSE_Filter_all', 'LESODist_all', ...
+               'MaxSpectralRad_all'};
+    for i = 1:numel(reqVars)
+        try evalin('base', [reqVars{i} ';']); catch, end
+        eval([reqVars{i} ' = evalin(''base'', ''' reqVars{i} ''');']);
+    end
+else
+    S = load(filename);
+    vars = fieldnames(S);
+    for i = 1:numel(vars), eval([vars{i} ' = S.' vars{i} ';']); end
+end
+
+% Optional: full spectral-radius timeseries (see
+% MonteCarlo_v4_SpecRadPatch.m). Not required by any of the plots above,
+% so its absence must not break anything -- only Section 13 below depends
+% on it, and that section checks for it itself.
+if nargin < 1 || isempty(filename)
+    try
+        specrad_all = evalin('base', 'specrad_all');
+    catch
+        specrad_all = [];
+    end
+elseif ~exist('specrad_all', 'var')
+    specrad_all = [];
+end
+
+num_sims = numel(out);
+
+%% 2. Extract & Interpolate State Histories
+firstValid = find(arrayfun(@(x) isempty(x.ErrorMessage), out), 1, 'first');
+nState = size(extractLoggedState(out(firstValid).state_log), 2);
+nTarget = size(extractLoggedState(out(firstValid).target_pos_log), 2);
+
+actual_interp = nan(num_sims, numel(t_common), nState);
+target_interp = nan(num_sims, numel(t_common), nTarget);
+
+for i = 1:num_sims
+    if ~isempty(out(i).ErrorMessage), continue; end 
+    actual_interp(i,:,:) = interpolateLoggedState(out(i).state_log, t_common, nState);
+    target_interp(i,:,:) = interpolateLoggedState(out(i).target_pos_log, t_common, nTarget);
+end
+
+quat_idx = 1:4; pos_idx = 5:7; vel_idx = 8:10; rate_idx = 11:13;
+
+%% 3. Target-Relative Errors
+pos_error_all = actual_interp(:,:,pos_idx) - target_interp(:,:,pos_idx);
+vel_error_all = actual_interp(:,:,vel_idx) - target_interp(:,:,vel_idx);
+
+pos_error_rmse = reshape(squeeze(sqrt(mean(pos_error_all.^2, 2, 'omitnan'))), [], 3);
+vel_error_rmse = reshape(squeeze(sqrt(mean(vel_error_all.^2, 2, 'omitnan'))), [], 3);
+
+Pos_RMSE_total = sqrt(sum(pos_error_rmse.^2, 2));
+Vel_RMSE_total = sqrt(sum(vel_error_rmse.^2, 2));
+target_pos_ref = squeeze(target_interp(firstValid,:,pos_idx));
+
+%% 4. Kinematic Trajectory Overlay (3D + Projections)
+figure('Name', 'MC 3D Trajectories', 'Color', bkgColor, 'WindowStyle', winStyle);
+tl = tiledlayout(3, 4, 'TileSpacing', 'compact', 'Padding', 'compact');
+
+% Main 3D Plot
+axMain = nexttile(tl, 1, [3 3]); 
+hold(axMain, 'on'); grid(axMain, 'on'); axis(axMain, 'equal'); view(axMain, 3);
+xlabel(axMain, 'Pitch / X [m]'); ylabel(axMain, 'Yaw / Y [m]'); zlabel(axMain, 'Roll / Z [m]');
+title(axMain, sprintf('MC Trajectories vs Full-State Target (%d Runs)', num_sims));
+
+for i = 1:num_sims
+    xyz = squeeze(actual_interp(i,:,pos_idx));
+    if isempty(xyz), continue; end
+    valid = all(isfinite(xyz),2);
+    plot3(axMain, xyz(valid,1), xyz(valid,2), xyz(valid,3), 'Color', [0.25 0.25 0.25 alphaVal], 'LineWidth', 0.5, 'HandleVisibility', 'off');
+end
+plot3(axMain, target_pos_ref(:,1), target_pos_ref(:,2), target_pos_ref(:,3), 'b--', 'LineWidth', 2.5, 'DisplayName', 'Target');
+
+% Orthographic Projections
+axTop = nexttile(tl, 4); 
+drawMCTraj_v4(axTop, actual_interp(:,:,pos_idx), target_pos_ref, 1, 2, 'Pitch / X [m]', 'Yaw / Y [m]', alphaVal); 
+title(axTop, 'Top View');
+
+axSide = nexttile(tl, 8); 
+drawMCTraj_v4(axSide, actual_interp(:,:,pos_idx), target_pos_ref, 1, 3, 'Pitch / X [m]', 'Roll / Z [m]', alphaVal); 
+title(axSide, 'Side View');
+
+axFront = nexttile(tl, 12); 
+drawMCTraj_v4(axFront, actual_interp(:,:,pos_idx), target_pos_ref, 2, 3, 'Yaw / Y [m]', 'Roll / Z [m]', alphaVal); 
+title(axFront, 'Front View');
+
+%% 5. Kinematic Plot (3-Sigma State Distributions)
+figure('Name', 'State Distributions (3-Sigma)', 'Color', bkgColor, 'WindowStyle', winStyle);
+tiledlayout(2,3, 'TileSpacing', 'compact');
+state_titles = {'Pitch (X)', 'Yaw (Y)', 'Roll (Z)'};
+vars = {pos_idx, vel_idx};
+ylbls = {'Pos', 'Vel'};
+units = {'m', 'm/s'};
+
+t_row = t_common(:)';
+
+for r = 1:2
+    for c = 1:3
+        nexttile; hold on; grid on;
+        data_block = squeeze(actual_interp(:,:,vars{r}(c)));
+        target_block = squeeze(target_interp(firstValid,:,vars{r}(c))); % Extract specific target axis
+        
+        mu_val = mean(data_block, 1, 'omitnan');
+        sig_val = std(data_block, 0, 1, 'omitnan');
+        
+        mu_row = mu_val(:)';
+        sig_row = sig_val(:)';
+        upper_bound = mu_row + 3*sig_row;
+        lower_bound = mu_row - 3*sig_row;
+        valid_pts = isfinite(upper_bound) & isfinite(lower_bound);
+
+        % Shaded 3-sigma corridor
+        if any(valid_pts)
+            fill([t_row(valid_pts), fliplr(t_row(valid_pts))], ...
+                 [upper_bound(valid_pts), fliplr(lower_bound(valid_pts))], ...
+                 [0.85 0.35 0.35], 'FaceAlpha', 0.22, 'EdgeColor', 'none', 'DisplayName', '\pm3\sigma');
+        end
+        
+        plot(t_common, data_block', 'Color', [0.45 0.68 0.88 alphaVal*2], 'HandleVisibility', 'off');
+        plot(t_common, mu_val, 'r-', 'LineWidth', 1.2, 'DisplayName', 'Mean (\mu)');
+        plot(t_common, target_block, 'k', 'LineWidth', 2, 'DisplayName', 'Target');
+        
+        title(sprintf('%s - %s', ylbls{r}, state_titles{c}));
+        xlabel('Time (s)'); ylabel(sprintf('%s (%s)', ylbls{r}, units{r}));
+        if r == 1 && c == 1, legend('Location', 'best'); end
+    end
+end
+
+%% 5b. Rotational Kinematics: Tilt Angle & Angular Rates (3-Sigma)
+% Tilt angle (not Euler) is used for the attitude envelope since the
+% flip maneuver passes through/near singular Euler configurations.
+R33_actual = actual_interp(:,:,1).^2 - actual_interp(:,:,2).^2 - ...
+             actual_interp(:,:,3).^2 + actual_interp(:,:,4).^2;
+tilt_actual = acosd(max(min(R33_actual, 1), -1));
+
+R33_target = target_interp(firstValid,:,1).^2 - target_interp(firstValid,:,2).^2 - ...
+             target_interp(firstValid,:,3).^2 + target_interp(firstValid,:,4).^2;
+tilt_target = acosd(max(min(R33_target, 1), -1));
+
+figure('Name', 'Attitude & Angular Rates', 'Color', bkgColor, 'WindowStyle', winStyle);
+tl_att = tiledlayout(2, 3, 'TileSpacing', 'compact', 'Padding', 'compact');
+
+axTilt = nexttile(tl_att, 1, [1 3]); hold(axTilt, 'on'); grid(axTilt, 'on');
+mu_tilt = mean(tilt_actual, 1, 'omitnan');
+sig_tilt = std(tilt_actual, 0, 1, 'omitnan');
+
+mu_tilt_row = mu_tilt(:)';
+sig_tilt_row = sig_tilt(:)';
+upper_tilt = min(mu_tilt_row + 3*sig_tilt_row, 180);
+lower_tilt = max(mu_tilt_row - 3*sig_tilt_row, 0);
+valid_tilt = isfinite(upper_tilt) & isfinite(lower_tilt);
+
+% Shaded 3-sigma corridor for vehicle tilt
+if any(valid_tilt)
+    fill(axTilt, [t_row(valid_tilt), fliplr(t_row(valid_tilt))], ...
+         [upper_tilt(valid_tilt), fliplr(lower_tilt(valid_tilt))], ...
+         [0.85 0.35 0.35], 'FaceAlpha', 0.22, 'EdgeColor', 'none', 'DisplayName', '\pm3\sigma');
+end
+
+plot(axTilt, t_common, tilt_actual', 'Color', [0.45 0.68 0.88 alphaVal*2], 'HandleVisibility', 'off');
+plot(axTilt, t_common, mu_tilt, 'r-', 'LineWidth', 1.2, 'DisplayName', 'Mean (\mu)');
+plot(axTilt, t_common, tilt_target, 'k', 'LineWidth', 2, 'DisplayName', 'Target');
+title(axTilt, 'Tilt Angle from Vertical'); xlabel(axTilt, 'Time (s)'); ylabel(axTilt, 'Tilt (deg)');
+legend(axTilt, 'Location', 'best');
+
+rate_titles = {'Pitch Rate (X)', 'Yaw Rate (Y)', 'Roll Rate (Z)'};
+for c = 1:3
+    ax = nexttile(tl_att); hold(ax, 'on'); grid(ax, 'on');
+    data_block   = squeeze(actual_interp(:,:,rate_idx(c))) * (180/pi);
+    target_block = squeeze(target_interp(firstValid,:,rate_idx(c))) * (180/pi);
+    mu_val  = mean(data_block, 1, 'omitnan');
+    sig_val = std(data_block, 0, 1, 'omitnan');
+
+    mu_row = mu_val(:)';
+    sig_row = sig_val(:)';
+    upper_rate = mu_row + 3*sig_row;
+    lower_rate = mu_row - 3*sig_row;
+    valid_rate = isfinite(upper_rate) & isfinite(lower_rate);
+
+    % Shaded 3-sigma corridor for angular rates
+    if any(valid_rate)
+        fill(ax, [t_row(valid_rate), fliplr(t_row(valid_rate))], ...
+             [upper_rate(valid_rate), fliplr(lower_rate(valid_rate))], ...
+             [0.85 0.35 0.35], 'FaceAlpha', 0.22, 'EdgeColor', 'none', 'DisplayName', '\pm3\sigma');
+    end
+
+    plot(ax, t_common, data_block', 'Color', [0.45 0.68 0.88 alphaVal*2], 'HandleVisibility', 'off');
+    plot(ax, t_common, mu_val, 'r-', 'LineWidth', 1.2, 'DisplayName', 'Mean (\mu)');
+    plot(ax, t_common, target_block, 'k', 'LineWidth', 2, 'DisplayName', 'Target');
+    title(ax, rate_titles{c}); xlabel(ax, 'Time (s)'); ylabel(ax, 'Rate (deg/s)');
+    if c == 1, legend(ax, 'Location', 'best'); end
+end
+
+%% 6. Landing Angular-Rate Distribution
+landing_rate = nan(num_sims,3);
+for i = 1:num_sims
+    rates = squeeze(actual_interp(i,:,rate_idx)) * (180/pi);
+    pos = squeeze(actual_interp(i,:,pos_idx));
+    if isempty(rates) || isempty(pos), continue; end
+    
+    validRows = all(isfinite(rates),2) & all(isfinite(pos),2);
+    if any(validRows)
+        above_thresh = pos(:,3) > 0.05;
+        crossings = find(diff(above_thresh) == -1);
+        if ~isempty(crossings)
+            land_idx = crossings(end) + 1;
+        else
+            land_idx = find(validRows, 1, 'last');
+        end
+        landing_rate(i,:) = rates(land_idx,:);
+    end
+end
+
+figure('Name', 'Landing Rates', 'Color', bkgColor, 'WindowStyle', winStyle); 
+tiledlayout(3,1, 'TileSpacing', 'compact');
+rate_lbls = {'Pitch Rate', 'Yaw Rate', 'Roll Rate'};
+for c = 1:3
+    ax = nexttile;
+    plotSmartHistogram(ax, landing_rate(:,c), pyrColors{c}, rate_lbls{c});
+    title(sprintf('Landing %s', rate_lbls{c})); 
+    xlabel('Rate (deg/s)'); grid on; legend('show');
+end
+
+%% 7. Control RMSE Distributions 
+if size(RMSE_Controls_all,1) == 12
+    labels = {'Attitude', 'Angular Rate', 'Position', 'Velocity'};
+    axis_lbls = {'Pitch (X)','Yaw (Y)','Roll (Z)'};
+    units = {'deg', 'deg/s', 'm', 'm/s'};
+    multipliers = [(180/pi), (180/pi), 1, 1];
+    
+    for g = 1:4
+        figure('Name', sprintf('%s Control RMSE', labels{g}), 'Color', bkgColor, 'WindowStyle', winStyle);
+        tiledlayout(3,1, 'TileSpacing', 'compact');
+        for c = 1:3
+            idx = (g-1)*3 + c;
+            ax = nexttile;
+            data_raw = real(RMSE_Controls_all(idx,:)) * multipliers(g);
+            plotSmartHistogram(ax, data_raw, pyrColors{c}, axis_lbls{c});
+            title(sprintf('%s - %s', labels{g}, axis_lbls{c}));
+            xlabel(sprintf('RMSE (%s)', units{g}));
+            grid on; legend('show');
+        end
+    end
+end
+
+%% 8. Filter Attitude RMSE Plot (Degrees natively)
+if exist('RMSE_Filter_all', 'var') && size(RMSE_Filter_all,1) >= 3
+    figure('Name', 'Filter Attitude RMSE', 'Color', bkgColor, 'WindowStyle', winStyle);
+    tiledlayout(3,1, 'TileSpacing', 'compact');
+    filter_lbls = {'Pitch RMSE', 'Yaw RMSE', 'Roll RMSE'}; 
+    
+    for c = 1:3
+        ax = nexttile;
+        plotSmartHistogram(ax, real(RMSE_Filter_all(c,:)), pyrColors{c}, filter_lbls{c});
+        title(sprintf('Filter %s', filter_lbls{c}));
+        xlabel('RMSE (degrees)'); grid on; legend('show');
+    end
+end
+
+%% 9. Curated Sensitivities
+figure('Name', 'Focused Disturbance Sensitivities', 'Color', bkgColor, 'WindowStyle', winStyle);
+tiledlayout(2,2, 'TileSpacing', 'compact');
+
+nexttile; plotSensitivityScatter(Lever_Radial, Pos_RMSE_total, 'Radial Lever [m]', 'Total Pos RMSE [m]', 'Position Error vs Radial Lever');
+nexttile; plotSensitivityScatter(Wind_Gain_all, RMSE_Wind_all, 'Wind Gain', 'Wind RMSE', 'Wind RMSE vs Wind Gain');
+nexttile; plotSensitivityScatter(RMSE_Wind_all, Pos_RMSE_total, 'Wind RMSE', 'Total Pos RMSE [m]', 'Position Error vs Wind RMSE');
+nexttile; plotSensitivityScatter(RMSE_Wind_all, Vel_RMSE_total, 'Wind RMSE', 'Total Vel RMSE [m/s]', 'Velocity Error vs Wind RMSE');
+
+%% 10. Inertia Diagnostics
+Attitude_RMSE_total = sqrt(sum(real(RMSE_Controls_all(1:3,:)).^2, 1))' * (180/pi);
+inertiaColor = [0.65 0.55 0.75];
+
+figure('Name', 'Inertia Diagnostics', 'Color', bkgColor, 'WindowStyle', winStyle);
+tiledlayout(2, 4, 'TileSpacing', 'compact', 'Padding', 'compact');
+
+inertia_vals = {J_Trans_Scale, J_Axial_Scale, J_Wobble_Coup, J_Trans_Coup};
+inertia_lbls = {'J Trans Scale', 'J Axial Scale', 'J Wobble Coup', 'J Trans Coup'};
+
+for k = 1:4
+    ax = nexttile;
+    plotSmartHistogram(ax, inertia_vals{k}, inertiaColor, inertia_lbls{k});
+    title(ax, inertia_lbls{k}); xlabel(ax, sprintf('%s (kg\\cdotm^2)', inertia_lbls{k}));
+    grid(ax, 'on'); legend(ax, 'show');
+end
+
+for k = 1:4
+    nexttile;
+    plotSensitivityScatter(inertia_vals{k}, Attitude_RMSE_total, inertia_lbls{k}, ...
+        'Attitude RMSE [deg]', sprintf('Attitude Error vs %s', inertia_lbls{k}));
+end
+
+%% 12. Spectral Radius Sensitivities
+if exist('MaxSpectralRad_all', 'var') && size(MaxSpectralRad_all, 1) == 2
+    figure('Name', 'Spectral Radius Sensitivities', 'Color', bkgColor, 'WindowStyle', winStyle);
+    tiledlayout(1, 2, 'TileSpacing', 'compact');
+
+    msr_lbls = {'MSR(1)', 'MSR(2)'};
+    for c = 1:2
+        nexttile;
+        plotSensitivityScatter(MaxSpectralRad_all(c, :), Pos_RMSE_total, ...
+            msr_lbls{c}, 'Total Pos RMSE [m]', ...
+            sprintf('Pos RMSE vs %s', msr_lbls{c}));
+        xline(1, 'r--');
+    end
+end
+
+%% 13. Spectral Radius Timeseries Overlay & Causality Check
+% Requires specrad_all: [num_sims x length(t_common) x 2], the raw MSR
+% signal (not just its per-run max). See MonteCarlo_v4_SpecRadPatch.m to
+% enable this logging -- until then this section is skipped.
+if exist('specrad_all', 'var') && ~isempty(specrad_all)
+    pos_err_norm = sqrt(sum(pos_error_all.^2, 3));   % [num_sims x T]
+    nWorst = 8;
+
+    % Worst-RMSE runs + a handful of clean runs for contrast
+    [~, order] = sort(Pos_RMSE_total, 'descend', 'ComparisonMethod', 'auto');
+    worst_idx = order(1:min(nWorst, sum(isfinite(Pos_RMSE_total))));
+
+    goodRMSE = Pos_RMSE_total; goodRMSE(~isfinite(goodRMSE)) = inf;
+    [~, orderAsc] = sort(goodRMSE, 'ascend');
+    clean_idx = orderAsc(1:min(4, numel(orderAsc)));
+
+    plot_set = [worst_idx(:); clean_idx(:)];
+    run_labels = [repmat({'WORST'}, numel(worst_idx),1); repmat({'clean'}, numel(clean_idx),1)];
+
+    figure('Name', 'MSR(2) vs Position Error Overlay', 'Color', bkgColor, 'WindowStyle', winStyle);
+    nCols = 4; nRows = ceil(numel(plot_set)/nCols);
+    tlOverlay = tiledlayout(nRows, nCols, 'TileSpacing', 'compact', 'Padding', 'compact');
+
+    for k = 1:numel(plot_set)
+        i = plot_set(k);
+        ax1 = nexttile(tlOverlay); hold(ax1, 'on'); grid(ax1, 'on');
+        yyaxis(ax1, 'left');
+        plot(ax1, t_common, squeeze(specrad_all(i,:,2)), 'b-', 'LineWidth', 1.3);
+        yline(ax1, 1, 'b--');
+        ylabel(ax1, 'MSR(2)');
+        yyaxis(ax1, 'right');
+        plot(ax1, t_common, pos_err_norm(i,:), 'r-', 'LineWidth', 1.3);
+        ylabel(ax1, '||pos err|| [m]');
+        title(ax1, sprintf('Run %d (%s), PosRMSE=%.1f', i, run_labels{k}, Pos_RMSE_total(i)));
+        xlabel(ax1, 'Time [s]');
+    end
+    title(tlOverlay, 'Blue = MSR(2) (left, ref line at 1)   Red = position error norm (right)');
+
+    % Aggregate lead/lag across every run that crosses MSR(2) = 1
+    abs_floor = 2.0;
+    lags = [];
+    crossed_never_diverged = 0;
+    diverged_never_crossed = 0;
+
+    for i = 1:num_sims
+        msr = squeeze(specrad_all(i,:,2));
+        perr = pos_err_norm(i,:);
+        if all(isnan(msr)) || all(isnan(perr)), continue; end
+
+        baseline_std = std(perr(t_common >= 15 & t_common <= 25), 'omitnan');
+        thresh = max(abs_floor, 4*baseline_std);
+
+        cross_i = find(msr > 1, 1, 'first');
+        div_i   = find(perr > thresh, 1, 'first');
+
+        if ~isempty(cross_i) && ~isempty(div_i)
+            lags(end+1) = t_common(div_i) - t_common(cross_i); %#ok<AGROW>
+        elseif ~isempty(cross_i) && isempty(div_i)
+            crossed_never_diverged = crossed_never_diverged + 1;
+        elseif isempty(cross_i) && ~isempty(div_i)
+            diverged_never_crossed = diverged_never_crossed + 1;
+        end
+    end
+
+    figure('Name', 'MSR(2) Crossing -> Divergence Lag', 'Color', bkgColor, 'WindowStyle', winStyle);
+    histogram(lags, 'FaceColor', [0.3 0.5 0.8]);
+    xline(0, 'k--', 'LineWidth', 1.5);
+    xlabel('t_{divergence} - t_{MSR2 crosses 1}  [s]');
+    ylabel('Count');
+    title(sprintf(['Lag distribution (n=%d runs with both events)\n' ...
+        '%d crossed MSR=1 but never diverged | %d diverged without ever crossing MSR=1'], ...
+        numel(lags), crossed_never_diverged, diverged_never_crossed));
+    grid on;
+
+    fprintf('\n--- MSR(2)=1 crossing -> divergence timing summary ---\n');
+    fprintf('Runs with both a crossing and a divergence event: %d\n', numel(lags));
+    fprintf('  median lag = %.2f s, mean lag = %.2f s\n', median(lags,'omitnan'), mean(lags,'omitnan'));
+    fprintf('  fraction with POSITIVE lag (MSR leads divergence): %.0f%%\n', 100*mean(lags>0));
+    fprintf('Runs that crossed MSR=1 but NEVER diverged: %d (bumps that were harmless)\n', crossed_never_diverged);
+    fprintf('Runs that diverged WITHOUT ever crossing MSR=1: %d (divergence with another cause)\n', diverged_never_crossed);
+else
+    disp('specrad_all not found -- skipping Section 13 (spectral radius timeseries overlay).');
+    disp('See MonteCarlo_v4_SpecRadPatch.m to enable full MSR timeseries logging.');
+end
+
+%% 14. LESO Disturbance Causality: Accel & Torque vs Divergence
+% Mirrors the Section 13 MSR/position-error causality check, but uses the
+% two LESO disturbance-estimate channel groups -- translational accel
+% [xyz] (channels 1:3) and rotational torque [xyz] (channels 4:6) -- as
+% the candidate leading indicators instead of the discrete-time spectral
+% radius. Accel disturbance is checked against position divergence;
+% torque disturbance is checked against attitude (tilt) divergence.
+% Unlike specrad_all, LESODist_all is always logged by MonteCarlo_v4.m,
+% so this section has no "not logged yet" fallback -- only a malformed-
+% data guard.
+if exist('LESODist_all', 'var') && ~isempty(LESODist_all) && size(LESODist_all, 3) == 6
+
+    accel_dist_norm  = squeeze(sqrt(sum(LESODist_all(:,:,1:3).^2, 3)));  % [num_sims x T], m/s^2
+    torque_dist_norm = squeeze(sqrt(sum(LESODist_all(:,:,4:6).^2, 3)));  % [num_sims x T], N*m
+
+    pos_err_norm  = sqrt(sum(pos_error_all.^2, 3));    % [num_sims x T], m
+    tilt_err_norm = abs(tilt_actual - tilt_target);    % [num_sims x T], deg
+
+    plotLESOCausality(t_common, accel_dist_norm, pos_err_norm, Pos_RMSE_total, ...
+        num_sims, bkgColor, 'LESO Accel Disturbance', '||pos err|| [m]', ...
+        'Accel Dist [m/s^2]', 2.0);
+
+    plotLESOCausality(t_common, torque_dist_norm, tilt_err_norm, Attitude_RMSE_total, ...
+        num_sims, bkgColor, 'LESO Torque Disturbance', '||tilt err|| [deg]', ...
+        'Torque Dist [N\cdotm]', 5.0);
+else
+    disp('LESODist_all not found or malformed -- skipping Section 14 (LESO disturbance causality diagnostics).');
+end
+
+end
+
+%% Local Helpers
+function data = extractLoggedState(ts)
+    if isempty(ts), data = []; return; end
+    data = squeeze(ts.Data);
+    if size(data,1) ~= numel(ts.Time), data = data'; end
+end
+
+function data_i = interpolateLoggedState(ts, t_common, nState)
+    raw = extractLoggedState(ts);
+    data_i = nan(numel(t_common), nState);
+    for k = 1:nState
+        data_i(:,k) = interp1(ts.Time, raw(:,k), t_common, 'linear', 'extrap');
+    end
+end
+
+function plotSensitivityScatter(x, y, xlbl, ylbl, ttl)
+    x = x(:); y = y(:); 
+    good = isfinite(x) & isfinite(y);
+    if ~any(good), return; end
+    scatter(x(good), y(good), 32, 'filled', 'MarkerFaceAlpha', 0.5, 'MarkerEdgeColor', 'k', 'MarkerEdgeAlpha', 0.3);
+    grid on; xlabel(xlbl); ylabel(ylbl); title(ttl);
+end
+
+function plotSmartHistogram(ax, data, clr, name)
+    data = data(isfinite(data));
+    if isempty(data), return; end
+    hold(ax, 'on');
+
+    % Bin the 2nd-98th percentile core at full resolution; collapse the
+    % tails into single labeled overflow/underflow bins instead of
+    % stretching the axis to fit a handful of outlier runs.
+    loB = prctile(data, 2);
+    hiB = prctile(data, 98);
+    if hiB - loB < eps
+        hiB = loB + max(abs(loB)*0.05, eps);
+    end
+
+    nBins = max(10, min(40, round(sqrt(numel(data)))));
+    edges = linspace(loB, hiB, nBins+1);
+    binW  = edges(2) - edges(1);
+    centers = edges(1:end-1) + binW/2;
+
+    counts    = histcounts(data, edges);
+    underflow = sum(data < loB);
+    overflow  = sum(data > hiB);
+
+    bar(ax, centers, counts, 1, 'FaceColor', clr, 'FaceAlpha', 0.85, 'EdgeColor', 'k', 'DisplayName', name);
+
+    if underflow > 0
+        bar(ax, loB - binW, underflow, binW, 'FaceColor', [0.4 0.4 0.4], 'FaceAlpha', 0.6, 'EdgeColor', 'k', 'HandleVisibility', 'off');
+        text(ax, loB - binW, underflow, num2str(underflow), 'HorizontalAlignment', 'center', 'VerticalAlignment', 'bottom', 'FontSize', 7);
+    end
+    if overflow > 0
+        bar(ax, hiB + binW, overflow, binW, 'FaceColor', [0.4 0.4 0.4], 'FaceAlpha', 0.6, 'EdgeColor', 'k', 'HandleVisibility', 'off');
+        text(ax, hiB + binW, overflow, num2str(overflow), 'HorizontalAlignment', 'center', 'VerticalAlignment', 'bottom', 'FontSize', 7);
+    end
+
+    % Log-scale the y-axis when one bin dwarfs the rest, so smaller bars
+    % stay visible instead of flattening to nothing next to the spike.
+    allCounts = [counts, underflow, overflow];
+    peak = max(allCounts);
+    rest = allCounts(allCounts < peak & allCounts > 0);
+    if ~isempty(rest) && peak > 4 * max(rest)
+        set(ax, 'YScale', 'log');
+        ylim(ax, [0.8, peak*1.3]);
+    end
+end
+
+function plotLESOCausality(t_common, sig_all, err_all, sortMetric, num_sims, bkgColor, sigName, errYLabel, sigYLabel, err_abs_floor)
+    winStyle = 'normal';
+    if usejava('desktop'), winStyle = 'docked'; end
+    % sig_all, err_all: [num_sims x T]. sortMetric: [num_sims x 1], used to
+    % pick the worst-divergence runs (plus a few clean ones for contrast),
+    % same convention as the Section 13 MSR/position-error overlay.
+    nWorst = 8;
+    [~, order] = sort(sortMetric, 'descend', 'ComparisonMethod', 'auto');
+    worst_idx = order(1:min(nWorst, sum(isfinite(sortMetric))));
+
+    goodMetric = sortMetric; goodMetric(~isfinite(goodMetric)) = inf;
+    [~, orderAsc] = sort(goodMetric, 'ascend');
+    clean_idx = orderAsc(1:min(4, numel(orderAsc)));
+
+    plot_set = [worst_idx(:); clean_idx(:)];
+    run_labels = [repmat({'WORST'}, numel(worst_idx),1); repmat({'clean'}, numel(clean_idx),1)];
+
+    figure('Name', sprintf('%s vs %s Overlay', sigName, errYLabel), 'Color', bkgColor, 'WindowStyle', winStyle);
+    nCols = 4; nRows = ceil(numel(plot_set)/nCols);
+    tlOverlay = tiledlayout(nRows, nCols, 'TileSpacing', 'compact', 'Padding', 'compact');
+
+    for k = 1:numel(plot_set)
+        i = plot_set(k);
+        ax1 = nexttile(tlOverlay); hold(ax1, 'on'); grid(ax1, 'on');
+        yyaxis(ax1, 'left');
+        plot(ax1, t_common, sig_all(i,:), 'b-', 'LineWidth', 1.3);
+        ylabel(ax1, sigYLabel);
+        yyaxis(ax1, 'right');
+        plot(ax1, t_common, err_all(i,:), 'r-', 'LineWidth', 1.3);
+        ylabel(ax1, errYLabel);
+        title(ax1, sprintf('Run %d (%s), Metric=%.2f', i, run_labels{k}, sortMetric(i)));
+        xlabel(ax1, 'Time [s]');
+    end
+    title(tlOverlay, sprintf('Blue = %s (left)   Red = %s (right)', sigName, errYLabel));
+
+    % Aggregate lead/lag across every run that shows an "elevated
+    % disturbance" event. Since there is no fixed stability boundary for
+    % the LESO disturbance magnitude (unlike MSR=1), the threshold is
+    % adaptive per run: 3-sigma above that run's own baseline, taken over
+    % the settled 15-25s window (post-transient, pre-landing) for both
+    % the disturbance signal and the divergence error.
+    baseline_mask = t_common >= 17 & t_common <= 23;
+    lags = [];
+    crossed_never_diverged = 0;
+    diverged_never_crossed = 0;
+
+    for i = 1:num_sims
+        sig  = sig_all(i,:);
+        perr = err_all(i,:);
+        if all(isnan(sig)) || all(isnan(perr)), continue; end
+
+        sig_baseline_mean = mean(sig(baseline_mask), 'omitnan');
+        sig_baseline_std  = std(sig(baseline_mask), 'omitnan');
+        sig_thresh = sig_baseline_mean + 5*sig_baseline_std;
+
+        err_baseline_std = std(perr(baseline_mask), 'omitnan');
+        err_thresh = max(err_abs_floor, 5*err_baseline_std);
+
+        cross_i = find(sig > sig_thresh, 1, 'first');
+        div_i   = find(perr > err_thresh, 1, 'first');
+
+        if ~isempty(cross_i) && ~isempty(div_i)
+            lags(end+1) = t_common(div_i) - t_common(cross_i); %#ok<AGROW>
+        elseif ~isempty(cross_i) && isempty(div_i)
+            crossed_never_diverged = crossed_never_diverged + 1;
+        elseif isempty(cross_i) && ~isempty(div_i)
+            diverged_never_crossed = diverged_never_crossed + 1;
+        end
+    end
+
+    figure('Name', sprintf('%s Crossing -> Divergence Lag', sigName), 'Color', bkgColor, 'WindowStyle', winStyle);
+    histogram(lags, 'FaceColor', [0.3 0.5 0.8]);
+    xline(0, 'k--', 'LineWidth', 1.5);
+    xlabel(sprintf('t_{divergence} - t_{%s elevated}  [s]', sigName));
+    ylabel('Count');
+    title(sprintf(['Lag distribution (n=%d runs with both events)\n' ...
+        '%d elevated %s but never diverged | %d diverged without elevated %s'], ...
+        numel(lags), crossed_never_diverged, sigName, diverged_never_crossed, sigName));
+    grid on;
+
+    fprintf('\n--- %s elevation -> divergence timing summary ---\n', sigName);
+    fprintf('Runs with both an elevation and a divergence event: %d\n', numel(lags));
+    fprintf('  median lag = %.2f s, mean lag = %.2f s\n', median(lags,'omitnan'), mean(lags,'omitnan'));
+    fprintf('  fraction with POSITIVE lag (%s leads divergence): %.0f%%\n', sigName, 100*mean(lags>0));
+    fprintf('Runs that showed elevated %s but NEVER diverged: %d (bumps that were harmless)\n', sigName, crossed_never_diverged);
+    fprintf('Runs that diverged WITHOUT elevated %s: %d (divergence with another cause)\n', sigName, diverged_never_crossed);
+end
+
+function drawMCTraj_v4(ax, pos_all, target_pos, x_idx, y_idx, x_lbl, y_lbl, alphaVal)
+    hold(ax, 'on'); grid(ax, 'on'); axis(ax, 'equal');
+    
+    % Draw run trajectories
+    for i = 1:size(pos_all, 1)
+        xy = squeeze(pos_all(i, :, [x_idx, y_idx]));
+        if isempty(xy), continue; end
+        valid = all(isfinite(xy), 2);
+        plot(ax, xy(valid, 1), xy(valid, 2), 'Color', [0.25 0.25 0.25 alphaVal], 'LineWidth', 0.5, 'HandleVisibility', 'off');
+    end
+    
+    % Draw target reference
+    plot(ax, target_pos(:, x_idx), target_pos(:, y_idx), 'b--', 'LineWidth', 2);
+    xlabel(ax, x_lbl); ylabel(ax, y_lbl);
+end
