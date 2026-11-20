@@ -5,14 +5,14 @@
 #include "matlab_funcs.h"
 
 // Guidance Constants
-constexpr float ABORT_HOVER_ALT = 1.0f;       // Hold checkpoint altitude above pad (m)
-constexpr float ABORT_R_MAX = 3.0f;           // Max lateral pad drift radius from current CG (m)
-constexpr float ABORT_DT_SAMPLE = 0.2f;       // Uniform trajectory sample period (s)
-constexpr int ABORT_MAX_POINTS = 100;         // Max output samples (~8 KB total)
-constexpr float ABORT_MIN_SEG_TIME = 0.2f;    // Minimum segment duration (s)
-constexpr float ABORT_MAX_T1 = 15.0f;         // Maximum Segment 1 duration (s)
-constexpr int ABORT_MAX_DILATE_ITERS = 10;    // Max Segment 1 time-dilation iterations
-constexpr int ABORT_EVAL_GRID = 41;           // Stack samples evaluated per dilation step
+constexpr float ABORT_HOVER_ALT = 1.0f;       
+constexpr float ABORT_R_MAX = 3.0f;           
+constexpr float ABORT_DT_SAMPLE = 0.2f;       
+constexpr int ABORT_MAX_POINTS = 100;         
+constexpr float ABORT_MIN_SEG_TIME = 0.2f;    
+constexpr float ABORT_MAX_T1 = 15.0f;         
+constexpr int ABORT_MAX_DILATE_ITERS = 10;    // Iterations for time allocation
+constexpr int ABORT_EVAL_GRID = 41;           
 
 // Vehicle Limits
 constexpr float ABORT_THRUST_MARGIN = 0.10f;
