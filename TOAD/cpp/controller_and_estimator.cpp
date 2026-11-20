@@ -7,6 +7,7 @@ constantsASTRA_t constantsASTRA;
 Matrix15_15 P;
 Matrix15_15 Flight_P;
 Vector19 x_est;
+Vector15 last_X_ctrl;
 Vector2 lastEMA;
 Matrix9_4 dnf_X;
 Matrix9_4 dnf_Y;
@@ -146,6 +147,7 @@ Controller_Output get_controller_output(Controller_Input ci, const Vector15 &X_t
   Vector3 omega_body = z.segment<3>(3) - x_est.segment<3>(10);
   Vector15 X_ctrl;
   X_ctrl << x_est.segment<10>(0), omega_body, 0.0f, 0.0f;
+  last_X_ctrl = X_ctrl;
 
   // Run disturbance observers
   Vector3 a_dist = LESO_Position(ci.GND_val, X_ctrl, last_U_cmd, constantsASTRA.L_Thrust, constantsASTRA, loop_dT, xhat_pos);
@@ -205,5 +207,10 @@ Controller_Output get_controller_output(Controller_Input ci, const Vector15 &X_t
   cs->x_est.mag_bias_y = x_est(17);
   cs->x_est.mag_bias_z = x_est(18);
   return co;
+}
+
+// Abort wrapper 
+void compute_abort(float t_now, AbortTrajectory &traj) {
+    computeAbort(t_now, last_X_ctrl, last_thrust, constantsASTRA, traj);
 }
 } // namespace ControllerAndEstimator
