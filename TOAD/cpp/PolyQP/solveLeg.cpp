@@ -137,7 +137,10 @@ PolyQPStatus solveLeg(const Fix3 &FixLeg, const Bool3 &FixLegFixed, const RowSeg
             lu_rc.compute(R_PP_eq);
             const Real rc = lu_rc.rcond();
             // TRANSPILE-FLAG F07 (fixed by FIX-F07): lateral R_PP was near-singular for unbalanced segment times (cond ~ 4e13 at (10, 0.6) s); SingularRPP could trip even in double.
-            if (rc < Real(1e-13)) { // NO-NAN: the isnan(rc) part of the guard was removed (real inputs give a real rcond)
+            // NO-NAN: MATLAB tests isnan(rc) || rc < 1e-13. Eigen's rcond estimate of an exactly singular R_PP_eq is NaN (0 / 0 in the
+            // NO-NAN: inverse-norm estimate) even for real inputs, so the threshold is written as "rc is not >= 1e-13": the same guard
+            // NO-NAN: without an isnan call. A literal rc < 1e-13 let 8 exactly singular fuzzed legs through (verify_polyqp, Phase 3).
+            if (!(rc >= Real(1e-13))) {
                 POLYQP_ERROR(SingularRPP, "Axis %d free-derivative Hessian R_PP is singular (rcond = %.2e).", d, static_cast<double>(rc));
             }
             static Eigen::LLT<MatNV> llt(POLYQP_MAX_NV);
