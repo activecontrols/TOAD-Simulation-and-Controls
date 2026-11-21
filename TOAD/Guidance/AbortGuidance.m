@@ -1,4 +1,4 @@
-function [Time, States, Inputs, abortStatus, Report] = AbortGuidance(X_est, constantsTOAD, u_cmd, a_dist, ABORT_HOVER_ALT)
+function [Time, States, Inputs, abortStatus] = AbortGuidance(X_est, constantsTOAD, u_cmd, a_dist, ABORT_HOVER_ALT)
 % Abort guidance: plans the abort from the estimated state X_est and returns the trajectory (Time, States, Inputs) and its
 % status (0 = OK, 1 = INFEASIBLE_FLOWN, 2 = FALLBACK). The caller decides when to abort and calls this once.
 % This is the abort block of Guidance/TrajectoryManager.m from branch abort-fixes (TrajectoryManager.m was later replaced by
@@ -8,7 +8,6 @@ function [Time, States, Inputs, abortStatus, Report] = AbortGuidance(X_est, cons
 % It is the MATLAB reference that cpp/PolyQP/AbortGuidance.cpp transpiles.
 % u_cmd is the last command [gimbal pitch; gimbal yaw; thrust (N); roll] and a_dist the estimated disturbance acceleration
 % (LESO_Position); they set the start acceleration and jerk (default: hover thrust with the gimbal centred, no disturbance).
-% Report is PolyQP's report when a plan was made (empty for the fallback).
     if nargin < 5
         ABORT_HOVER_ALT = 2; % DECISION-D5 (TRANSPILE-FLAG F01): abort waypoint 2 altitude (m); the lead's spec says 1 m above the pad
     end
@@ -19,6 +18,11 @@ function [Time, States, Inputs, abortStatus, Report] = AbortGuidance(X_est, cons
         a_dist = [0; 0; 0]; % FIX-F02: no disturbance estimate
     end
     abortStatus = 0; % FIX-F08: 0 = OK, 1 = INFEASIBLE_FLOWN (D2), 2 = FALLBACK (D1)
+    % Code generation: give the outputs a value on every path (the plan or the fallback below overwrites them)
+    Time = zeros(0, 1);
+    States = zeros(0, 15);
+    Inputs = zeros(0, 4);
+    coder.varsize('Time', 'States', 'Inputs');
 
     % FIX-F29: plan from the estimated propellant
     Opts = struct('R', 5, 'InitOxMass', X_est(14), 'InitFuMass', X_est(15));      % Minimum-jounce
@@ -52,7 +56,6 @@ function [Time, States, Inputs, abortStatus, Report] = AbortGuidance(X_est, cons
     Waypoints(3) = TOADWaypoint([nan; nan; 0], 'Label', 'ABT END', 'HoldTime', 0.0, 'MaxVel', [3; 3; 1], 'StraightLine', true, 'VelBC', [0; 0; 0], 'AccelBC', [0;0;0], 'JerkBC', [0;0;0], 'HDGRef', hdg_est);
     % FIX-F08: a non-finite start state cannot be planned; it goes straight to the fallback
     planOk = all(isfinite(X_est(5:10)));
-    Report = struct([]);
     if planOk
         if coder.target('MATLAB') % FIX-F08: code generation has no try/catch, so a PolyQP error is caught only in interpreted MATLAB
             try

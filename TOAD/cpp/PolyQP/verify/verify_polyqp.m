@@ -934,7 +934,7 @@ function checkAbortCopyIsVerbatim(toadDir, here)
     tm = readlines(fullfile(toadDir, 'Guidance', 'AbortGuidance.m'));
     wp = fileread(fullfile(here, 'abortWaypoints.m'));
     % Phase 6: the whole file is the abort block (the trigger that bracketed it is gone)
-    i1 = find(contains(tm, 'function [Time, States, Inputs, abortStatus, Report] = AbortGuidance('), 1);
+    i1 = find(contains(tm, 'function [Time, States, Inputs, abortStatus] = AbortGuidance('), 1);
     i2 = numel(tm);
     assert(~isempty(i1), 'Abort block not found in AbortGuidance.m');
     for i = (i1 + 1):i2

@@ -6,6 +6,30 @@ Paths: MATLAB relative to `TOAD/`, C++ relative to `TOAD/cpp/PolyQP/`. Line numb
 
 **Summary.** Six fixes were made in MATLAB and C++: F07, F08/F32, F01 (D3), F03, F29 and F27. One option was added and left off: F02 (D4). There is one blocker for the controller owners, B1 (roll units). Every MATLAB/C++ parity check passes at every tier, all seven regression sections pass, the abort block still generates code, and the host smoke test and flight-flags `-Werror` build pass.
 
+## Status after the ASTRA integration (branch `abort-astra-integration`)
+
+The sections below are the `abort-fixes` record and are kept as written. The ASTRA integration then changed the status of several items:
+
+| Item | Status now |
+| --- | --- |
+| FIX-F29 (and flag F38) | **Superseded: ASTRA carries no propellant.** Vehicle 1 (TOAD) was removed, together with the propellant integration and `InitOxMass`/`InitFuMass`. `X(14:15)` stays 0. |
+| FIX-F02 / D4 | **F02 fixed by Phase 5.** Knot 1 always pins a0 = C_IB T_B / m + g + a_dist and j0 = (ω_I × C_IB T_B) / m, from the attitude, the last command `u_cmd` and the disturbance estimate `a_dist`. `ABORT_PIN_THRUST` (F37) is removed. D4's prediction holds: most tilted starts are now flown infeasible (`fix_regressions`, section BC). |
+| FIX-F03 | It now uses the thrust axis b3 = C_IB T_B / \|T_B\| and ḃ3 = ω_I × b3, which is the body z axis only when the gimbal is centred. |
+| F09 / F31 (trigger) | **Moot: the caller decides when to abort.** `ABORT`, `tAbort`, `abortCalculated` and `AbortGuidanceState` are removed in MATLAB and C++. `Abort::plan` (`cpp/Abort.h`) plans once per call. |
+| FIX-F32 | **Moot.** The one-attempt latch went with the trigger. |
+| FIX-F08 | Kept. The C++ "non-finite estimate → fallback" branch is removed (no NaN or finiteness checks); MATLAB keeps it. |
+| D6 | **Reused, as the integration prompt specifies.** The old D6 (F03 with the pin off: the plan's CG at t = 0 off by ρ\|b3_actual − b3_plan(0)\|) is resolved by Phase 5: the CG matches `X_est` to ≤ 3.6e-15 without a disturbance. **D6 is now:** the thrust is held constant over the abort instant (Ṫ = 0) for the start jerk. |
+| D9 (new) | The abort's heading reference is the estimated heading x_C = C_IB(:, 2) × e3, so the plan starts at the estimated attitude. With the old [1; 0; 0], a start with nonzero yaw got a yaw step at t = 0. |
+| D10 (new) | Output capacity: `ABORT_MAX_START_ALT_M = 40` gives `Abort::MAX_POINTS = 601`. The worst-case T_total is 2.5 × T_init = 59 s, from the measured dilation of at most 2.25 × T_init (`PolyQP_config.h`). |
+| D7 | `verify/check_abort_codegen.m` now generates code for `Guidance/AbortGuidance.m` itself. Code generation needed two MATLAB-only changes: `Report` is local again, and the outputs get an empty value first. |
+| B1 | Still open. `Abort::plan` outputs what PolyQP produces (N·m), the same quantity the nominal trajectories carry. It is listed as BLOCKER B1 at the top of `cpp/INTEGRATION.md`, with the conversion and where it would go. |
+| Memory | Static RAM is **25,056 B** at the abort capacities (was 1.81 MB). See `TRANSPILE_FLAGS.md`. |
+
+Remaining start offsets with the always-on BC (`fix_regressions` BC, `cpp/verify/abort_harness_test.cpp`):
+- The plan's yaw rate at t = 0 cannot equal the estimate (max 0.93 rad/s off), because the heading is held constant.
+- With a deflected gimbal, the start attitude aligns body z with the thrust axis.
+- With a nonzero `a_dist`, the start thrust axis is tilted by about m\|a_dist\|/\|T\|, because the planner has no disturbance model.
+
 ## Before / after
 
 Case sets:
@@ -55,6 +79,8 @@ Case sets:
 
 ### FIX-F08 / FIX-F32: defined behaviour when the abort plan fails
 
+> **ASTRA integration:** F32 and the `abortCalculated` / `tAbort` persistence are moot, because the caller decides when to abort (`Abort::plan`). The C++ non-finite pre-check was removed.
+
 - **Cause.** MATLAB ignored `Report.Feasible` and PolyQP errors. On an error the C++ returned before `abortCalculated` was set, so it recomputed every tick and produced no trajectory.
 - **Change.**
   - `abortCalculated` is set on every path (`Guidance/TrajectoryManager.m:74`, `AbortGuidance.cpp:98`).
@@ -100,11 +126,15 @@ Case sets:
 
 ### FIX-F02 (DECISION D4): optional acceleration/jerk pin, off
 
+> **ASTRA integration:** fixed by Phase 5. The pin below was replaced by an always-on boundary condition from attitude, thrust and disturbance (see the status table above).
+
 - **Cause (Phase 1.4).** Knot-1 acceleration is free, so the plan's t = 0 thrust and attitude differ from the vehicle's. Upright frozen: attitude step median 8.2° / max 25.5° (ASTRA) and 2.9° / 17.3° (TOAD); thrust step up to 41 % / 17 % of hover, which takes 0.16 s / 0.26 s to slew at the planner's own thrust-rate limit.
 - **Change.** `ABORT_PIN_THRUST` (MATLAB constant `false`, C++ parameter defaulting to `false`, flag F37). When on, waypoint 1 gets `AccelBC` = (T_hover/m) b3 − g e3 = g(b3 − e3) and `JerkBC` = g ḃ3 (`TrajectoryManager.m:16`, `:37-40`; `AbortGuidance.cpp:15`, `:43-47`). The jerk pin is the addition agreed after Phase 1; the velocity match needs it.
 - **Acceptance** (`fix_regressions` F02). With the pin on, the attitude step is 0°, the thrust-direction step ≤ 2.2° and the thrust step ≤ 5.4 % of hover. MATLAB/C++ parity through `AbortGuidance` is ≤ 9e-9.
 
 ### FIX-F29: TOAD plans from the estimated propellant
+
+> **ASTRA integration: superseded (ASTRA carries no propellant).** Vehicle 1 and the propellant fields were removed.
 
 - **Cause.** `buildVehicleLimits` used full tanks for `m_init`, ρ and the mass integration's start, so a mid-flight TOAD abort planned with full-tank mass and inertia.
 - **Change.** `Opts.InitOxMass`/`InitFuMass` (default: full tank) set `m_lox0`/`m_ipa0`, and therefore `m_init`, ρ and `flatnessInvert`'s `ml_s(1)`, `mi_s(1)`. `Constants.OxMass`/`FuMass` stay the full-tank reference for `ComputeJtot` (unchanged). The abort block passes `X_est(14)`, `X_est(15)`.
@@ -128,9 +158,9 @@ Case sets:
 | D1 | Fallback when PolyQP fails: hold the current lateral position and descend rest-to-rest from z0 to 0 with the r = 5 (degree-9) profile, all derivatives zero at both ends. T = max(0.2, c_v·\|z0\|/1 m/s), c_v = 315/128, using the waypoint-3 vertical cap. Hover thrust m·g, zero gimbal and roll, upright, propellant held at the estimate. Non-finite inputs are replaced (position 0, propellant full tank) so the output stays finite. | F08 acceptance. The profile starts at rest, so the vehicle's current velocity is a step the controller must absorb. 40 m → 98 s. | Edit `abortFallback.m` and mirror it in `abortFallback.cpp`. |
 | D2 | `Feasible = 0` plans are flown (`INFEASIBLE_FLOWN`), not replaced by the fallback. | After FIX-F01 no sampled start is infeasible; the constructed z0 = 0.6 m, vz = −8 m/s is. | Change `if ~planOk` to `if ~planOk \|\| ~Report.Feasible` in `TrajectoryManager.m:67` and mirror it at `AbortGuidance.cpp:91`. |
 | D3 | A pinned start-velocity segment's cap = max(SegMaxVel, \|v_BC\|, \|v_plan(segment start)\|) per axis. The last term is the amendment for the F03 BC. Not applied to acceleration. | F01 acceptance; the 22/21 tilted cases above. | Restore `vCap = Plan.SegMaxVel(:, m)` in `evaluateConstraints.m:76` and `.cpp:97`; drop the `vStart` term to keep only the prompt's rule. |
-| D4 | `ABORT_PIN_THRUST = false`. This reverses my Phase 1 recommendation: with the pin on, 87 / 100 ASTRA and 99 / 100 TOAD tilted starts are infeasible (velocity utilisation up to 12 and 48). A pinned lateral start acceleration with a free landing x, y makes the minimum-crackle plan drift sideways, and stretching time makes it worse: 19 m of drift at the nominal times, 304 m at 4× for a 15° ASTRA start. Upright starts are unaffected (0 infeasible) because the pin is then a = 0, j = 0. | F02 / F03 tables. | Set `ABORT_PIN_THRUST = true` (`TrajectoryManager.m:16`) and pass `true` to the C++ `AbortGuidance`. A planner change (for example pinning the landing x, y, or excluding pinned-acceleration legs from dilation) would be needed first. |
+| D4 | **Superseded by FIX-F02 (ASTRA integration Phase 5): the pin is always on; see the status table.** `ABORT_PIN_THRUST = false`. This reverses my Phase 1 recommendation: with the pin on, 87 / 100 ASTRA and 99 / 100 TOAD tilted starts are infeasible (velocity utilisation up to 12 and 48). A pinned lateral start acceleration with a free landing x, y makes the minimum-crackle plan drift sideways, and stretching time makes it worse: 19 m of drift at the nominal times, 304 m at 4× for a 15° ASTRA start. Upright starts are unaffected (0 infeasible) because the pin is then a = 0, j = 0. | F02 / F03 tables. | Set `ABORT_PIN_THRUST = true` (`TrajectoryManager.m:16`) and pass `true` to the C++ `AbortGuidance`. A planner change (for example pinning the landing x, y, or excluding pinned-acceleration legs from dilation) would be needed first. |
 | D5 | `ABORT_HOVER_ALT = 2` m (no value change; the lead's spec says 1 m). | F01 flag. | Change the constant in `TrajectoryManager.m:15` and `AbortGuidance.cpp:14`. |
-| D6 | F03 is passed to waypoint 1 as the prompt specifies, although the pin is off. The plan's P (centre of percussion) then starts at the vehicle's actual P. The plan's CG at t = 0 differs from `X_est` by ρ\|b3_actual − b3_plan(0)\|, which on tilted starts is **larger** than before F03: max 0.16 m / 0.20 m/s (ASTRA), 0.34 m / 0.56 m/s (TOAD), against 0.09 / 0.06 and 0.15 / 0.13 before. Upright starts are unchanged. | F03 table. | Remove `'B3BC', b3_est, 'B3DotBC', b3dot_est` from waypoint 1 (`TrajectoryManager.m:36`, and leave `options1.B3BC`/`B3DotBC` at NaN in `AbortGuidance.cpp`). That restores the old BC exactly. |
+| D6 | **Reused by the ASTRA integration for Ṫ = 0; the text below is the resolved `abort-fixes` D6.** F03 is passed to waypoint 1 as the prompt specifies, although the pin is off. The plan's P (centre of percussion) then starts at the vehicle's actual P. The plan's CG at t = 0 differs from `X_est` by ρ\|b3_actual − b3_plan(0)\|, which on tilted starts is **larger** than before F03: max 0.16 m / 0.20 m/s (ASTRA), 0.34 m / 0.56 m/s (TOAD), against 0.09 / 0.06 and 0.15 / 0.13 before. Upright starts are unchanged. | F03 table. | Remove `'B3BC', b3_est, 'B3DotBC', b3dot_est` from waypoint 1 (`TrajectoryManager.m:36`, and leave `options1.B3BC`/`B3DotBC` at NaN in `AbortGuidance.cpp`). That restores the old BC exactly. |
 | D7 | In Simulink, the MATLAB block falls back only for a non-finite estimate; a PolyQP error stops the simulation (no `try/catch` in code generation). The flight C++ falls back on every error. | Measured `coder.screener`/`codegen` on R2026b; `check_abort_codegen.m`. | — (a code-generation limit; converting PolyQP's `error()` calls into status returns would be a larger MATLAB change). |
 | D8 | FIX-F07 assembles the reduced system segment by segment instead of Tzᵀ R_PP Tz. | F07 section: 1.4e-1 error against `vpa` with the literal formula. | Not recommended. |
 
@@ -168,17 +198,17 @@ Related, inside PolyQP but a design value, not a unit bug: `buildVehicleLimits.m
 - No closed-loop Simulink simulation of an abort was run. The fixes are verified at the planner level (MATLAB vs C++ and the acceptance criteria). How the controller responds to the remaining t = 0 steps, the fallback's velocity step or the D6 CG offset was not measured.
 - `check_abort_codegen.m` runs MATLAB Coder `codegen` on `TrajectoryManager` (lib, code only) with a synthetic `constantsTOAD.Traj`. It does not build `TOAD_TrajectoryGen_3.slx` itself.
 - No MC_v5 dispersion data is in the repo, so the tilt and rate distributions are sampled (tilt ≤ 30°, |ω| ≤ 1 rad/s).
-- The flight trigger (`ABORT = 0`, F09/F31) is unchanged and still never fires.
+- The flight trigger (`ABORT = 0`, F09/F31) is unchanged and still never fires. *(ASTRA integration: moot, the trigger is removed.)*
 
 ## Reproducing
 
 From `TOAD/cpp/PolyQP/verify`:
 
 ```
-matlab -batch "build_polyqp_mex; build_polyqp_mex('float'); verify_polyqp; check_abort_codegen; diagnose_aborts('fixed')"
+matlab -batch "build_polyqp_mex; build_polyqp_mex('wide'); verify_polyqp; check_abort_codegen"
 bash build_host.sh
 ```
 
 - `verify_polyqp` runs every transpile check on the fixed code plus all `fix_regressions` sections. It writes `verify_polyqp_report.md` and errors on any failure.
-- `diagnose_aborts('fixed')` adds the "after" rows to `diagnosis_report.md`; the baseline rows come from `results/diag_baseline.mat`.
+- (`abort-fixes` only; ASTRA integration: the float build and TOAD were removed, and `diagnose_aborts` reflects that branch.) `diagnose_aborts('fixed')` adds the "after" rows to `diagnosis_report.md`; the baseline rows come from `results/diag_baseline.mat`.
 - The frozen baseline is `results/baseline_report.md`, `results/baseline_run.log` and `results/baseline_cases_slim.mat`. The full `baseline_cases.mat` (33 MB) is not committed; to regenerate it, run `verify_polyqp('baseline')` on commit `a46d227`.

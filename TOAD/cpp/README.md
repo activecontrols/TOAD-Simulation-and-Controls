@@ -20,8 +20,9 @@ The wrapper uses the vehicle's C++ implementation, including its single-precisio
 | `Q_gen.cpp` | Generates the estimator's process-noise matrix. |
 | `ASTRAv2_Controller.cpp` | Flight controller with an outer position loop and an inner attitude loop. |
 | `LESO_Position.cpp`, `LESO_Attitude.cpp` | Position and attitude disturbance observers. |
-| `matlab_helpers.cpp` | Utility functions for quaternion and rotation calculations. |
-| `matlab_funcs.h` | Shared declarations and Eigen type definitions used by the source files. |
+| `matlab_helpers.cpp` | Utility functions for quaternion and rotation calculations, plus the double-precision MATLAB helpers of the PolyQP abort solver (added as overloads; the float versions are unchanged). |
+| `matlab_funcs.h` | Shared declarations and Eigen type definitions used by the source files, including the fixed-size double types of the abort solver. |
+| `Abort.h`, `Abort.cpp`, `PolyQP/` | The PolyQP abort guidance and its flight harness `Abort::plan`. See `INTEGRATION.md` (for the flight software) and `PolyQP/README.md`. `controller_and_estimator` exposes `get_controller_x_est()` and `get_position_disturbance()` for it. |
 | `astra_structs.h` | Data structures for inputs, outputs, and estimator state. |
 | `Extras/ArduinoEigenDense.h` | A compatibility header that maps the Arduino-style `#include <ArduinoEigenDense.h>` include to standard Eigen on a PC. It also declares `Matrix9_4`. |
 | `Extras/eigen-3.4.0/` | Eigen 3.4.0 linear algebra headers; no separate installation step is needed. |

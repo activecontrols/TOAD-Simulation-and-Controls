@@ -14,13 +14,15 @@ AbortStatus AbortGuidance(const Vector15d &X_est, const Vector4d &u_cmd, const V
     // It is the MATLAB reference that cpp/PolyQP/AbortGuidance.cpp transpiles.
     // u_cmd is the last command [gimbal pitch; gimbal yaw; thrust (N); roll] and a_dist the estimated disturbance acceleration
     // (LESO_Position); they set the start acceleration and jerk (default: hover thrust with the gimbal centred, no disturbance).
-    // Report is PolyQP's report when a plan was made (empty for the fallback).
+    // TRANSPILE-FLAG F16: Report (PolyQP's report when a plan was made) is returned to the C++ caller; MATLAB keeps it local, because code generation cannot give it a value on the fallback path.
     // TRANSPILE-FLAG F09 / F31 (removed, Phase 6): the trigger (ABORT, tAbort, abortCalculated and the FIX-F32 one-attempt latch) is gone; the caller decides when to abort (Abort::plan).
     constexpr double ABORT_HOVER_ALT = 2; // DECISION-D5 (TRANSPILE-FLAG F01): abort waypoint 2 altitude (m); the lead's spec says 1 m above the pad
     static_assert(ABORT_HOVER_ALT == POLYQP_ABORT_HOVER_ALT_M, "STATIC: the grid capacity derivation (PolyQP_config.h) assumes this altitude");
     // FIX-F02: default command: hover thrust, gimbal centred, no roll
     // FIX-F02: no disturbance estimate
     AbortStatus abortStatus = AbortStatus::OK; // FIX-F08: 0 = OK, 1 = INFEASIBLE_FLOWN (D2), 2 = FALLBACK (D1)
+    // Code generation: give the outputs a value on every path (the plan or the fallback below overwrites them)
+    // STREAM: the C++ writes the outputs to Sink row by row, so there is nothing to initialise here.
 
     // ASTRA-ONLY: the MATLAB Opts (R = 5, InitOxMass/InitFuMass from X_est(14:15), FIX-F29) is not carried: r is hardcoded and ASTRA carries no propellant.
     const TOADWaypointT dummyWP = TOADWaypoint(Vector3d(0, 0, 0));
