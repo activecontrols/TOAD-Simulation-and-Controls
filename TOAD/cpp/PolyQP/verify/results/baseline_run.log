@@ -1,0 +1,45 @@
+Building with 'Xcode Clang++'.
+MEX completed successfully.
+Built polyqp_mex (double precision).
+Building with 'Xcode Clang++'.
+MEX completed successfully.
+Built polyqp_mex_float (float precision).
+[leaves] buildVehicleLimits, ComputeJtot, DCM_Quat_Conversion, TOADWaypoint, assembleQP
+[resolveWaypoints] error-ID cases
+[abort] ASTRA: 200 cases
+[abort] TOAD: 200 cases
+[abort] r = 3, 4, 6
+[missions]
+[solveLeg] 500 fuzzed cases
+[allocateTimes] fuzzed multi-segment legs
+[float] ASTRA abort cases through polyqp_mex_float
+
+Check                                  Cases  Roundoff  Fails     Max err err/floor
+buildVehicleLimits                         2         0      0           0      0.00
+ComputeJtot                               30         0      0           0      0.00
+DCM_Quat_Conversion                      216         0      0    2.82e-16      0.00
+TOADWaypoint                              10         0      0           0      0.00
+assembleQP A0, Q0                          4         0      0           0      0.00
+assembleQP H0                              4         0      0    1.77e-10      0.00
+resolveWaypoints structural              451         0      0           0      0.00
+resolveWaypoints numeric                 451         0      0           0      0.00
+resolveWaypoints error IDs                 8         0      0           0      0.00
+solveLeg (from solveAllLegs)             924       162      0    1.61e-05      2.76
+solveLeg (fuzzed)                        279        46      0    0.000149      1.71
+solveLeg error IDs                      1424         0      0           0      0.00
+allocateTimes                            154         7      0    0.000173      1.85
+PolyEval                                3608        49      0    4.24e-13      0.38
+flatnessInvert                           451         0      0    5.79e-13      0.00
+allocateControls                         451         0      0     5.8e-19      0.00
+evaluateConstraints structural           451         0      0           0      0.00
+evaluateConstraints numeric              451         0      0    2.43e-14      0.00
+sampleOutputs                            451         0      0    1.66e-13      0.00
+PolyQP structural / status               445         0      0           0      0.00
+PolyQP end-to-end                        445        24      0     2.2e-05      2.47
+PolyQP error IDs                           8         0      0           0      0.00
+AbortGuidance structural                 400         0      0           0      0.00
+AbortGuidance end-to-end                 400        21      0     2.2e-05      6.44
+Missions structural / status               6         0      0           0      0.00
+Missions end-to-end                        6         4      0     0.00745      2.17
+Report: /Users/lotus/Desktop/PSP/AC/TOAD-Simulation-and-Controls/TOAD/cpp/PolyQP/verify/verify_polyqp_report.md (54 s)
+ALL DOUBLE-PRECISION CHECKS PASSED
