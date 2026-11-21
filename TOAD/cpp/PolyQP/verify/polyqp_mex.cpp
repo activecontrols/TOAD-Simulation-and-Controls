@@ -825,9 +825,9 @@ void mexFunction(int nlhs, mxArray *plhs[], int nrhs, const mxArray *prhs[]) {
         out.push(toMx(::DCM_Quat_Conversion(R)));
         out.finish(PolyQPStatus::Ok, nlhs, plhs);
     } else if (cmd == "AbortGuidance") {
-        if (nrhs < 4 || nrhs > 7)
+        if (nrhs < 4 || nrhs > 8)
             mexErrMsgIdAndTxt("polyqp_mex:usage", "Usage: [Time, States, Inputs, tAbort, abortCalculated, Report, abortStatus, planStatus, msg] = "
-                                                  "polyqp_mex('AbortGuidance', t, X_est, constantsTOAD, state[, ABORT[, ABORT_PIN_THRUST]])");
+                                                  "polyqp_mex('AbortGuidance', t, X_est, constantsTOAD, state[, ABORT[, u_cmd[, a_dist]]])");
         const double t = num(prhs[1], "t");
         Vector15d X_est;
         readVecN(prhs[2], X_est, "X_est");
@@ -842,14 +842,13 @@ void mexFunction(int nlhs, mxArray *plhs[], int nrhs, const mxArray *prhs[]) {
         const bool before = state.abortCalculated;
         // STATIC: the flight node capacity, as the harness gives it (Abort::MAX_POINTS = POLYQP_MAX_NODES)
         const NodeSink sk = g_sink.sink(POLYQP_MAX_NODES);
-        AbortStatus ast;
-        if (nrhs == 7) {
-            ast = AbortGuidance(t, X_est, state, sk, Rep, num(prhs[5], "ABORT"), num(prhs[6], "ABORT_PIN_THRUST") != 0.0);
-        } else if (nrhs == 6) {
-            ast = AbortGuidance(t, X_est, state, sk, Rep, num(prhs[5], "ABORT"));
-        } else {
-            ast = AbortGuidance(t, X_est, state, sk, Rep);
-        }
+        // FIX-F02: optional u_cmd (4) and a_dist (3); MATLAB defaults: hover thrust with the gimbal centred, no disturbance
+        const double ABORT = nrhs >= 6 ? num(prhs[5], "ABORT") : 0.0;
+        Vector4d u_cmd(0, 0, ASTRA::m_dry * ASTRA::g, 0);
+        Vector3d a_dist = Vector3d::Zero();
+        if (nrhs >= 7 && !mxIsEmpty(prhs[6])) readVecN(prhs[6], u_cmd, "u_cmd");
+        if (nrhs >= 8 && !mxIsEmpty(prhs[7])) readVecN(prhs[7], a_dist, "a_dist");
+        const AbortStatus ast = AbortGuidance(t, X_est, state, sk, Rep, ABORT, u_cmd, a_dist);
         const bool fired = state.abortCalculated && !before;
         mxArray *Time = empty();
         mxArray *States = empty();

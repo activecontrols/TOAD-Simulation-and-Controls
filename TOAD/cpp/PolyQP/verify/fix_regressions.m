@@ -13,7 +13,7 @@ addpath(fullfile(toadDir, 'Guidance'));   % AbortGuidance.m (the abort block)
 addpath(fullfile(toadDir, 'Guidance', 'PolynomialQP'));
 addpath(fullfile(toadDir, 'Helper'));
 addpath(here);
-allIds = {'F07', 'F08', 'F01', 'F03', 'F27', 'F02'};   % F29 removed: superseded (ASTRA carries no propellant)
+allIds = {'F07', 'F08', 'F01', 'F03', 'F27', 'BC'};   % F29 removed: superseded (ASTRA carries no propellant); F02 (optional pin) replaced by BC (Phase 5)
 if nargin < 1 || isempty(ids)
     ids = allIds;
 end
@@ -47,8 +47,8 @@ for i = 1:numel(ids)
             [ok, md] = regF01(ctx);
         case 'F03'
             [ok, md] = regF03(ctx);
-        case 'F02'
-            [ok, md] = regF02(ctx);
+        case 'BC'
+            [ok, md] = regBC(ctx);
         case 'F27'
             [ok, md] = regF27(ctx);
         otherwise
@@ -559,8 +559,8 @@ function [ok, md] = regF03(ctx)
         okPar = okPar && par <= 1e-6;
         L{end + 1} = sprintf('| %s | %.1e / %.1e | %.1e / %.1e | %s | %s | %s | %s | %.1e | %d |', ctx.vehName{v}, ePB, ePBc, eVB, eVBc, dist(cgP0), dist(cgP1), dist(cgV0), dist(cgV1), par, nInf); %#ok<AGROW>
     end
-    L{end + 1} = sprintf(['\nThe P-space BC is exact (<= 1e-12, criterion (i)). The CG at t = 0 still differs from `X_est` by rho |b3_actual - b3_plan(0)|: the plan''s own initial tilt comes from its free initial acceleration, ' ...
-        'so F03 alone cannot make it zero (Phase 1 finding). With the knot-1 acceleration and jerk pinned (FIX-F02, `ABORT_PIN_THRUST`) it is zero to roundoff:\n']);
+    L{end + 1} = sprintf(['\nThe P-space BC is exact (<= 1e-12, criterion (i)). "Without F03" keeps the Phase 5 acceleration pin but drops B3BC / B3DotBC; before Phase 5 the CG at t = 0 differed from `X_est` by rho |b3_actual - b3_plan(0)| because the plan''s initial tilt came from its free initial acceleration, ' ...
+        'so F03 alone cannot make it zero (Phase 1 finding). With the knot-1 acceleration and jerk pinned (FIX-F02, always on since Phase 5) it is zero to roundoff:\n']);
     L{end + 1} = '| Vehicle | Starts | CG(0) position error max (MATLAB / C++, m) | CG(0) velocity error max (MATLAB / C++, m/s) | Infeasible | Dominant utilisation of infeasible (count, max) |';
     L{end + 1} = '|---|---|---|---|---|---|';
     okPin = true;
@@ -574,7 +574,7 @@ function [ok, md] = regF03(ctx)
             end
             eP = 0; eV = 0; ePc = 0; eVc = 0; nInf = 0; dom = [];
             for i = 1:numel(X)
-                W = abortWaypoints(X{i}, c, true);
+                W = abortWaypoints(X{i}, c);   % FIX-F02 (Phase 5): acceleration and jerk are always pinned
                 [IG, QT, RP] = PolyQP(W, c, struct('R', 5));
                 [IGc, ~, ~, st] = polyqp_mex('PolyQP', W, c, struct('R', 5));
                 eP = max(eP, norm(IG.X(5:7, 1) - X{i}(5:7))); eV = max(eV, norm(IG.X(8:10, 1) - X{i}(8:10)));
@@ -620,49 +620,103 @@ function [ok, md] = regF03(ctx)
     md = strjoin(L, newline);
 end
 
-% ================================================================ FIX-F02 (D4)
-function [ok, md] = regF02(ctx)
+% ================================================================ FIX-F02 (Phase 5): start acceleration / jerk from attitude and thrust
+function [ok, md] = regBC(ctx)
     L = {};
-    L{end + 1} = sprintf('## FIX-F02 (D4): optional knot-1 acceleration/jerk pin (`ABORT_PIN_THRUST`, off by default)\n');
-    L{end + 1} = 'Step at the abort instant (plan t = 0 against hover thrust along the current b3, zero gimbal) and feasibility, with the pin off (the default) and on. Values median / 95th / max.';
+    L{end + 1} = sprintf('## FIX-F02 (ASTRA integration Phase 5): start-of-abort acceleration and jerk from attitude and thrust\n');
+    L{end + 1} = ['Knot 1 pins a0 = C_IB T_B / m + g + a_dist and j0 = (w_I x C_IB T_B) / m (T_B from u_cmd as `LESO_Position.cpp` computes it, m = m_dry, thrust held constant: DECISION-D6), ' ...
+        'the P-space offset uses b3 = C_IB T_B / |T_B| and db3/dt = w_I x b3, and the heading reference is the estimated heading x_C = C_IB(:, 2) x e3 (DECISION-D9). ' ...
+        'Sets: S1 = the 200 frozen upright, zero-rate starts with the default command (hover thrust, gimbal centred, no disturbance); S2 = 100 tilted (<= 30 deg) rotating (|w| <= 1 rad/s) starts, random heading, hover thrust, gimbal centred; ' ...
+        'S3 = the S2 states with gimbal angles uniform in +-5 deg and thrust uniform in [0.7, 1.3] m g; S4 = S3 plus a disturbance acceleration uniform in +-0.5 m/s^2 per axis. ' ...
+        '"Before" is the Phase 4 waypoint construction (start acceleration and jerk free, b3 from the quaternion, heading [1; 0; 0]; `baseline_src/abortWaypointsPhase4.m`).'];
     L{end + 1} = '';
-    L{end + 1} = '| Vehicle | Starts | Pin | Attitude step (deg) | Thrust direction step (deg) | Thrust step / hover | Infeasible | AbortGuidance with pin: MATLAB vs C++ (abs) |';
-    L{end + 1} = '|---|---|---|---|---|---|---|---|';
-    okPar = true;
-    for v = 1:numel(ctx.C)
-        c = ctx.C{v};
-        sets = {sprintf('upright frozen (%d)', 200), frozenStates(ctx, v); 'tilted (100)', tiltedStates(v, 100, ctx)};
-        for si = 1:2
-            X = sets{si, 2};
-            for pin = [false, true]
-                att = zeros(1, numel(X)); tdir = att; tst = att; nInf = 0; par = 0;
-                for i = 1:numel(X)
-                    W = abortWaypoints(X{i}, c, pin);
-                    [IG, ~, RP] = PolyQP(W, c, struct('R', 5));
-                    nInf = nInf + ~RP.Feasible;
-                    [att(i), tdir(i), tst(i)] = stepAtAbort(IG, X{i}, c);
-                    if pin && i <= 20
-                        S1 = AbortGuidance(2, X{i}, c, 1, struct('abortCalculated', false, 'tAbort', 0, 'abortStatus', 0, 'Time', [], 'States', [], 'Inputs', []), 2, true);
-                        [Tm, Sm, Im, ~, ~, ~, aSt] = polyqp_mex_wide('AbortGuidance', 2, X{i}, c, struct('abortCalculated', false, 'tAbort', 0, 'abortStatus', 0), 1, true);   % STATIC: pinned tilted plans can exceed the abort node capacity
-                        if isequal(size(Sm), size(S1.States)) && aSt == S1.abortStatus
-                            par = max([par, max(abs(Sm - S1.States), [], 'all'), max(abs(Im - S1.Inputs), [], 'all'), max(abs(Tm - S1.Time))]);
-                        else
-                            par = Inf;
-                        end
-                    end
-                end
-                ps = '-';
-                if pin
-                    ps = sprintf('%.1e', par);
-                    okPar = okPar && par <= 1e-6;
-                end
-                L{end + 1} = sprintf('| %s | %s | %s | %s | %s | %s | %d | %s |', ctx.vehName{v}, sets{si, 1}, onOff(pin), dist(att), dist(tdir), dist(abs(tst)), nInf, ps); %#ok<AGROW>
+    c = ctx.C{1};
+    m = c.m_dry; g = c.g;
+    rs = RandStream('mt19937ar', 'Seed', 5005);
+    X2 = tiltedStates(1, 100, ctx);
+    sets = {'S1 upright, default command', frozenStates(ctx, 1), 'none'; 'S2 tilted rotating, hover, gimbal centred', X2, 'hover'; ...
+        'S3 tilted rotating, gimbal and thrust varied', X2, 'gimbal'; 'S4 = S3 + disturbance', X2, 'gimbal+dist'};
+    addpath(fullfile(ctx.here, 'baseline_src'));
+    capF = polyqp_mex('capacities');
+    L{end + 1} = '| Set | Cases | P accel(0) - a0, max (MATLAB / C++) | CG pos(0) - X_est, max (m) | Attitude(0) error, max | w_x, w_y (0) error, max | w_z (0) error, max | Thrust(0) / |T_B| - 1, max | Feasible before / after | Max cond(R_PP_eq) before / after | T_total max before / after (s) | C++ capacity fallbacks | MATLAB vs C++ (abs) |';
+    L{end + 1} = '|---|---|---|---|---|---|---|---|---|---|---|---|---|';
+    okA = true; okP = true; okAtt = true; okWxy = true; okPar = true; wzMax = 0;
+    for si = 1:size(sets, 1)
+        X = sets{si, 2};
+        n = numel(X);
+        eA = 0; eAc = 0; eP = 0; eAtt = 0; eWxy = 0; eWz = 0; eT = 0; feasB = 0; feasA = 0; condB = 0; condA = 0; TB = 0; TA = 0; nCap = 0; par = 0;
+        for i = 1:n
+            Xi = X{i};
+            switch sets{si, 3}
+                case 'none'
+                    u = [0; 0; m * g; 0]; ad = [0; 0; 0];
+                case 'hover'
+                    u = [0; 0; m * g; 0]; ad = [0; 0; 0];
+                case 'gimbal'
+                    u = [deg2rad(5) * (2 * rand(rs) - 1); deg2rad(5) * (2 * rand(rs) - 1); m * g * (0.7 + 0.6 * rand(rs)); 0]; ad = [0; 0; 0];
+                case 'gimbal+dist'
+                    u = [deg2rad(5) * (2 * rand(rs) - 1); deg2rad(5) * (2 * rand(rs) - 1); m * g * (0.7 + 0.6 * rand(rs)); 0]; ad = 0.5 * (2 * rand(rs, 3, 1) - 1);
+            end
+            q = Xi(1:4) / norm(Xi(1:4));
+            C_IB = quatRot(q)';
+            T_B = u(3) * [cos(u(1)) * sin(u(2)); -sin(u(1)); cos(u(1)) * cos(u(2))];
+            a0 = C_IB * T_B / m + [0; 0; -g] + ad;
+            W = abortWaypoints(Xi, c, u, ad);
+            W0 = abortWaypointsPhase4(Xi);
+            [IG, QT, RP] = PolyQP(W, c, struct('R', 5));
+            [~, QT0, RP0] = PolyQP(W0, c, struct('R', 5));
+            [IGc, QTc, ~, st] = polyqp_mex('PolyQP', W, c, struct('R', 5));
+            feasA = feasA + RP.Feasible; feasB = feasB + RP0.Feasible;
+            TA = max(TA, RP.T_total); TB = max(TB, RP0.T_total);
+            P1 = resolveWaypoints(W, 5, ctx.Lim{1}); P0 = resolveWaypoints(W0, 5, ctx.Lim{1});
+            condA = max(condA, abortLegCond(P1, QT.T, ctx)); condB = max(condB, abortLegCond(P0, QT0.T, ctx));
+            eA = max(eA, max(abs(PolyEval(QT, 0, 2) - a0)));
+            if isempty(st)
+                eAc = max(eAc, max(abs(polyqp_mex('PolyEval', QTc, 0, 2) - a0)));
+                par = max(par, max(abs(IGc.X - IG.X), [], 'all'));
+            else
+                okPar = false;
+            end
+            if ~any(strcmp(sets{si, 3}, {'gimbal+dist'}))
+                eP = max(eP, max(abs(IG.X(5:7, 1) - Xi(5:7))));
+            end
+            if any(strcmp(sets{si, 3}, {'none', 'hover'}))
+                eAtt = max(eAtt, min(norm(IG.X(1:4, 1) - q), norm(IG.X(1:4, 1) + q)));
+                eWxy = max(eWxy, max(abs(IG.X(11:12, 1) - Xi(11:12))));
+                eWz = max(eWz, abs(IG.X(13, 1) - Xi(13)));
+            end
+            eT = max(eT, abs(IG.U(3, 1) / norm(T_B) - 1));
+            % C++ AbortGuidance at the flight node capacity: count the plans that need more output nodes than POLYQP_MAX_NODES
+            if numel(IG.Time) > capF(5)
+                nCap = nCap + 1;
             end
         end
+        okA = okA && max(eA, eAc) <= 1e-9;
+        if ~strcmp(sets{si, 3}, 'gimbal+dist')
+            okP = okP && eP <= 1e-9;
+        end
+        if any(strcmp(sets{si, 3}, {'none', 'hover'}))
+            okAtt = okAtt && eAtt <= 1e-9;
+            okWxy = okWxy && eWxy <= 1e-6;
+            wzMax = max(wzMax, eWz);
+        end
+        okPar = okPar && par <= 1e-6;
+        wzs = '-'; ws = '-'; as = '-';
+        if any(strcmp(sets{si, 3}, {'none', 'hover'}))
+            wzs = sprintf('%.1e', eWz); ws = sprintf('%.1e', eWxy); as = sprintf('%.1e', eAtt);
+        end
+        ps = '-';
+        if ~strcmp(sets{si, 3}, 'gimbal+dist')
+            ps = sprintf('%.1e', eP);
+        end
+        L{end + 1} = sprintf('| %s | %d | %.1e / %.1e | %s | %s | %s | %s | %.3f | %d / %d | %.2e / %.2e | %.1f / %.1f | %d | %.1e |', sets{si, 1}, n, eA, eAc, ps, as, ws, wzs, eT, feasB, feasA, condB, condA, TB, TA, nCap, par); %#ok<AGROW>
     end
-    L{end + 1} = sprintf('\nThe default (`ABORT_PIN_THRUST = false`) is unchanged by this fix; the option is verified for MATLAB/C++ parity through `AbortGuidance` (first 20 starts of each set). DECISION-D4 records whether to enable it.\n');
-    ok = okPar;
-    L{end + 1} = sprintf('**Result: %s** (parity with the pin on).\n', passFail(ok));
+    L{end + 1} = sprintf(['\nAcceptance (prompt Section 6.2): P-space acceleration at t = 0 equals a0 (<= 1e-9, all sets): %s. Plan CG position at t = 0 equals `X_est` (<= 1e-9, S1-S3; S4 is excluded because a disturbance tilts the plan''s thrust axis away from b3): %s. ' ...
+        'Attitude at t = 0 equals `X_est` (<= 1e-9, centred gimbal S1-S2, sign-insensitive quaternion distance): %s. w_x, w_y at t = 0 equal `X_est(11:12)` (<= 1e-6, S1-S2): %s. ' ...
+        'w_z at t = 0 does NOT equal `X_est(13)` in general (max %.2e rad/s): with a constant heading reference the plan''s yaw rate at t = 0 is fixed by the motion of b3 (it is 0 for an upright start), so a start with a nonzero yaw rate keeps a yaw-rate step. ' ...
+        'Reported, not counted as a failure; reaching it needs a heading reference that rotates, a planner change. MATLAB/C++ parity (PolyQP, abs 1e-6): %s.\n'], passFail(okA), passFail(okP), passFail(okAtt), passFail(okWxy), wzMax, passFail(okPar));
+    ok = okA && okP && okAtt && okWxy && okPar;
+    L{end + 1} = sprintf('**Result: %s**.\n', passFail(ok));
     md = strjoin(L, newline);
 end
 
