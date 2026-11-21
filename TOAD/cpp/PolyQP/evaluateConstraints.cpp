@@ -12,7 +12,7 @@ PolyQPStatus evaluateConstraints(const QPTrajT &QPTraj, const PlanT &Plan, const
     const Real T_total = QPTraj.T_total;
     const Real dt_eval = Real(0.5) * Limits.DtSample;
     // TRANSPILE-FLAG F11: the 3999 cap silently truncates the evaluation grid for long trajectories. Transpiled as-is per MATLAB.
-    const int nGrid = static_cast<int>(mmin(Real(3999), mmax(Real(41), std::ceil(T_total / dt_eval) + 1)));
+    const int nGrid = static_cast<int>(std::min(Real(3999), std::max(Real(41), std::ceil(T_total / dt_eval) + 1)));
     POLYQP_CAPACITY(nGrid <= POLYQP_MAX_GRID);
     static RowGrid t_grid;
     linspace(0, T_total, nGrid, t_grid);
@@ -94,12 +94,13 @@ PolyQPStatus evaluateConstraints(const QPTrajT &QPTraj, const PlanT &Plan, const
         // FIX-F01: a pinned start-knot velocity raises that axis's cap to the larger of |v_BC| and the plan's CG speed at the segment start (D3)
         Vec3 vCap = Col1(Plan.SegMaxVel, m);
         const Vec3 vBC = mabs(getFiber3(Plan.FixCg, 2, m));
+        const Vector3b vBCFixed = getFiber3(Plan.FixCgFixed, 2, m); // NO-NAN: ~isnan(vBC)
         Vec3 vStart = Vec3::Zero();
         if (V1(kFirst, m) > 0) {
             vStart = mabs(Vec3(Col1(X, V1(kFirst, m))(R1(8, 10))));
         }
         for (int d = 1; d <= 3; ++d) {
-            if (!std::isnan(V1(vBC, d))) {
+            if (V1(vBCFixed, d)) {
                 V1(vCap, d) = maxv({V1(vCap, d), V1(vBC, d), V1(vStart, d)});
             }
         }
@@ -111,7 +112,7 @@ PolyQPStatus evaluateConstraints(const QPTrajT &QPTraj, const PlanT &Plan, const
         // 3. Thrust upper & lower utilisation
         const Real T_k = V1(uk, 3);
         const Real u_thi = T_k / Limits.T_hi;
-        const Real u_tlo = Limits.T_lo / mmax(Real(1e-3), T_k);
+        const Real u_tlo = Limits.T_lo / std::max(Real(1e-3), T_k);
 
         // 4. Gimbal angle (k = 4)
         const Real u_gim = maxv(mabs(uk(R1(1, 2)))) / Limits.GimbalLimit;
@@ -123,11 +124,11 @@ PolyQPStatus evaluateConstraints(const QPTrajT &QPTraj, const PlanT &Plan, const
         Real u_trate = V1(urk, 3) / Limits.ThrustRateLim;
 
         // 7. Roll torque & rate (k = 4)
-        const Real u_roll = mmax(std::fabs(V1(uk, 4)) / Limits.RollLimit, V1(urk, 4) / Limits.RollRateLim);
+        const Real u_roll = std::max(std::fabs(V1(uk, 4)) / Limits.RollLimit, V1(urk, 4) / Limits.RollRateLim);
 
         // 8. Attitude tilt angle from vertical (k = 2)
         const Real b3_z = 1 - 2 * (std::pow(V1(qk, 2), Real(2)) + std::pow(V1(qk, 3), Real(2)));
-        const Real tilt_k = std::acos(mmax(Real(-1), mmin(Real(1), b3_z)));
+        const Real tilt_k = std::acos(std::max(Real(-1), std::min(Real(1), b3_z)));
         const Real u_tilt = tilt_k / Limits.MaxTilt;
 
         // Skip recording finite-difference actuator rates on exact 1D cruise segments
@@ -138,7 +139,7 @@ PolyQPStatus evaluateConstraints(const QPTrajT &QPTraj, const PlanT &Plan, const
 
         Vec9 u_col(9);
         u_col << u_vel, u_acc, u_thi, u_tlo, u_gim, u_grate, u_trate, u_roll, u_tilt;
-        Col1(SegUtil, m) = mmax(Col1(SegUtil, m), u_col);
+        Col1(SegUtil, m) = Col1(SegUtil, m).cwiseMax(u_col);
 
         // Compute bidirectional segment time-scale factor sigma_m = max_c (u_c)^(1/k_c)
         if (!V1(Plan.IsCruise, m)) {
@@ -150,7 +151,7 @@ PolyQPStatus evaluateConstraints(const QPTrajT &QPTraj, const PlanT &Plan, const
                                      std::pow(u_grate, Real(1) / Real(5)), std::pow(u_trate, Real(1) / Real(3)), std::pow(u_roll, Real(1) / Real(4)),
                                      std::pow(u_tilt, Real(1) / Real(2))});
 
-            V1(SegDilate, m) = mmax(V1(SegDilate, m), s_req);
+            V1(SegDilate, m) = std::max(V1(SegDilate, m), s_req);
         }
     }
 
@@ -187,7 +188,7 @@ static Real solveThrustStretch(const Vec3 &a, const Vec3 &G_vec, Real e_allow, R
         s = Real(0.0);
         return s;
     }
-    const Real disc = mmax(Real(0), std::pow(aG, Real(2)) - a2 * c);
+    const Real disc = std::max(Real(0), std::pow(aG, Real(2)) - a2 * c);
     const Real w = (-aG + std::sqrt(disc)) / a2;
     if (w > 0) {
         s = 1 / std::sqrt(w);

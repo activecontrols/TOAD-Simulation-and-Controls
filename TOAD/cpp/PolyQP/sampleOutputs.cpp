@@ -8,7 +8,7 @@ PolyQPStatus sampleOutputs(const QPTrajT &QPTraj, const PlanT &Plan, const Limit
     const Real T_total = QPTraj.T_total;
     const Real dt_target = Limits.DtSample;
     // TRANSPILE-FLAG F11: the 3999 cap silently truncates the output grid for long trajectories. Transpiled as-is per MATLAB.
-    const int Nc = static_cast<int>(mmin(Real(3999), mmax(Real(1), std::ceil(T_total / dt_target))));
+    const int Nc = static_cast<int>(std::min(Real(3999), std::max(Real(1), std::ceil(T_total / dt_target))));
     POLYQP_CAPACITY(Nc <= POLYQP_MAX_GRID);
     const int Nn = Nc + 1;
     static RowGrid t_vec;

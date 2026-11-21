@@ -71,6 +71,57 @@ Vec3 readVec3(const mxArray *a, const char *what) {
     return v;
 }
 
+// NO-NAN boundary: the C++ solver carries free boundary conditions as (value 0, fixed = false); MATLAB marks them NaN.
+void readVec3Mask(const mxArray *a, const char *what, Vec3 &v, Vector3b &fixed) {
+    v = readVec3(a, what);
+    for (int i = 0; i < 3; ++i) {
+        fixed(i) = !std::isnan(v(i));
+        if (!fixed(i)) v(i) = 0;
+    }
+}
+
+mxArray *writeVec3Mask(const Vec3 &v, const Vector3b &fixed) {
+    mxArray *a = mxCreateDoubleMatrix(3, 1, mxREAL);
+    double *p = mxGetPr(a);
+    for (int i = 0; i < 3; ++i) p[i] = fixed(i) ? static_cast<double>(v(i)) : mxGetNaN();
+    return a;
+}
+
+template <typename A3, typename B3> void readArray3Mask(const mxArray *a, A3 &A, B3 &F, const char *what) {
+    readArray3(a, A, what);
+    F.resize(A.n1, A.n2, A.n3);
+    for (int q = 0; q < A.numel(); ++q) {
+        F.data[q] = !std::isnan(static_cast<double>(A.data[q]));
+        if (!F.data[q]) A.data[q] = 0;
+    }
+}
+
+template <typename A3, typename B3> mxArray *toMx3Mask(const A3 &A, const B3 &F) {
+    const mwSize dims[3] = {static_cast<mwSize>(A.n1), static_cast<mwSize>(A.n2), static_cast<mwSize>(A.n3)};
+    mxArray *a = mxCreateNumericArray(3, dims, mxDOUBLE_CLASS, mxREAL);
+    double *p = mxGetPr(a);
+    for (int q = 0; q < A.numel(); ++q) p[q] = F.data[q] ? static_cast<double>(A.data[q]) : mxGetNaN();
+    return a;
+}
+
+void readKnotMask(const mxArray *a, const char *what, Mat3Knot &M, Bool3Knot &F) {
+    readMat(a, M, what);
+    F.resize(3, M.cols());
+    for (Eigen::Index j = 0; j < M.cols(); ++j)
+        for (int i = 0; i < 3; ++i) {
+            F(i, j) = !std::isnan(M(i, j));
+            if (!F(i, j)) M(i, j) = 0;
+        }
+}
+
+mxArray *writeKnotMask(const Mat3Knot &M, const Bool3Knot &F) {
+    mxArray *a = mxCreateDoubleMatrix(3, static_cast<mwSize>(M.cols()), mxREAL);
+    double *p = mxGetPr(a);
+    for (Eigen::Index j = 0; j < M.cols(); ++j)
+        for (int i = 0; i < 3; ++i) p[i + 3 * j] = F(i, j) ? static_cast<double>(M(i, j)) : mxGetNaN();
+    return a;
+}
+
 template <typename A3> void readArray3(const mxArray *a, A3 &A, const char *what) {
     const mwSize nd = mxGetNumberOfDimensions(a);
     const mwSize *dims = mxGetDimensions(a);
@@ -141,7 +192,7 @@ LimitsT readLimits(const mxArray *s) {
 // stores the r = 5 columns. Column 6 is never used at r = 5 (all NaN), so it is dropped on input and restored on output.
 constexpr int MATLAB_MAX_R = 6;
 
-void readFixCg(const mxArray *a, Fix3 &F) {
+void readFixCg(const mxArray *a, Fix3 &F, Bool3 &Ffixed) {
     const mwSize nd = mxGetNumberOfDimensions(a);
     const mwSize *dims = mxGetDimensions(a);
     const int n1 = static_cast<int>(dims[0]);
@@ -149,12 +200,14 @@ void readFixCg(const mxArray *a, Fix3 &F) {
     const int n3 = nd == 3 ? static_cast<int>(dims[2]) : 1;
     if (n1 != 3 || (n2 != POLYQP_R && n2 != MATLAB_MAX_R) || n3 > Fix3::Cap3) mexErrMsgIdAndTxt("polyqp_mex:capacity", "'FixCg' is %dx%dx%d", n1, n2, n3);
     F.resize(3, POLYQP_R, n3);
+    Ffixed.resize(3, POLYQP_R, n3);
     for (int k = 1; k <= n3; ++k) {
         for (int j = 1; j <= n2; ++j) {
             for (int i = 1; i <= 3; ++i) {
                 const double v = elem(a, static_cast<size_t>((i - 1) + 3 * ((j - 1) + n2 * (k - 1))));
                 if (j <= POLYQP_R) {
-                    F(i, j, k) = static_cast<Real>(v);
+                    Ffixed(i, j, k) = !std::isnan(v);
+                    F(i, j, k) = Ffixed(i, j, k) ? static_cast<Real>(v) : Real(0);
                 } else if (!std::isnan(v)) {
                     mexErrMsgIdAndTxt("polyqp_mex:order", "'FixCg' column %d is not NaN, but the C++ solver hardcodes r = %d", j, POLYQP_R);
                 }
@@ -163,13 +216,13 @@ void readFixCg(const mxArray *a, Fix3 &F) {
     }
 }
 
-mxArray *writeFixCg(const Fix3 &F) {
+mxArray *writeFixCg(const Fix3 &F, const Bool3 &Ffixed) {
     const mwSize dims[3] = {3, static_cast<mwSize>(MATLAB_MAX_R), static_cast<mwSize>(F.n3)};
     mxArray *a = mxCreateNumericArray(3, dims, mxDOUBLE_CLASS, mxREAL);
     double *p = mxGetPr(a);
     for (int k = 1; k <= F.n3; ++k) {
         for (int j = 1; j <= MATLAB_MAX_R; ++j) {
-            for (int i = 1; i <= 3; ++i) p[(i - 1) + 3 * ((j - 1) + MATLAB_MAX_R * (k - 1))] = j <= F.n2 ? static_cast<double>(F(i, j, k)) : mxGetNaN();
+            for (int i = 1; i <= 3; ++i) p[(i - 1) + 3 * ((j - 1) + MATLAB_MAX_R * (k - 1))] = (j <= F.n2 && Ffixed(i, j, k)) ? static_cast<double>(F(i, j, k)) : mxGetNaN();
         }
     }
     return a;
@@ -179,7 +232,7 @@ void readPlan(const mxArray *s, PlanT &P) {
     P.R = static_cast<int>(numField(s, "R"));
     P.KnotCount = static_cast<int>(numField(s, "KnotCount"));
     P.SegCount = static_cast<int>(numField(s, "SegCount"));
-    readFixCg(getField(s, "FixCg"), P.FixCg);
+    readFixCg(getField(s, "FixCg"), P.FixCg, P.FixCgFixed);
     readBoolRow(getField(s, "KnotIsRest"), P.KnotIsRest, "KnotIsRest");
     readMatField(s, "SegT", P.SegT);
     readBoolRow(getField(s, "IsHold"), P.IsHold, "IsHold");
@@ -190,8 +243,8 @@ void readPlan(const mxArray *s, PlanT &P) {
     readIntRow(getField(s, "LegStartSeg"), P.LegStartSeg, "LegStartSeg");
     readIntRow(getField(s, "LegEndSeg"), P.LegEndSeg, "LegEndSeg");
     P.HDGRef = readVec3(getField(s, "HDGRef"), "HDGRef");
-    readMatField(s, "B3BC", P.B3BC);
-    readMatField(s, "B3DotBC", P.B3DotBC);
+    readKnotMask(getField(s, "B3BC"), "B3BC", P.B3BC, P.B3Fixed);
+    readKnotMask(getField(s, "B3DotBC"), "B3DotBC", P.B3DotBC, P.B3DotFixed);
 }
 
 void readQPTraj(const mxArray *s, QPTrajT &Q) {
@@ -202,7 +255,7 @@ void readQPTraj(const mxArray *s, QPTrajT &Q) {
     readArray3(getField(s, "Coef"), Q.Coef, "Coef");
     readBoolRow(getField(s, "IsHold"), Q.IsHold, "IsHold");
     readBoolRow(getField(s, "IsCruise"), Q.IsCruise, "IsCruise");
-    readArray3(getField(s, "Fix"), Q.Fix, "Fix");
+    readArray3Mask(getField(s, "Fix"), Q.Fix, Q.FixFixed, "Fix");
     Q.Cost = static_cast<Real>(numField(s, "Cost"));
     Q.T_total = static_cast<Real>(numField(s, "T_total"));
     Q.FlatOffset = static_cast<Real>(numField(s, "FlatOffset"));
@@ -221,11 +274,12 @@ void readWaypoints(const mxArray *s, TOADWaypointArray &W) {
     for (size_t i = 0; i < n; ++i) {
         TOADWaypointT &wp = W.data[i];
         const mwIndex k = static_cast<mwIndex>(i);
-        wp.PosBC = readVec3(getField(s, "PosBC", k), "PosBC");
-        wp.VelBC = readVec3(getField(s, "VelBC", k), "VelBC");
-        wp.AccelBC = readVec3(getField(s, "AccelBC", k), "AccelBC");
-        wp.JerkBC = readVec3(getField(s, "JerkBC", k), "JerkBC");
+        readVec3Mask(getField(s, "PosBC", k), "PosBC", wp.PosBC, wp.PosFixed);
+        readVec3Mask(getField(s, "VelBC", k), "VelBC", wp.VelBC, wp.VelFixed);
+        readVec3Mask(getField(s, "AccelBC", k), "AccelBC", wp.AccelBC, wp.AccelFixed);
+        readVec3Mask(getField(s, "JerkBC", k), "JerkBC", wp.JerkBC, wp.JerkFixed);
         wp.HoldTime = static_cast<Real>(numField(s, "HoldTime", k));
+        if (std::isnan(wp.HoldTime)) wp.HoldTime = 0; // NO-NAN: pass-and-go (IsPassAndGo below)
         wp.MaxVel = readVec3(getField(s, "MaxVel", k), "MaxVel");
         wp.MaxAccel = readVec3(getField(s, "MaxAccel", k), "MaxAccel");
         wp.StraightLine = numField(s, "StraightLine", k) != 0.0;
@@ -233,8 +287,8 @@ void readWaypoints(const mxArray *s, TOADWaypointArray &W) {
         std::memset(wp.Label, 0, sizeof(wp.Label));
         mxGetString(getField(s, "Label", k), wp.Label, sizeof(wp.Label));
         wp.IsPassAndGo = numField(s, "IsPassAndGo", k) != 0.0;
-        wp.B3BC = readVec3(getField(s, "B3BC", k), "B3BC");
-        wp.B3DotBC = readVec3(getField(s, "B3DotBC", k), "B3DotBC");
+        readVec3Mask(getField(s, "B3BC", k), "B3BC", wp.B3BC, wp.B3Fixed);
+        readVec3Mask(getField(s, "B3DotBC", k), "B3DotBC", wp.B3DotBC, wp.B3DotFixed);
     }
 }
 
@@ -316,7 +370,7 @@ mxArray *writePlan(const PlanT &P) {
         .add("R", scal(P.R))
         .add("KnotCount", scal(P.KnotCount))
         .add("SegCount", scal(P.SegCount))
-        .add("FixCg", writeFixCg(P.FixCg))
+        .add("FixCg", writeFixCg(P.FixCg, P.FixCgFixed))
         .add("KnotIsRest", toMxLogical(P.KnotIsRest))
         .add("SegT", toMx(P.SegT))
         .add("IsHold", toMxLogical(P.IsHold))
@@ -327,8 +381,8 @@ mxArray *writePlan(const PlanT &P) {
         .add("LegStartSeg", toMxIntAsDouble(P.LegStartSeg))
         .add("LegEndSeg", toMxIntAsDouble(P.LegEndSeg))
         .add("HDGRef", toMx(P.HDGRef))
-        .add("B3BC", toMx(P.B3BC))
-        .add("B3DotBC", toMx(P.B3DotBC))
+        .add("B3BC", writeKnotMask(P.B3BC, P.B3Fixed))
+        .add("B3DotBC", writeKnotMask(P.B3DotBC, P.B3DotFixed))
         .build();
 }
 
@@ -341,7 +395,7 @@ mxArray *writeQPTraj(const QPTrajT &Q) {
         .add("Coef", toMx3(Q.Coef))
         .add("IsHold", toMxLogical(Q.IsHold))
         .add("IsCruise", toMxLogical(Q.IsCruise))
-        .add("Fix", toMx3(Q.Fix))
+        .add("Fix", toMx3Mask(Q.Fix, Q.FixFixed))
         .add("Cost", scal(Q.Cost))
         .add("T_total", scal(Q.T_total))
         .add("FlatOffset", scal(Q.FlatOffset))
@@ -393,19 +447,19 @@ mxArray *writeWrench(const WrenchT &W) {
 
 mxArray *writeWaypoint(const TOADWaypointT &wp) {
     return StructBuilder()
-        .add("PosBC", toMx(wp.PosBC))
-        .add("VelBC", toMx(wp.VelBC))
-        .add("AccelBC", toMx(wp.AccelBC))
-        .add("JerkBC", toMx(wp.JerkBC))
-        .add("HoldTime", scal(wp.HoldTime))
+        .add("PosBC", writeVec3Mask(wp.PosBC, wp.PosFixed))
+        .add("VelBC", writeVec3Mask(wp.VelBC, wp.VelFixed))
+        .add("AccelBC", writeVec3Mask(wp.AccelBC, wp.AccelFixed))
+        .add("JerkBC", writeVec3Mask(wp.JerkBC, wp.JerkFixed))
+        .add("HoldTime", scal(wp.IsPassAndGo ? mxGetNaN() : static_cast<double>(wp.HoldTime)))
         .add("MaxVel", toMx(wp.MaxVel))
         .add("MaxAccel", toMx(wp.MaxAccel))
         .add("StraightLine", lscal(wp.StraightLine))
         .add("HDGRef", toMx(wp.HDGRef))
         .add("Label", mxCreateString(wp.Label))
         .add("IsPassAndGo", lscal(wp.IsPassAndGo))
-        .add("B3BC", toMx(wp.B3BC))
-        .add("B3DotBC", toMx(wp.B3DotBC))
+        .add("B3BC", writeVec3Mask(wp.B3BC, wp.B3Fixed))
+        .add("B3DotBC", writeVec3Mask(wp.B3DotBC, wp.B3DotFixed))
         .build();
 }
 
@@ -493,7 +547,9 @@ void mexFunction(int nlhs, mxArray *plhs[], int nrhs, const mxArray *prhs[]) {
     } else if (cmd == "solveLeg") {
         needArgs(nrhs, 4, "[CoefPhys, Deriv, Cost, status, msg] = polyqp_mex('solveLeg', FixLeg, SegTimes, A0, H0)");
         static Fix3 FixLeg;
-        readArray3(prhs[1], FixLeg, "FixLeg");
+        static Bool3 FixLegFixed;
+        readArray3Mask(prhs[1], FixLeg, FixLegFixed, "FixLeg");
+        checkOrder(FixLeg.n2);
         RowSeg SegTimes;
         readVecAny(prhs[2], SegTimes, "SegTimes");
         MatNC A0, H0;
@@ -504,7 +560,7 @@ void mexFunction(int nlhs, mxArray *plhs[], int nrhs, const mxArray *prhs[]) {
         Real Cost = 0;
         CoefPhys.resize(0, 0, 0);
         Deriv.resize(0, 0, 0);
-        const PolyQPStatus st = solveLeg(FixLeg, SegTimes, A0, H0, CoefPhys, Deriv, Cost);
+        const PolyQPStatus st = solveLeg(FixLeg, FixLegFixed, SegTimes, A0, H0, CoefPhys, Deriv, Cost);
         const bool ok = st == PolyQPStatus::Ok;
         out.push(ok ? toMx3(CoefPhys) : mxCreateDoubleMatrix(0, 0, mxREAL));
         out.push(ok ? toMx3(Deriv) : mxCreateDoubleMatrix(0, 0, mxREAL));
@@ -513,7 +569,9 @@ void mexFunction(int nlhs, mxArray *plhs[], int nrhs, const mxArray *prhs[]) {
     } else if (cmd == "allocateTimes") {
         needArgs(nrhs, 5, "[SegTimes, Cost, status, msg] = polyqp_mex('allocateTimes', FixLeg, SegTimesInit, A0, H0, MinSegTime)");
         static Fix3 FixLeg;
-        readArray3(prhs[1], FixLeg, "FixLeg");
+        static Bool3 FixLegFixed;
+        readArray3Mask(prhs[1], FixLeg, FixLegFixed, "FixLeg");
+        checkOrder(FixLeg.n2);
         RowSeg SegTimesInit;
         readVecAny(prhs[2], SegTimesInit, "SegTimesInit");
         MatNC A0, H0;
@@ -521,7 +579,7 @@ void mexFunction(int nlhs, mxArray *plhs[], int nrhs, const mxArray *prhs[]) {
         readMat(prhs[4], H0, "H0");
         RowSeg SegTimes;
         Real Cost = 0;
-        const PolyQPStatus st = allocateTimes(FixLeg, SegTimesInit, A0, H0, static_cast<Real>(num(prhs[5], "MinSegTime")), SegTimes, Cost);
+        const PolyQPStatus st = allocateTimes(FixLeg, FixLegFixed, SegTimesInit, A0, H0, static_cast<Real>(num(prhs[5], "MinSegTime")), SegTimes, Cost);
         const bool ok = st == PolyQPStatus::Ok;
         out.push(ok ? toMx(SegTimes) : mxCreateDoubleMatrix(0, 0, mxREAL));
         out.push(ok ? scal(Cost) : mxCreateDoubleMatrix(0, 0, mxREAL));
@@ -604,29 +662,35 @@ void mexFunction(int nlhs, mxArray *plhs[], int nrhs, const mxArray *prhs[]) {
         out.finish(st, nlhs, plhs);
     } else if (cmd == "TOADWaypoint") {
         if (nrhs < 2 || (nrhs % 2) != 0) mexErrMsgIdAndTxt("polyqp_mex:usage", "Usage: [wp, status, msg] = polyqp_mex('TOADWaypoint', pos, 'Name', value, ...)");
-        const Vec3 pos = readVec3(prhs[1], "pos");
+        Vec3 pos;
+        Vector3b posFixed;
+        readVec3Mask(prhs[1], "pos", pos, posFixed);
         TOADWaypointOptions options;
         static char labelBuf[256];
         labelBuf[0] = '\0';
         for (int i = 2; i < nrhs; i += 2) {
             const std::string name = getString(prhs[i]);
             const mxArray *v = prhs[i + 1];
-            if (name == "VelBC") options.VelBC = readVec3(v, "VelBC");
-            else if (name == "AccelBC") options.AccelBC = readVec3(v, "AccelBC");
-            else if (name == "JerkBC") options.JerkBC = readVec3(v, "JerkBC");
-            else if (name == "HoldTime") options.HoldTime = static_cast<Real>(num(v, "HoldTime"));
+            if (name == "VelBC") readVec3Mask(v, "VelBC", options.VelBC, options.VelFixed);
+            else if (name == "AccelBC") readVec3Mask(v, "AccelBC", options.AccelBC, options.AccelFixed);
+            else if (name == "JerkBC") readVec3Mask(v, "JerkBC", options.JerkBC, options.JerkFixed);
+            else if (name == "HoldTime") {
+                const double h = num(v, "HoldTime");
+                options.HoldTimeGiven = !std::isnan(h);
+                options.HoldTime = options.HoldTimeGiven ? static_cast<Real>(h) : Real(0);
+            }
             else if (name == "MaxVel") options.MaxVel = readVec3(v, "MaxVel");
             else if (name == "MaxAccel") options.MaxAccel = readVec3(v, "MaxAccel");
             else if (name == "StraightLine") options.StraightLine = num(v, "StraightLine") != 0.0;
             else if (name == "HDGRef") options.HDGRef = readVec3(v, "HDGRef");
-            else if (name == "B3BC") options.B3BC = readVec3(v, "B3BC");
-            else if (name == "B3DotBC") options.B3DotBC = readVec3(v, "B3DotBC");
+            else if (name == "B3BC") readVec3Mask(v, "B3BC", options.B3BC, options.B3Fixed);
+            else if (name == "B3DotBC") readVec3Mask(v, "B3DotBC", options.B3DotBC, options.B3DotFixed);
             else if (name == "Label") {
                 mxGetString(v, labelBuf, sizeof(labelBuf));
                 options.Label = labelBuf;
             } else mexErrMsgIdAndTxt("polyqp_mex:usage", "Unknown TOADWaypoint option '%s'", name.c_str());
         }
-        out.push(writeWaypoint(TOADWaypoint(pos, options)));
+        out.push(writeWaypoint(TOADWaypoint(pos, options, posFixed)));
         out.finish(PolyQPStatus::Ok, nlhs, plhs);
     } else if (cmd == "ComputeJtot") {
         needArgs(nrhs, 3, "[J_tot, CGz, status, msg] = polyqp_mex('ComputeJtot', m_lox, m_ipa, constants6DoF)");

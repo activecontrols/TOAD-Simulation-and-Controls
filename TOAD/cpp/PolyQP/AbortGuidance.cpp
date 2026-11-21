@@ -29,35 +29,47 @@ AbortStatus AbortGuidance(Real t, const AbortXEstT &X_est, AbortGuidanceState &s
         const Vec3 b3dot_est = (C_IB * Vec3(X_est(R1(11, 13)))).cross(b3_est);
         TOADWaypointOptions options1;
         options1.VelBC = X_est(R1(8, 10));
+        options1.VelFixed.setConstant(true);
         options1.Label = "ABT START";
         options1.B3BC = b3_est;
+        options1.B3Fixed.setConstant(true);
         options1.B3DotBC = b3dot_est;
+        options1.B3DotFixed.setConstant(true);
         Waypoints(1) = TOADWaypoint(X_est(R1(5, 7)), options1); // FIX-F03: knot-1 attitude
         // TRANSPILE-FLAG F02: by default only position and velocity are pinned at knot 1; accel/jerk/snap are free, so thrust and attitude feedforward can step at the abort instant (Phase 1.4). ABORT_PIN_THRUST (DECISION-D4) pins accel and jerk.
         if (ABORT_PIN_THRUST) { // FIX-F02: a0 = (T_hover / m) * b3 - g * e3 and j0 = (T_hover / m) * db3/dt, T_hover / m = g
             options1.AccelBC = ASTRA::g * b3_est - Vec3(0, 0, ASTRA::g);
+            options1.AccelFixed.setConstant(true);
             options1.JerkBC = ASTRA::g * b3dot_est;
+            options1.JerkFixed.setConstant(true);
             Waypoints(1) = TOADWaypoint(X_est(R1(5, 7)), options1);
         }
         // TRANSPILE-FLAG F01: abort waypoint 2 altitude is 2 m (ABORT_HOVER_ALT, DECISION-D5); the lead's spec says 1 m above the pad. Transpiled as-is per MATLAB.
         TOADWaypointOptions options2;
         options2.Label = "ABT GND";
         options2.HoldTime = Real(0.0);
+        options2.HoldTimeGiven = true;
         options2.VelBC = Vec3(0, 0, 0);
+        options2.VelFixed.setConstant(true);
         options2.AccelBC = Vec3(0, 0, 0);
+        options2.AccelFixed.setConstant(true);
         options2.JerkBC = Vec3(0, 0, 0);
-        Waypoints(2) = TOADWaypoint(Vec3(NaN(), NaN(), ABORT_HOVER_ALT), options2);
+        options2.JerkFixed.setConstant(true);
+        Waypoints(2) = TOADWaypoint(Vec3(0, 0, ABORT_HOVER_ALT), options2, Vector3b(false, false, true)); // NO-NAN: [nan; nan; ABORT_HOVER_ALT], the lateral landing position is free
         TOADWaypointOptions options3;
         options3.Label = "ABT END";
         options3.HoldTime = Real(0.0);
+        options3.HoldTimeGiven = true;
         options3.MaxVel = Vec3(3, 3, 1);
         options3.StraightLine = true;
         options3.VelBC = Vec3(0, 0, 0);
+        options3.VelFixed.setConstant(true);
         options3.AccelBC = Vec3(0, 0, 0);
+        options3.AccelFixed.setConstant(true);
         options3.JerkBC = Vec3(0, 0, 0);
-        Waypoints(3) = TOADWaypoint(Vec3(NaN(), NaN(), 0), options3);
-        // FIX-F08: a non-finite start state cannot be planned; it goes straight to the fallback
-        planOk = planOk && X_est(R1(5, 10)).allFinite();
+        options3.JerkFixed.setConstant(true);
+        Waypoints(3) = TOADWaypoint(Vec3(0, 0, 0), options3, Vector3b(false, false, true)); // NO-NAN: [nan; nan; 0], the lateral landing position is free
+        // NO-NAN: the MATLAB "non-finite start state -> fallback" branch (FIX-F08) was removed: the estimate is always real
         // TRANSPILE-FLAG F08 (fixed by FIX-F08): MATLAB ignored Report.Feasible and PolyQP errors and had no fallback.
         // TRANSPILE-FLAG F16: the PolyQPStatus (state.planStatus) and Report are returned to the C++ caller; MATLAB keeps only abortStatus. Transpiled as-is per MATLAB.
         // TRANSPILE-FLAG F32 (fixed by FIX-F32): a PolyQP error used to return before abortCalculated was set, so the abort was re-attempted on every later call.

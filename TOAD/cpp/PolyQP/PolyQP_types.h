@@ -43,6 +43,7 @@ using IntSeg = IntRowX<POLYQP_MAX_SEG>;
 using IntGrid = IntRowX<POLYQP_MAX_NODES>;
 using Mat3Seg = MatX<3, POLYQP_MAX_SEG>;
 using Mat3Knot = MatX<3, POLYQP_MAX_KNOTS>;
+using Bool3Knot = Eigen::Array<bool, 3, Eigen::Dynamic, Eigen::ColMajor, 3, POLYQP_MAX_KNOTS>;
 using Mat9Seg = MatX<9, POLYQP_MAX_SEG>;
 using Vec9 = VecX<9>;
 using VecSeg = VecX<POLYQP_MAX_SEG>;
@@ -56,7 +57,8 @@ using BoolGrid = BoolRowX<POLYQP_MAX_NODES>;
 using Fix3 = Array3<Real, 3, POLYQP_MAX_R, POLYQP_MAX_KNOTS>;
 using FixOut3 = Array3<Real, 3, 6, POLYQP_MAX_KNOTS>;
 using Coef3 = Array3<Real, POLYQP_MAX_NC, POLYQP_MAX_SEG, 3>;
-using Bool3 = Array3<bool, 3, POLYQP_MAX_R, POLYQP_MAX_KNOTS>;
+using Bool3 = Array3<bool, 3, POLYQP_MAX_R, POLYQP_MAX_KNOTS>;  // NO-NAN: "fixed" mask parallel to a Fix3 (MATLAB: ~isnan)
+using BoolOut3 = Array3<bool, 3, 6, POLYQP_MAX_KNOTS>;         // NO-NAN: "fixed" mask parallel to a FixOut3
 
 enum class PolyQPStatus : int {
     Ok = 0,
@@ -70,11 +72,18 @@ enum class PolyQPStatus : int {
     CapacityExceeded
 };
 
+// NO-NAN: MATLAB marks a free boundary condition with NaN. Here every value-or-NaN field has a parallel "Fixed" mask
+// (true = the MATLAB value is not NaN); a free entry holds 0 in the value field. A NaN HoldTime (pass-and-go) is
+// IsPassAndGo = true with HoldTime = 0.
 struct TOADWaypointT {
     Vec3 PosBC;
+    Vector3b PosFixed;
     Vec3 VelBC;
+    Vector3b VelFixed;
     Vec3 AccelBC;
+    Vector3b AccelFixed;
     Vec3 JerkBC;
+    Vector3b JerkFixed;
     Real HoldTime;
     Vec3 MaxVel;
     Vec3 MaxAccel;
@@ -83,21 +92,30 @@ struct TOADWaypointT {
     char Label[10];
     bool IsPassAndGo;
     Vec3 B3BC;    // FIX-F03
+    Vector3b B3Fixed;
     Vec3 B3DotBC; // FIX-F03
+    Vector3b B3DotFixed;
 };
 
+// The MATLAB TOADWaypoint name-value defaults; NO-NAN: the NaN defaults are "not fixed" (value 0).
 struct TOADWaypointOptions {
-    Vec3 VelBC = Vec3::Constant(std::numeric_limits<Real>::quiet_NaN());
-    Vec3 AccelBC = Vec3::Constant(std::numeric_limits<Real>::quiet_NaN());
-    Vec3 JerkBC = Vec3::Constant(std::numeric_limits<Real>::quiet_NaN());
-    Real HoldTime = std::numeric_limits<Real>::quiet_NaN();
+    Vec3 VelBC = Vec3::Zero();
+    Vector3b VelFixed = Vector3b::Constant(false);
+    Vec3 AccelBC = Vec3::Zero();
+    Vector3b AccelFixed = Vector3b::Constant(false);
+    Vec3 JerkBC = Vec3::Zero();
+    Vector3b JerkFixed = Vector3b::Constant(false);
+    Real HoldTime = 0;
+    bool HoldTimeGiven = false; // NO-NAN: MATLAB default HoldTime = NaN (pass-and-go)
     Vec3 MaxVel = Vec3(Real(4), Real(4), Real(5));
     Vec3 MaxAccel = Vec3::Constant(std::numeric_limits<Real>::infinity());
     bool StraightLine = false;
     Vec3 HDGRef = Vec3(Real(1), Real(0), Real(0));
     const char *Label = "";
-    Vec3 B3BC = Vec3::Constant(std::numeric_limits<Real>::quiet_NaN());    // FIX-F03
-    Vec3 B3DotBC = Vec3::Constant(std::numeric_limits<Real>::quiet_NaN()); // FIX-F03
+    Vec3 B3BC = Vec3::Zero();    // FIX-F03
+    Vector3b B3Fixed = Vector3b::Constant(false);
+    Vec3 B3DotBC = Vec3::Zero(); // FIX-F03
+    Vector3b B3DotFixed = Vector3b::Constant(false);
 };
 
 struct TOADWaypointArray {
@@ -143,6 +161,7 @@ struct PlanT {
     int KnotCount;
     int SegCount;
     Fix3 FixCg;
+    Bool3 FixCgFixed; // NO-NAN: ~isnan(FixCg)
     BoolKnot KnotIsRest;
     RowSeg SegT;
     BoolSeg IsHold;
@@ -154,7 +173,9 @@ struct PlanT {
     IntSeg LegEndSeg;
     Vec3 HDGRef;
     Mat3Knot B3BC;    // FIX-F03
+    Bool3Knot B3Fixed;    // NO-NAN: ~isnan(B3BC)
     Mat3Knot B3DotBC; // FIX-F03
+    Bool3Knot B3DotFixed; // NO-NAN: ~isnan(B3DotBC)
 };
 
 struct QPTrajT {
@@ -166,6 +187,7 @@ struct QPTrajT {
     BoolSeg IsHold;
     BoolSeg IsCruise;
     FixOut3 Fix;
+    BoolOut3 FixFixed; // NO-NAN: ~isnan(Fix)
     Real Cost;
     Real T_total;
     Real FlatOffset;

@@ -130,6 +130,7 @@ template <typename MatrixN_N> MatrixN_N matrixExpPade6(MatrixN_N A) {
 using Vector3d = Eigen::Matrix<double, 3, 1>;
 using Vector4d = Eigen::Matrix<double, 4, 1>;
 using Matrix3_3d = Eigen::Matrix<double, 3, 3>;
+using Vector3b = Eigen::Matrix<bool, 3, 1>; // "fixed" mask of a 3-vector boundary condition (replaces the MATLAB NaN = free sentinel)
 
 // Verification-only index checks (-DPOLYQP_DEBUG_BOUNDS); compiled out in flight builds.
 #if defined(POLYQP_DEBUG_BOUNDS)
@@ -163,7 +164,6 @@ inline BoundsHookT &boundsHook() {
 // float matrix or float expression: the float helpers above are selected exactly as before.
 template <typename Derived> using EnableIfDouble = typename std::enable_if<std::is_same<typename Derived::Scalar, double>::value, int>::type;
 
-inline double NaN() { return std::numeric_limits<double>::quiet_NaN(); }
 inline double Inf() { return std::numeric_limits<double>::infinity(); }
 inline double pi() { return 3.141592653589793238462643383279502884; }
 
@@ -308,55 +308,39 @@ inline double factorial(int n) {
 
 inline double deg2rad(double angleInDegrees) { return (pi() / 180.0) * angleInDegrees; }
 
-// MATLAB max/min: NaN-ignoring (fmax/fmin), element-wise for matrices
-inline double mmax(double a, double b) { return std::fmax(a, b); }
-inline double mmin(double a, double b) { return std::fmin(a, b); }
-
-template <typename DA, typename DB> inline auto mmax(const Eigen::MatrixBase<DA> &a, const Eigen::MatrixBase<DB> &b) {
-    return a.binaryExpr(b, [](double x, double y) { return std::fmax(x, y); });
-}
-template <typename DA, typename DB> inline auto mmin(const Eigen::MatrixBase<DA> &a, const Eigen::MatrixBase<DB> &b) {
-    return a.binaryExpr(b, [](double x, double y) { return std::fmin(x, y); });
-}
-template <typename DA> inline auto mmax(const Eigen::MatrixBase<DA> &a, double b) {
-    return a.unaryExpr([b](double x) { return std::fmax(x, b); });
-}
-template <typename DA> inline auto mmin(const Eigen::MatrixBase<DA> &a, double b) {
-    return a.unaryExpr([b](double x) { return std::fmin(x, b); });
-}
-
-// MATLAB max(v) / min(v) of a vector (NaN-ignoring; NaN only if every element is NaN)
+// MATLAB max(v) / min(v) of a vector. The solver's arguments are never NaN (free boundary conditions are boolean
+// masks), so these are plain reductions: the first maximal / minimal element, as in MATLAB.
 template <typename Derived> inline double maxv(const Eigen::DenseBase<Derived> &v) {
     POLYQP_ASSERT(v.size() >= 1 && (v.rows() == 1 || v.cols() == 1));
-    double m = NaN();
-    for (Eigen::Index i = 0; i < v.size(); ++i) {
+    double m = v.derived().coeff(0);
+    for (Eigen::Index i = 1; i < v.size(); ++i) {
         const double x = v.derived().coeff(i);
-        if (!std::isnan(x) && (std::isnan(m) || x > m)) m = x;
+        if (x > m) m = x;
     }
     return m;
 }
 template <typename Derived> inline double minv(const Eigen::DenseBase<Derived> &v) {
     POLYQP_ASSERT(v.size() >= 1 && (v.rows() == 1 || v.cols() == 1));
-    double m = NaN();
-    for (Eigen::Index i = 0; i < v.size(); ++i) {
+    double m = v.derived().coeff(0);
+    for (Eigen::Index i = 1; i < v.size(); ++i) {
         const double x = v.derived().coeff(i);
-        if (!std::isnan(x) && (std::isnan(m) || x < m)) m = x;
+        if (x < m) m = x;
     }
     return m;
 }
 inline double maxv(std::initializer_list<double> v) {
     POLYQP_ASSERT(v.size() >= 1);
-    double m = NaN();
+    double m = *v.begin();
     for (const double x : v) {
-        if (!std::isnan(x) && (std::isnan(m) || x > m)) m = x;
+        if (x > m) m = x;
     }
     return m;
 }
 inline double minv(std::initializer_list<double> v) {
     POLYQP_ASSERT(v.size() >= 1);
-    double m = NaN();
+    double m = *v.begin();
     for (const double x : v) {
-        if (!std::isnan(x) && (std::isnan(m) || x < m)) m = x;
+        if (x < m) m = x;
     }
     return m;
 }
@@ -365,10 +349,10 @@ inline double minv(std::initializer_list<double> v) {
 template <typename Derived, typename Out> inline void maxDim1(const Eigen::DenseBase<Derived> &X, Out &y) {
     y.resize(1, X.cols());
     for (Eigen::Index j = 0; j < X.cols(); ++j) {
-        double m = NaN();
-        for (Eigen::Index i = 0; i < X.rows(); ++i) {
+        double m = X.derived().coeff(0, j);
+        for (Eigen::Index i = 1; i < X.rows(); ++i) {
             const double x = X.derived().coeff(i, j);
-            if (!std::isnan(x) && (std::isnan(m) || x > m)) m = x;
+            if (x > m) m = x;
         }
         y(0, j) = m;
     }
@@ -376,10 +360,10 @@ template <typename Derived, typename Out> inline void maxDim1(const Eigen::Dense
 template <typename Derived, typename Out> inline void maxDim2(const Eigen::DenseBase<Derived> &X, Out &y) {
     y.resize(X.rows(), 1);
     for (Eigen::Index i = 0; i < X.rows(); ++i) {
-        double m = NaN();
-        for (Eigen::Index j = 0; j < X.cols(); ++j) {
+        double m = X.derived().coeff(i, 0);
+        for (Eigen::Index j = 1; j < X.cols(); ++j) {
             const double x = X.derived().coeff(i, j);
-            if (!std::isnan(x) && (std::isnan(m) || x > m)) m = x;
+            if (x > m) m = x;
         }
         y(i, 0) = m;
     }
@@ -520,10 +504,11 @@ template <typename Src, typename Out> inline void getSlab(const Src &src, int k,
     }
 }
 
-// MATLAB src(:, j, k) of a 3 x n2 x n3 array
-template <typename Src> inline Vector3d getFiber3(const Src &src, int j, int k) {
+// MATLAB src(:, j, k) of a 3 x n2 x n3 array (values or a parallel bool mask)
+template <typename Src> inline auto getFiber3(const Src &src, int j, int k) {
+    using T = typename std::remove_const<typename std::remove_reference<decltype(src.data[0])>::type>::type;
     POLYQP_ASSERT(src.n1 == 3);
-    return Vector3d(src(1, j, k), src(2, j, k), src(3, j, k));
+    return Eigen::Matrix<T, 3, 1>(src(1, j, k), src(2, j, k), src(3, j, k));
 }
 
 // MATLAB v = reshape(src(d, :, k1:k2), [], 1)
@@ -544,59 +529,6 @@ template <typename Dst, typename Derived> inline void assignRowSlice(Dst &dst, i
     for (int k = 1; k <= K; ++k) {
         for (int j = 1; j <= r; ++j) dst(d, j, k) = v.derived().coeff((j - 1) + (k - 1) * r);
     }
-}
-
-// MATLAB isnan(A), any(B, dim), all(B), and if-of-an-array for Array3
-template <typename Src, typename BoolArr> inline void isnan3(const Src &src, BoolArr &out) {
-    out.resize(src.n1, src.n2, src.n3);
-    for (int q = 0; q < src.numel(); ++q) out.data[q] = std::isnan(src.data[q]);
-}
-
-template <typename BoolArr> inline void any3(const BoolArr &B, int dim, BoolArr &out) {
-    const int a = (dim == 1) ? 1 : B.n1;
-    const int b = (dim == 2) ? 1 : B.n2;
-    const int c = (dim == 3) ? 1 : B.n3;
-    out.setConstant(a, b, c, false);
-    for (int k = 1; k <= B.n3; ++k) {
-        for (int j = 1; j <= B.n2; ++j) {
-            for (int i = 1; i <= B.n1; ++i) {
-                if (B(i, j, k)) out(dim == 1 ? 1 : i, dim == 2 ? 1 : j, dim == 3 ? 1 : k) = true;
-            }
-        }
-    }
-}
-
-template <typename BoolArr> inline void all3(const BoolArr &B, BoolArr &out) {
-    int dim = 1;
-    if (B.n1 != 1) {
-        dim = 1;
-    } else if (B.n2 != 1) {
-        dim = 2;
-    } else if (B.n3 != 1) {
-        dim = 3;
-    } else {
-        out.setConstant(1, 1, 1, B(1, 1, 1));
-        return;
-    }
-    const int a = (dim == 1) ? 1 : B.n1;
-    const int b = (dim == 2) ? 1 : B.n2;
-    const int c = (dim == 3) ? 1 : B.n3;
-    out.setConstant(a, b, c, true);
-    for (int k = 1; k <= B.n3; ++k) {
-        for (int j = 1; j <= B.n2; ++j) {
-            for (int i = 1; i <= B.n1; ++i) {
-                if (!B(i, j, k)) out(dim == 1 ? 1 : i, dim == 2 ? 1 : j, dim == 3 ? 1 : k) = false;
-            }
-        }
-    }
-}
-
-template <typename BoolArr> inline bool ifTrue(const BoolArr &B) {
-    if (B.numel() == 0) return false;
-    for (int q = 0; q < B.numel(); ++q) {
-        if (!B.data[q]) return false;
-    }
-    return true;
 }
 
 // Transpiled from TOAD/Helper/quatRot.m @ 5ac6bd23 (double overload; the float quatRot above is unchanged)

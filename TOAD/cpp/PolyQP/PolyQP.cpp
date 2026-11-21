@@ -51,8 +51,14 @@ PolyQPStatus PolyQP(const TOADWaypointArray &Waypoints, InitialGuessT &InitialGu
         // Only contract legs whose fixed derivative BCs (order >= 1) are homogeneous (0 or NaN)
         static Fix3 dLeg;
         sub3(Plan.FixCg, 1, 3, 2, r, m1, m2 + 1, dLeg);
+        static Bool3 dLegFixed;
+        sub3(Plan.FixCgFixed, 1, 3, 2, r, m1, m2 + 1, dLegFixed);
         // TRANSPILE-FLAG F05: false for every abort (knot 1 carries the nonzero estimated velocity), so the abort never contracts below its initial time guess. Transpiled as-is per MATLAB.
-        if (((colon(dLeg) != Real(0)) && !colon(dLeg).isNaN()).any()) {
+        bool anyNonzeroFixed = false; // NO-NAN: any(dLeg(:) ~= 0 & ~isnan(dLeg(:)))
+        for (int q = 0; q < dLeg.numel(); ++q) {
+            if (dLegFixed.data[q] && dLeg.data[q] != Real(0)) anyNonzeroFixed = true;
+        }
+        if (anyNonzeroFixed) {
             V1(legCanContract, leg) = false;
         }
     }
@@ -75,7 +81,7 @@ PolyQPStatus PolyQP(const TOADWaypointArray &Waypoints, InitialGuessT &InitialGu
             const int m2 = V1(Plan.LegEndSeg, leg);
             const Real s_leg = maxv(EvalOut.SegDilate(R1(m1, m2)));
             if (s_leg > Real(1.0)) {
-                const Real s_apply = mmin(Real(2.0), Real(1.02) * s_leg);
+                const Real s_apply = std::min(Real(2.0), Real(1.02) * s_leg);
                 Plan.SegT(R1(m1, m2)) = Plan.SegT(R1(m1, m2)) * s_apply;
                 V1(legHasDilated, leg) = true;
                 didScale = true;
@@ -161,11 +167,13 @@ static PolyQPStatus solveAllLegs(PlanT &Plan, const MatNC &A0, const MatNC &H0, 
     // TRANSPILE-FLAG F03 (fixed by FIX-F03): the knot-1 P-offset assumed b3 = e3 (rho ~ 0.22 m for ASTRA) and the velocity BC was applied to dP/dt, not v_cg + rho*db3/dt; a knot with B3BC/B3DotBC now uses the given attitude.
     static Fix3 FixP;
     sub3(Plan.FixCg, 1, 3, 1, r, 1, K, FixP);
+    static Bool3 FixPFixed; // NO-NAN: ~isnan(FixP)
+    sub3(Plan.FixCgFixed, 1, 3, 1, r, 1, K, FixPFixed);
     for (int k = 1; k <= K; ++k) {
-        const bool hasB3 = (!Col1(Plan.B3BC, k).array().isNaN()).all(); // FIX-F03: a knot with a given attitude uses P = r_cg + rho * b3
-        const bool hasB3Dot = (!Col1(Plan.B3DotBC, k).array().isNaN()).all(); // FIX-F03: and dP/dt = v_cg + rho * db3/dt where the velocity is fixed
+        const bool hasB3 = Col1(Plan.B3Fixed, k).all(); // FIX-F03: a knot with a given attitude uses P = r_cg + rho * b3
+        const bool hasB3Dot = Col1(Plan.B3DotFixed, k).all(); // FIX-F03: and dP/dt = v_cg + rho * db3/dt where the velocity is fixed
         for (int d = 1; d <= 3; ++d) {
-            if (!std::isnan(FixP(d, 1, k))) {
+            if (FixPFixed(d, 1, k)) {
                 if (hasB3) { // FIX-F03: P = r_cg + rho * b3 with the given attitude
                     FixP(d, 1, k) = Plan.FixCg(d, 1, k) + rho * M1(Plan.B3BC, d, k);
                 } else if (d == 3) {
@@ -174,7 +182,7 @@ static PolyQPStatus solveAllLegs(PlanT &Plan, const MatNC &A0, const MatNC &H0, 
                     FixP(d, 1, k) = Plan.FixCg(d, 1, k);
                 }
             }
-            if (hasB3Dot && !std::isnan(FixP(d, 2, k))) { // FIX-F03: dP/dt = v_cg + rho * db3/dt
+            if (hasB3Dot && FixPFixed(d, 2, k)) { // FIX-F03: dP/dt = v_cg + rho * db3/dt
                 FixP(d, 2, k) = Plan.FixCg(d, 2, k) + rho * M1(Plan.B3DotBC, d, k);
             }
         }
@@ -184,6 +192,8 @@ static PolyQPStatus solveAllLegs(PlanT &Plan, const MatNC &A0, const MatNC &H0, 
     CoefAll.setConstant(POLYQP_MAX_NC, MAX_SEG, 3, Real(0));
     static Fix3 DerivAll;
     DerivAll = FixP;
+    static Bool3 DerivAllFixed;
+    DerivAllFixed = FixPFixed;
     Real totalCost = 0;
 
     // Optional one-time Richter time redistribution on multi-segment legs where intermediate knots have at least one free velocity axis
@@ -192,21 +202,20 @@ static PolyQPStatus solveAllLegs(PlanT &Plan, const MatNC &A0, const MatNC &H0, 
             const int m1 = V1(Plan.LegStartSeg, leg);
             const int m2 = V1(Plan.LegEndSeg, leg);
             if (m2 > m1) {
-                static Fix3 midVelBins;
-                sub3(FixP, 1, 3, 2, 2, m1 + 1, m2, midVelBins);
-                Bool3 isnanMidVelBins;
-                isnan3(midVelBins, isnanMidVelBins);
-                Bool3 anyIsnanMidVelBins;
-                any3(isnanMidVelBins, 1, anyIsnanMidVelBins);
-                Bool3 allAnyIsnanMidVelBins;
-                all3(anyIsnanMidVelBins, allAnyIsnanMidVelBins);
-                if (ifTrue(allAnyIsnanMidVelBins)) {
+                // NO-NAN: all(any(isnan(midVelBins), 1)) with midVelBins = FixP(:, 2, (m1 + 1):m2): every intermediate knot has a free velocity axis
+                bool allAnyFree = true;
+                for (int k = m1 + 1; k <= m2; ++k) {
+                    if (FixPFixed(1, 2, k) && FixPFixed(2, 2, k) && FixPFixed(3, 2, k)) allAnyFree = false;
+                }
+                if (allAnyFree) {
                     static Fix3 FixLeg;
                     sub3(FixP, 1, 3, 1, r, m1, m2 + 1, FixLeg);
+                    static Bool3 FixLegFixed;
+                    sub3(FixPFixed, 1, 3, 1, r, m1, m2 + 1, FixLegFixed);
                     const RowSeg T_leg = Plan.SegT(R1(m1, m2));
                     RowSeg T_opt;
                     Real CostIgnored;
-                    POLYQP_TRY(allocateTimes(FixLeg, T_leg, A0, H0, Limits.MinSegTime, T_opt, CostIgnored));
+                    POLYQP_TRY(allocateTimes(FixLeg, FixLegFixed, T_leg, A0, H0, Limits.MinSegTime, T_opt, CostIgnored));
                     Plan.SegT(R1(m1, m2)) = T_opt;
                 }
             }
@@ -230,14 +239,17 @@ static PolyQPStatus solveAllLegs(PlanT &Plan, const MatNC &A0, const MatNC &H0, 
             const int m2 = V1(Plan.LegEndSeg, leg);
             static Fix3 FixLeg;
             sub3(FixP, 1, 3, 1, r, m1, m2 + 1, FixLeg);
+            static Bool3 FixLegFixed;
+            sub3(FixPFixed, 1, 3, 1, r, m1, m2 + 1, FixLegFixed);
             const RowSeg T_leg = Plan.SegT(R1(m1, m2));
 
             static Coef3 CoefLeg;
             static Fix3 DerivLeg;
             Real costLeg;
-            POLYQP_TRY(solveLeg(FixLeg, T_leg, A0, H0, CoefLeg, DerivLeg, costLeg));
+            POLYQP_TRY(solveLeg(FixLeg, FixLegFixed, T_leg, A0, H0, CoefLeg, DerivLeg, costLeg));
             setSub3(CoefAll, 1, nc, m1, m2, 1, 3, CoefLeg);
             setSub3(DerivAll, 1, 3, 1, r, m1, m2 + 1, DerivLeg);
+            fillSub3(DerivAllFixed, 1, 3, 1, r, m1, m2 + 1, true); // NO-NAN: solveLeg returns every derivative of the leg
             totalCost = totalCost + costLeg;
         }
 
@@ -261,14 +273,14 @@ static PolyQPStatus solveAllLegs(PlanT &Plan, const MatNC &A0, const MatNC &H0, 
         if (pass < nPasses) {
             // TRANSPILE-FLAG F03 (fixed by FIX-F03): refinement covers k = 2:(K-1) only; the knot-1 attitude now comes from B3BC instead of the b3 = e3 assumption.
             for (int k = 2; k <= K - 1; ++k) {
-                if (!V1(Plan.KnotIsRest, k) && Col1(Plan.B3BC, k).array().isNaN().any()) { // FIX-F03: a given knot attitude is not overwritten by the refinement
+                if (!V1(Plan.KnotIsRest, k) && !Col1(Plan.B3Fixed, k).all()) { // FIX-F03: a given knot attitude is not overwritten by the refinement
                     const Vec3 a_k = getFiber3(DerivAll, 3, k);
                     const Vec3 e_k = a_k + Vec3(0, 0, g);
                     const Real ne = mnorm(e_k);
                     if (ne > Real(1e-6)) {
                         const Vec3 b3_k = e_k / ne;
                         for (int d = 1; d <= 3; ++d) {
-                            if (!std::isnan(Plan.FixCg(d, 1, k))) {
+                            if (Plan.FixCgFixed(d, 1, k)) {
                                 FixP(d, 1, k) = Plan.FixCg(d, 1, k) + rho * V1(b3_k, d);
                             }
                         }
@@ -284,8 +296,11 @@ static PolyQPStatus solveAllLegs(PlanT &Plan, const MatNC &A0, const MatNC &H0, 
     KeyTimes(R1(1, M + 1)) << Real(0), cumsumSegT;
 
     static FixOut3 FixOut;
-    FixOut.setConstant(3, 6, MAX_KNOTS, NaN());
+    FixOut.setConstant(3, 6, MAX_KNOTS, Real(0));
     setSub3(FixOut, 1, 3, 1, r, 1, K, DerivAll);
+    static BoolOut3 FixOutFixed; // NO-NAN: FixOut = nan(3, 6, MAX_KNOTS) before the solved derivatives are written
+    FixOutFixed.setConstant(3, 6, MAX_KNOTS, false);
+    setSub3(FixOutFixed, 1, 3, 1, r, 1, K, DerivAllFixed);
 
     QPTraj.R = r;
     QPTraj.Count = M;
@@ -295,6 +310,7 @@ static PolyQPStatus solveAllLegs(PlanT &Plan, const MatNC &A0, const MatNC &H0, 
     QPTraj.IsHold = Plan.IsHold;
     QPTraj.IsCruise = Plan.IsCruise;
     QPTraj.Fix = FixOut;
+    QPTraj.FixFixed = FixOutFixed;
     QPTraj.Cost = totalCost;
     QPTraj.T_total = sumv(Plan.SegT(R1(1, M)));
     QPTraj.FlatOffset = rho;

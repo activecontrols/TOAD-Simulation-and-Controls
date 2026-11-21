@@ -3,7 +3,7 @@
 
 namespace PolyQP {
 
-PolyQPStatus solveLeg(const Fix3 &FixLeg, const RowSeg &SegTimes, const MatNC &A0, const MatNC &H0, Coef3 &CoefPhys, Fix3 &Deriv, Real &Cost) {
+PolyQPStatus solveLeg(const Fix3 &FixLeg, const Bool3 &FixLegFixed, const RowSeg &SegTimes, const MatNC &A0, const MatNC &H0, Coef3 &CoefPhys, Fix3 &Deriv, Real &Cost) {
     // Closed-Form Minimum-Derivative QP Solve (Paper Eq. ??)
     // TRANSPILE-FLAG F14: "Paper Eq. ??" equation number missing in the source comment; preserved verbatim. Transpiled as-is per MATLAB.
     const int D = FixLeg.size(1);
@@ -42,8 +42,10 @@ PolyQPStatus solveLeg(const Fix3 &FixLeg, const RowSeg &SegTimes, const MatNC &A
     for (int d = 1; d <= D; ++d) {
         static VecNV fx;
         reshapeRowSlice(FixLeg, d, 1, K, fx);
-        const FindResult<POLYQP_MAX_NV> idxF = find<POLYQP_MAX_NV>(!fx.array().isNaN());
-        const FindResult<POLYQP_MAX_NV> idxP = find<POLYQP_MAX_NV>(fx.array().isNaN());
+        static Eigen::Matrix<bool, Eigen::Dynamic, 1, Eigen::ColMajor, POLYQP_MAX_NV, 1> fxFixed; // NO-NAN: ~isnan(fx)
+        reshapeRowSlice(FixLegFixed, d, 1, K, fxFixed);
+        const FindResult<POLYQP_MAX_NV> idxF = find<POLYQP_MAX_NV>(fxFixed.array());
+        const FindResult<POLYQP_MAX_NV> idxP = find<POLYQP_MAX_NV>(!fxFixed.array());
 
         if (idxF.numel() < r) {
             POLYQP_ERROR(IllPosedQP, "Axis %d has %d fixed BCs; at least r = %d required to pin null space.", d, idxF.numel(), r);
@@ -68,8 +70,7 @@ PolyQPStatus solveLeg(const Fix3 &FixLeg, const RowSeg &SegTimes, const MatNC &A
             for (int m = 1; m <= M; ++m) {
                 const int iA = (m - 1) * r + 1;
                 const int iB = m * r + 1;
-                if (std::isnan(V1(fx, iA)) && std::isnan(V1(fx, iB)) && (!fx(R1(iA + 1, iA + r - 1)).array().isNaN()).all() &&
-                    (!fx(R1(iB + 1, iB + r - 1)).array().isNaN()).all()) {
+                if (!V1(fxFixed, iA) && !V1(fxFixed, iB) && fxFixed(R1(iA + 1, iA + r - 1)).all() && fxFixed(R1(iB + 1, iB + r - 1)).all()) { // NO-NAN: isnan(fx(i)) is !fxFixed(i)
                     const int jA = findFirst(idxP, iA);
                     const int jB = findFirst(idxP, iB);
                     Tz.row(jB - 1) = Tz.row(jA - 1);
@@ -114,7 +115,8 @@ PolyQPStatus solveLeg(const Fix3 &FixLeg, const RowSeg &SegTimes, const MatNC &A
             // Jacobi diagonal equilibration: D_inv = 1 ./ sqrt(diag(R_PP))
             static VecNV d_diag;
             d_diag = R_PP.diagonal();
-            if ((d_diag.array() <= 0).any() || d_diag.array().isNaN().any() || d_diag.array().isInf().any()) {
+            // NO-NAN: the MATLAB guard also rejects a non-finite diagonal; with real inputs it is finite, so only the numerical d_diag <= 0 test remains
+            if ((d_diag.array() <= 0).any()) {
                 POLYQP_ERROR(SingularRPP, "Axis %d R_PP has non-positive diagonal (min = %.2e).", d, static_cast<double>(minv(d_diag)));
             }
             static VecNV s_jac;
@@ -135,7 +137,7 @@ PolyQPStatus solveLeg(const Fix3 &FixLeg, const RowSeg &SegTimes, const MatNC &A
             lu_rc.compute(R_PP_eq);
             const Real rc = lu_rc.rcond();
             // TRANSPILE-FLAG F07 (fixed by FIX-F07): lateral R_PP was near-singular for unbalanced segment times (cond ~ 4e13 at (10, 0.6) s); SingularRPP could trip even in double.
-            if (std::isnan(rc) || rc < Real(1e-13)) {
+            if (rc < Real(1e-13)) { // NO-NAN: the isnan(rc) part of the guard was removed (real inputs give a real rcond)
                 POLYQP_ERROR(SingularRPP, "Axis %d free-derivative Hessian R_PP is singular (rcond = %.2e).", d, static_cast<double>(rc));
             }
             static Eigen::LLT<MatNV> llt(POLYQP_MAX_NV);

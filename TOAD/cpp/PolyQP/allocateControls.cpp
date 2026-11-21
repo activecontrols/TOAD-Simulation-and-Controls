@@ -15,10 +15,10 @@ PolyQPStatus allocateControls(const WrenchT &Wrench, const LimitsT &Limits, Mat4
     for (int k = 1; k <= nPts; ++k) {
         const Vec3 Fk = Col1(F_body, k);
         const Vec3 tauk = Col1(Tau_body, k);
-        const Real l_k = mmax(Real(1e-3), V1(CGz_vec, k));
+        const Real l_k = std::max(Real(1e-3), V1(CGz_vec, k));
 
         // Axial force from translational dynamics
-        const Real Fz = mmax(Real(1e-3), V1(Fk, 3));
+        const Real Fz = std::max(Real(1e-3), V1(Fk, 3));
 
         // ASTRA-ONLY: the vehicle 0 branch below is the only one; the vehicle 1 (TOAD) branch was removed.
         // Vehicle 0 (ASTRA): M_B = [0; 0; -l] x T_B + roll * t_dir
@@ -36,7 +36,7 @@ PolyQPStatus allocateControls(const WrenchT &Wrench, const LimitsT &Limits, Mat4
         }
 
         // Exact trigonometric gimbal inversion for T_B = T * [cos(th)*sin(ph); -sin(th); cos(th)*cos(ph)]
-        const Real sin_th = mmax(Real(-1), mmin(Real(1), -Fy / T_mag));
+        const Real sin_th = std::max(Real(-1), std::min(Real(1), -Fy / T_mag));
         const Real theta = std::asin(sin_th);
         const Real phi = std::atan2(Fx, Fz);
 

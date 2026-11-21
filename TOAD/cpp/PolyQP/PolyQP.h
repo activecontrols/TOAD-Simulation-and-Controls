@@ -14,9 +14,9 @@ PolyQPStatus resolveWaypoints(const TOADWaypointArray &Waypoints, const LimitsT 
 
 PolyQPStatus assembleQP(MatNC &A0, MatNC &Q0, MatNC &H0);
 
-PolyQPStatus solveLeg(const Fix3 &FixLeg, const RowSeg &SegTimes, const MatNC &A0, const MatNC &H0, Coef3 &CoefPhys, Fix3 &Deriv, Real &Cost);
+PolyQPStatus solveLeg(const Fix3 &FixLeg, const Bool3 &FixLegFixed, const RowSeg &SegTimes, const MatNC &A0, const MatNC &H0, Coef3 &CoefPhys, Fix3 &Deriv, Real &Cost);
 
-PolyQPStatus allocateTimes(const Fix3 &FixLeg, const RowSeg &SegTimesInit, const MatNC &A0, const MatNC &H0, Real MinSegTime, RowSeg &SegTimes, Real &Cost);
+PolyQPStatus allocateTimes(const Fix3 &FixLeg, const Bool3 &FixLegFixed, const RowSeg &SegTimesInit, const MatNC &A0, const MatNC &H0, Real MinSegTime, RowSeg &SegTimes, Real &Cost);
 
 PolyQPStatus evaluateConstraints(const QPTrajT &QPTraj, const PlanT &Plan, const LimitsT &Limits, EvalOutT &EvalOut, bool &Feasible);
 
@@ -31,6 +31,7 @@ PolyQPStatus PolyEval(const QPTrajT &QPTraj, const RowGrid &t, Mat3Grid &Out, in
 
 PolyQPStatus buildVehicleLimits(LimitsT &Limits);
 
-TOADWaypointT TOADWaypoint(const Vec3 &pos, const TOADWaypointOptions &options = TOADWaypointOptions());
+// NO-NAN: posFixed marks the fixed position components (MATLAB: a NaN position component is free).
+TOADWaypointT TOADWaypoint(const Vec3 &pos, const TOADWaypointOptions &options = TOADWaypointOptions(), const Vector3b &posFixed = Vector3b::Constant(true));
 
 }

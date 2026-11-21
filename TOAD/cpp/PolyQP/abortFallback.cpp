@@ -10,35 +10,19 @@ void abortFallback(const AbortXEstT &X_est, Real vCapZ, AbortTimeT &Time, AbortS
     const Real DtSample = Real(0.1);
     const Real c_v = Real(315) / Real(128);
 
-    Real x0 = V1(X_est, 5);
-    Real y0 = V1(X_est, 6);
-    Real z0 = V1(X_est, 7);
-    Real m_lox = V1(X_est, 14);
-    Real m_ipa = V1(X_est, 15);
-
-    // FIX-F08: non-finite estimates are replaced so the output stays finite (position 0, propellant full tank)
-    if (!std::isfinite(x0)) {
-        x0 = 0;
-    }
-    if (!std::isfinite(y0)) {
-        y0 = 0;
-    }
-    if (!std::isfinite(z0)) {
-        z0 = 0;
-    }
-    if (!std::isfinite(m_lox)) {
-        m_lox = 0; // ASTRA-ONLY: Constants.OxMass, the full ASTRA tank, is 0
-    }
-    if (!std::isfinite(m_ipa)) {
-        m_ipa = 0; // ASTRA-ONLY: Constants.FuMass, the full ASTRA tank, is 0
-    }
+    const Real x0 = V1(X_est, 5);
+    const Real y0 = V1(X_est, 6);
+    const Real z0 = V1(X_est, 7);
+    const Real m_lox = V1(X_est, 14);
+    const Real m_ipa = V1(X_est, 15);
+    // NO-NAN: the MATLAB replacement of non-finite estimates was removed (the estimate is always real)
 
     // FIX-F08: duration from the peak velocity c_v * |z0| / T of the rest-to-rest profile at the vertical cap
-    const Real T = mmax(MinSegTime, c_v * std::abs(z0) / vCapZ);
+    const Real T = std::max(MinSegTime, c_v * std::abs(z0) / vCapZ);
 
     // FIX-F08: same output grid as sampleOutputs
     // TRANSPILE-FLAG F34: the 3999 cap is also clamped to POLYQP_MAX_GRID so the fallback cannot exceed a reduced flight capacity profile (identical to MATLAB at the default capacities).
-    const int Nc = static_cast<int>(mmin(mmin(Real(3999), Real(POLYQP_MAX_GRID)), mmax(Real(1), std::ceil(T / DtSample))));
+    const int Nc = static_cast<int>(std::min(std::min(Real(3999), Real(POLYQP_MAX_GRID)), std::max(Real(1), std::ceil(T / DtSample))));
     const int Nn = Nc + 1;
     static RowGrid t_vec;
     linspace(0, T, Nn, t_vec);

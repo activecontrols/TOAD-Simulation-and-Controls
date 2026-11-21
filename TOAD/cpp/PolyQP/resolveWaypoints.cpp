@@ -4,11 +4,13 @@
 namespace PolyQP {
 
 using SlabT = MatX<3, POLYQP_MAX_R>;
+using SlabMaskT = Eigen::Matrix<bool, 3, Eigen::Dynamic, Eigen::ColMajor, 3, POLYQP_MAX_R>; // NO-NAN: "fixed" mask parallel to a SlabT
 
-static PolyQPStatus wpToFix(const TOADWaypointT &wp, int r, SlabT &slab, bool &isRest);
-static SlabT makeCruiseKnot(const Vec3 &pos, const Vec3 &v_cruise, int r);
-static SlabT pinTransverse(SlabT slab, const Vec3 &dp, int r);
-static Real initSingleSegTime(const Vec3 &dp, const Vec3 &vA, const Vec3 &vB, const Vec3 &v_max, const Vec3 &a_max, int r, Real MinSegTime);
+static PolyQPStatus wpToFix(const TOADWaypointT &wp, int r, SlabT &slab, SlabMaskT &slabFixed, bool &isRest);
+static void makeCruiseKnot(const Vec3 &pos, const Vec3 &v_cruise, int r, SlabT &slab, SlabMaskT &slabFixed);
+static void pinTransverse(SlabT &slab, SlabMaskT &slabFixed, const Vec3 &dp, int r);
+static Real initSingleSegTime(const Vec3 &dp, const Vector3b &dpFixed, const Vec3 &vA, const Vector3b &vAFixed, const Vec3 &vB, const Vector3b &vBFixed,
+                              const Vec3 &v_max, const Vec3 &a_max, int r, Real MinSegTime);
 
 PolyQPStatus resolveWaypoints(const TOADWaypointArray &Waypoints, const LimitsT &Limits, PlanT &Plan) {
     // Validate Waypoints, Expand Holds & Cruise Profiles, and Partition Legs
@@ -32,7 +34,7 @@ PolyQPStatus resolveWaypoints(const TOADWaypointArray &Waypoints, const LimitsT 
 
     for (int k = 1; k <= nWP; ++k) {
         const TOADWaypointT &wp = Waypoints(k);
-        if (mnorm(wp.HDGRef / mmax(Real(1e-9), mnorm(wp.HDGRef)) - hdg0) > Real(1e-6)) {
+        if (mnorm(wp.HDGRef / std::max(Real(1e-9), mnorm(wp.HDGRef)) - hdg0) > Real(1e-6)) {
             POLYQP_ERROR(InconsistentHDGRef, "Waypoint %d HDGRef must match first waypoint HDGRef.", k);
         }
         if ((wp.MaxVel.array() <= 0).any() || (wp.MaxAccel.array() <= 0).any()) {
@@ -45,26 +47,34 @@ PolyQPStatus resolveWaypoints(const TOADWaypointArray &Waypoints, const LimitsT 
 
     // Fixed-capacity knot and segment buffers
     static Fix3 FixCg;
-    FixCg.setConstant(3, MAX_R, MAX_KNOTS, NaN());
+    FixCg.setConstant(3, MAX_R, MAX_KNOTS, Real(0));
+    static Bool3 FixCgFixed; // NO-NAN: MATLAB FixCg = nan(...): every entry starts free
+    FixCgFixed.setConstant(3, MAX_R, MAX_KNOTS, false);
     BoolKnot KnotIsRest = BoolKnot::Constant(MAX_KNOTS, false);
     RowSeg SegT = RowSeg::Zero(MAX_SEG);
     BoolSeg IsHold = BoolSeg::Constant(MAX_SEG, false);
     BoolSeg IsCruise = BoolSeg::Constant(MAX_SEG, false);
     Mat3Seg SegMaxVel = Mat3Seg::Constant(3, MAX_SEG, Inf());
     Mat3Seg SegMaxAccel = Mat3Seg::Constant(3, MAX_SEG, Inf());
-    Mat3Knot B3Knot = Mat3Knot::Constant(3, MAX_KNOTS, NaN()); // FIX-F03: per-knot B3BC (NaN: b3 = e3)
-    Mat3Knot B3DotKnot = Mat3Knot::Constant(3, MAX_KNOTS, NaN()); // FIX-F03: per-knot B3DotBC (NaN: not applied)
+    Mat3Knot B3Knot = Mat3Knot::Zero(3, MAX_KNOTS); // FIX-F03: per-knot B3BC (NaN: b3 = e3)
+    Bool3Knot B3KnotFixed = Bool3Knot::Constant(3, MAX_KNOTS, false); // NO-NAN: B3Knot = NaN (not given)
+    Mat3Knot B3DotKnot = Mat3Knot::Zero(3, MAX_KNOTS); // FIX-F03: per-knot B3DotBC (NaN: not applied)
+    Bool3Knot B3DotKnotFixed = Bool3Knot::Constant(3, MAX_KNOTS, false); // NO-NAN: B3DotKnot = NaN (not given)
 
     // Helper to populate a knot's BCs from a waypoint
     int nKnots = 1;
     int nSegs = 0;
     SlabT slab;
+    SlabMaskT slabFixed;
     bool isRest;
-    POLYQP_TRY(wpToFix(Waypoints(1), r, slab, isRest));
+    POLYQP_TRY(wpToFix(Waypoints(1), r, slab, slabFixed, isRest));
     setSlab(FixCg, 1, r, slab);
+    setSlab(FixCgFixed, 1, r, slabFixed);
     V1(KnotIsRest, 1) = isRest;
     Col1(B3Knot, 1) = Waypoints(1).B3BC; // FIX-F03: knot attitude from the waypoint
+    Col1(B3KnotFixed, 1) = Waypoints(1).B3Fixed.array();
     Col1(B3DotKnot, 1) = Waypoints(1).B3DotBC; // FIX-F03: knot attitude from the waypoint
+    Col1(B3DotKnotFixed, 1) = Waypoints(1).B3DotFixed.array();
 
     // If first waypoint has a positive HoldTime, insert initial hold segment
     if (!Waypoints(1).IsPassAndGo && Waypoints(1).HoldTime > 0) {
@@ -73,53 +83,62 @@ PolyQPStatus resolveWaypoints(const TOADWaypointArray &Waypoints, const LimitsT 
         POLYQP_CAPACITY(nSegs <= MAX_SEG && nKnots <= MAX_KNOTS);
         getSlab(FixCg, nKnots - 1, r, slab);
         setSlab(FixCg, nKnots, r, slab);
+        getSlab(FixCgFixed, nKnots - 1, r, slabFixed);
+        setSlab(FixCgFixed, nKnots, r, slabFixed);
         Col1(B3Knot, nKnots) = Col1(B3Knot, nKnots - 1); // FIX-F03: a hold keeps the knot attitude
+        Col1(B3KnotFixed, nKnots) = Col1(B3KnotFixed, nKnots - 1);
         Col1(B3DotKnot, nKnots) = Col1(B3DotKnot, nKnots - 1); // FIX-F03: a hold keeps the knot attitude
+        Col1(B3DotKnotFixed, nKnots) = Col1(B3DotKnotFixed, nKnots - 1);
         V1(KnotIsRest, nKnots) = true;
         V1(SegT, nSegs) = Waypoints(1).HoldTime;
         V1(IsHold, nSegs) = true;
         Col1(SegMaxVel, nSegs) = Waypoints(1).MaxVel;
-        Col1(SegMaxAccel, nSegs) = mmin(Waypoints(1).MaxAccel, Limits.DefaultMaxAccel);
+        Col1(SegMaxAccel, nSegs) = Waypoints(1).MaxAccel.cwiseMin(Limits.DefaultMaxAccel);
     }
 
     // Expand each waypoint transition m = 1 .. nWP-1
     for (int m = 1; m <= nWP - 1; ++m) {
         const TOADWaypointT &wpB = Waypoints(m + 1);
         const Vec3 v_max = wpB.MaxVel;
-        const Vec3 a_max = mmin(wpB.MaxAccel, Limits.DefaultMaxAccel);
+        const Vec3 a_max = wpB.MaxAccel.cwiseMin(Limits.DefaultMaxAccel);
 
         const Vec3 pA = getFiber3(FixCg, 1, nKnots);
         const Vec3 pB = wpB.PosBC;
         const Vec3 dp = pB - pA;
+        const Vector3b dpFixed = (getFiber3(FixCgFixed, 1, nKnots).array() && wpB.PosFixed.array()).matrix(); // NO-NAN: dp is NaN where either end is free
 
         // Check if StraightLine is requested on segment m -> m+1
         // TRANSPILE-FLAG F06: all(~isnan(dp)) is false with NaN lateral positions, so StraightLine on abort waypoint 3 is inert. Transpiled as-is per MATLAB.
-        if (wpB.StraightLine && (!dp.array().isNaN()).all() && mnorm(dp) > Real(1e-6)) {
+        if (wpB.StraightLine && dpFixed.all() && mnorm(dp) > Real(1e-6)) {
             getSlab(FixCg, nKnots, r, slab);
-            setSlab(FixCg, nKnots, r, pinTransverse(slab, dp, r));
+            getSlab(FixCgFixed, nKnots, r, slabFixed);
+            pinTransverse(slab, slabFixed, dp, r);
+            setSlab(FixCg, nKnots, r, slab);
+            setSlab(FixCgFixed, nKnots, r, slabFixed);
         }
 
         // Check if segment is long enough to saturate MaxVel and split into [Ramp-Up, Cruise, Ramp-Down]
         bool didSplit = false;
         // TRANSPILE-FLAG F06: the cruise-split guard all(~isnan(dp)) is likewise false with NaN lateral positions, so the abort never splits. Transpiled as-is per MATLAB.
-        if ((!dp.array().isNaN()).all() && mnorm(dp) > Real(1e-3)) {
+        if (dpFixed.all() && mnorm(dp) > Real(1e-3)) {
             const Real T_ideal = maxv((mabs(dp).array() / v_max.array()).matrix());
             if (T_ideal > 2 * Limits.MinSegTime) {
                 const Vec3 v_cruise = dp / T_ideal;
                 Vec3 vA = getFiber3(FixCg, 2, nKnots);
+                const Vector3b vAFixed = getFiber3(FixCgFixed, 2, nKnots);
                 for (int i = 1; i <= 3; ++i) {
-                    if (std::isnan(V1(vA, i))) V1(vA, i) = 0;
+                    if (!V1(vAFixed, i)) V1(vA, i) = 0; // NO-NAN: isnan(vA) is !fixed
                 }
                 Vec3 vB = wpB.VelBC;
                 for (int i = 1; i <= 3; ++i) {
-                    if (std::isnan(V1(vB, i))) V1(vB, i) = 0;
+                    if (!V1(wpB.VelFixed, i)) V1(vB, i) = 0; // NO-NAN: isnan(vB) is !fixed
                 }
 
                 // Bound vertical ramp acceleration by vehicle thrust band [T_lo, T_hi]
                 Vec3 a_ramp = a_max;
                 if (Limits.HasVehicle) {
-                    const Real a_up_lim = mmax(Real(0.30), Real(0.80) * (Limits.T_hi / Limits.m_init - Limits.g));
-                    const Real a_dn_lim = mmax(Real(0.30), Real(0.80) * (Limits.g - Limits.T_lo / Limits.m_dry));
+                    const Real a_up_lim = std::max(Real(0.30), Real(0.80) * (Limits.T_hi / Limits.m_init - Limits.g));
+                    const Real a_dn_lim = std::max(Real(0.30), Real(0.80) * (Limits.g - Limits.T_lo / Limits.m_dry));
                     V1(a_ramp, 3) = minv({V1(a_ramp, 3), a_up_lim, a_dn_lim});
                 }
 
@@ -128,15 +147,15 @@ PolyQPStatus resolveWaypoints(const TOADWaypointArray &Waypoints, const LimitsT 
                 // (HoldTime >= 0) or have an explicitly specified VelBC aligned with dp.
                 // Free pass-through knots (HoldTime = NaN, VelBC = NaN) stay in a coupled multi-segment leg
                 // so their velocity & curvature are solved smoothly by the QP across the corner.
-                const bool hasExplicitVelA = V1(KnotIsRest, nKnots) || (!getFiber3(FixCg, 2, nKnots).array().isNaN()).all();
-                const bool hasExplicitVelB = !wpB.IsPassAndGo || (!wpB.VelBC.array().isNaN()).all();
+                const bool hasExplicitVelA = V1(KnotIsRest, nKnots) || vAFixed.all();
+                const bool hasExplicitVelB = !wpB.IsPassAndGo || wpB.VelFixed.all();
                 const Vec3 u_dp = dp / mnorm(dp);
                 const Real vA_trans = mnorm(vA - mdot(vA, u_dp) * u_dp);
                 const Real vB_trans = mnorm(vB - mdot(vB, u_dp) * u_dp);
 
                 if (hasExplicitVelA && hasExplicitVelB && vA_trans < Real(1e-3) && vB_trans < Real(1e-3)) {
-                    const Real T_up = mmax(Limits.MinSegTime, c_v * maxv((mabs(v_cruise - vA).array() / a_ramp.array()).matrix()));
-                    const Real T_dn = mmax(Limits.MinSegTime, c_v * maxv((mabs(vB - v_cruise).array() / a_ramp.array()).matrix()));
+                    const Real T_up = std::max(Limits.MinSegTime, c_v * maxv((mabs(v_cruise - vA).array() / a_ramp.array()).matrix()));
+                    const Real T_dn = std::max(Limits.MinSegTime, c_v * maxv((mabs(vB - v_cruise).array() / a_ramp.array()).matrix()));
 
                     const Vec3 dp_up = Real(0.5) * (vA + v_cruise) * T_up;
                     const Vec3 dp_dn = Real(0.5) * (v_cruise + vB) * T_dn;
@@ -154,10 +173,15 @@ PolyQPStatus resolveWaypoints(const TOADWaypointArray &Waypoints, const LimitsT 
                         nSegs = nSegs + 1;
                         nKnots = nKnots + 1;
                         POLYQP_CAPACITY(nSegs <= MAX_SEG && nKnots <= MAX_KNOTS);
-                        setSlab(FixCg, nKnots, r, makeCruiseKnot(p_in, v_cruise, r));
+                        makeCruiseKnot(p_in, v_cruise, r, slab, slabFixed);
+                        setSlab(FixCg, nKnots, r, slab);
+                        setSlab(FixCgFixed, nKnots, r, slabFixed);
                         if (wpB.StraightLine) {
                             getSlab(FixCg, nKnots - 1, r, slab);
-                            setSlab(FixCg, nKnots - 1, r, pinTransverse(slab, dp, r));
+                            getSlab(FixCgFixed, nKnots - 1, r, slabFixed);
+                            pinTransverse(slab, slabFixed, dp, r);
+                            setSlab(FixCg, nKnots - 1, r, slab);
+                            setSlab(FixCgFixed, nKnots - 1, r, slabFixed);
                         }
                         V1(KnotIsRest, nKnots) = true;
                         V1(SegT, nSegs) = T_up;
@@ -168,7 +192,9 @@ PolyQPStatus resolveWaypoints(const TOADWaypointArray &Waypoints, const LimitsT 
                         nSegs = nSegs + 1;
                         nKnots = nKnots + 1;
                         POLYQP_CAPACITY(nSegs <= MAX_SEG && nKnots <= MAX_KNOTS);
-                        setSlab(FixCg, nKnots, r, makeCruiseKnot(p_out, v_cruise, r));
+                        makeCruiseKnot(p_out, v_cruise, r, slab, slabFixed);
+                        setSlab(FixCg, nKnots, r, slab);
+                        setSlab(FixCgFixed, nKnots, r, slabFixed);
                         V1(KnotIsRest, nKnots) = true;
                         V1(SegT, nSegs) = T_cruise;
                         V1(IsCruise, nSegs) = true;
@@ -179,14 +205,18 @@ PolyQPStatus resolveWaypoints(const TOADWaypointArray &Waypoints, const LimitsT 
                         nSegs = nSegs + 1;
                         nKnots = nKnots + 1;
                         POLYQP_CAPACITY(nSegs <= MAX_SEG && nKnots <= MAX_KNOTS);
-                        POLYQP_TRY(wpToFix(wpB, r, slab, isRest));
+                        POLYQP_TRY(wpToFix(wpB, r, slab, slabFixed, isRest));
                         setSlab(FixCg, nKnots, r, slab);
+                        setSlab(FixCgFixed, nKnots, r, slabFixed);
                         V1(KnotIsRest, nKnots) = isRest;
                         Col1(B3Knot, nKnots) = wpB.B3BC; // FIX-F03: knot attitude from the waypoint
+                        Col1(B3KnotFixed, nKnots) = wpB.B3Fixed.array();
                         Col1(B3DotKnot, nKnots) = wpB.B3DotBC; // FIX-F03: knot attitude from the waypoint
+                        Col1(B3DotKnotFixed, nKnots) = wpB.B3DotFixed.array();
                         if (wpB.StraightLine) {
-                            getSlab(FixCg, nKnots, r, slab);
-                            setSlab(FixCg, nKnots, r, pinTransverse(slab, dp, r));
+                            pinTransverse(slab, slabFixed, dp, r);
+                            setSlab(FixCg, nKnots, r, slab);
+                            setSlab(FixCgFixed, nKnots, r, slabFixed);
                         }
                         V1(SegT, nSegs) = T_dn;
                         Col1(SegMaxVel, nSegs) = v_max;
@@ -199,25 +229,31 @@ PolyQPStatus resolveWaypoints(const TOADWaypointArray &Waypoints, const LimitsT 
         // Standard single polynomial flight segment if not split
         if (!didSplit) {
             const Vec3 vA_prev = getFiber3(FixCg, 2, nKnots);
+            const Vector3b vA_prevFixed = getFiber3(FixCgFixed, 2, nKnots);
             nSegs = nSegs + 1;
             nKnots = nKnots + 1;
             POLYQP_CAPACITY(nSegs <= MAX_SEG && nKnots <= MAX_KNOTS);
-            POLYQP_TRY(wpToFix(wpB, r, slab, isRest));
+            POLYQP_TRY(wpToFix(wpB, r, slab, slabFixed, isRest));
             setSlab(FixCg, nKnots, r, slab);
+            setSlab(FixCgFixed, nKnots, r, slabFixed);
             V1(KnotIsRest, nKnots) = isRest;
             Col1(B3Knot, nKnots) = wpB.B3BC; // FIX-F03: knot attitude from the waypoint
+            Col1(B3KnotFixed, nKnots) = wpB.B3Fixed.array();
             Col1(B3DotKnot, nKnots) = wpB.B3DotBC; // FIX-F03: knot attitude from the waypoint
-            if (wpB.StraightLine && (!dp.array().isNaN()).all() && mnorm(dp) > Real(1e-6)) {
-                getSlab(FixCg, nKnots, r, slab);
-                setSlab(FixCg, nKnots, r, pinTransverse(slab, dp, r));
+            Col1(B3DotKnotFixed, nKnots) = wpB.B3DotFixed.array();
+            if (wpB.StraightLine && dpFixed.all() && mnorm(dp) > Real(1e-6)) {
+                pinTransverse(slab, slabFixed, dp, r);
+                setSlab(FixCg, nKnots, r, slab);
+                setSlab(FixCgFixed, nKnots, r, slabFixed);
             }
             Vec3 a_seg_init = a_max;
             if (Limits.HasVehicle) {
-                const Real a_up_lim = mmax(Real(0.30), Real(0.80) * (Limits.T_hi / Limits.m_init - Limits.g));
-                const Real a_dn_lim = mmax(Real(0.30), Real(0.80) * (Limits.g - Limits.T_lo / Limits.m_dry));
+                const Real a_up_lim = std::max(Real(0.30), Real(0.80) * (Limits.T_hi / Limits.m_init - Limits.g));
+                const Real a_dn_lim = std::max(Real(0.30), Real(0.80) * (Limits.g - Limits.T_lo / Limits.m_dry));
                 V1(a_seg_init, 3) = minv({V1(a_seg_init, 3), a_up_lim, a_dn_lim});
             }
-            V1(SegT, nSegs) = initSingleSegTime(dp, vA_prev, getFiber3(FixCg, 2, nKnots), v_max, a_seg_init, r, Limits.MinSegTime);
+            V1(SegT, nSegs) = initSingleSegTime(dp, dpFixed, vA_prev, vA_prevFixed, getFiber3(FixCg, 2, nKnots), getFiber3(FixCgFixed, 2, nKnots), v_max, a_seg_init, r,
+                                                Limits.MinSegTime);
             Col1(SegMaxVel, nSegs) = v_max;
             Col1(SegMaxAccel, nSegs) = a_max;
         }
@@ -229,8 +265,12 @@ PolyQPStatus resolveWaypoints(const TOADWaypointArray &Waypoints, const LimitsT 
             POLYQP_CAPACITY(nSegs <= MAX_SEG && nKnots <= MAX_KNOTS);
             getSlab(FixCg, nKnots - 1, r, slab);
             setSlab(FixCg, nKnots, r, slab);
+            getSlab(FixCgFixed, nKnots - 1, r, slabFixed);
+            setSlab(FixCgFixed, nKnots, r, slabFixed);
             Col1(B3Knot, nKnots) = Col1(B3Knot, nKnots - 1); // FIX-F03: a hold keeps the knot attitude
+            Col1(B3KnotFixed, nKnots) = Col1(B3KnotFixed, nKnots - 1);
             Col1(B3DotKnot, nKnots) = Col1(B3DotKnot, nKnots - 1); // FIX-F03: a hold keeps the knot attitude
+            Col1(B3DotKnotFixed, nKnots) = Col1(B3DotKnotFixed, nKnots - 1);
             V1(KnotIsRest, nKnots) = true;
             V1(SegT, nSegs) = wpB.HoldTime;
             V1(IsHold, nSegs) = true;
@@ -243,9 +283,9 @@ PolyQPStatus resolveWaypoints(const TOADWaypointArray &Waypoints, const LimitsT 
     // A knot decouples the QP if all 3xR derivatives are fixed
     BoolKnot KnotFullyPinned = BoolKnot::Constant(nKnots, false);
     for (int k = 1; k <= nKnots; ++k) {
-        SlabT block;
-        getSlab(FixCg, k, r, block);
-        V1(KnotFullyPinned, k) = (!block.array().isNaN()).all();
+        SlabMaskT blockFixed;
+        getSlab(FixCgFixed, k, r, blockFixed);
+        V1(KnotFullyPinned, k) = blockFixed.all(); // NO-NAN: all(~isnan(block))
     }
 
     IntSeg LegStartSeg = IntSeg::Zero(MAX_SEG);
@@ -271,6 +311,7 @@ PolyQPStatus resolveWaypoints(const TOADWaypointArray &Waypoints, const LimitsT 
     Plan.KnotCount = nKnots;
     Plan.SegCount = nSegs;
     Plan.FixCg = FixCg;
+    Plan.FixCgFixed = FixCgFixed;
     Plan.KnotIsRest = KnotIsRest;
     Plan.SegT = SegT;
     Plan.IsHold = IsHold;
@@ -282,23 +323,31 @@ PolyQPStatus resolveWaypoints(const TOADWaypointArray &Waypoints, const LimitsT 
     Plan.LegEndSeg = LegEndSeg;
     Plan.HDGRef = hdg0;
     Plan.B3BC = B3Knot; // FIX-F03: per-knot attitude for the P-space BC
+    Plan.B3Fixed = B3KnotFixed;
     Plan.B3DotBC = B3DotKnot; // FIX-F03: per-knot attitude rate for the P-space BC
+    Plan.B3DotFixed = B3DotKnotFixed;
     return PolyQPStatus::Ok;
 }
 
-static PolyQPStatus wpToFix(const TOADWaypointT &wp, int r, SlabT &slab, bool &isRest) {
+static PolyQPStatus wpToFix(const TOADWaypointT &wp, int r, SlabT &slab, SlabMaskT &slabFixed, bool &isRest) {
     // Convert TOADWaypoint to 3 x r boundary condition slab
-    slab.setConstant(3, r, NaN());
+    slab.setZero(3, r);
+    slabFixed.setConstant(3, r, false); // NO-NAN: nan(3, r)
     Col1(slab, 1) = wp.PosBC;
+    Col1(slabFixed, 1) = wp.PosFixed;
     Col1(slab, 2) = wp.VelBC;
+    Col1(slabFixed, 2) = wp.VelFixed;
     Col1(slab, 3) = wp.AccelBC;
+    Col1(slabFixed, 3) = wp.AccelFixed;
     Col1(slab, 4) = wp.JerkBC; // ASTRA-ONLY: r = 5 >= 4 always
+    Col1(slabFixed, 4) = wp.JerkFixed;
     isRest = !wp.IsPassAndGo;
     if (isRest) {
         for (int k = 2; k <= r; ++k) {
             for (int d = 1; d <= 3; ++d) {
-                if (std::isnan(M1(slab, d, k))) {
+                if (!M1(slabFixed, d, k)) { // NO-NAN: isnan(slab(d, k))
                     M1(slab, d, k) = 0;
+                    M1(slabFixed, d, k) = true;
                 }
             }
         }
@@ -306,41 +355,50 @@ static PolyQPStatus wpToFix(const TOADWaypointT &wp, int r, SlabT &slab, bool &i
     return PolyQPStatus::Ok;
 }
 
-static SlabT makeCruiseKnot(const Vec3 &pos, const Vec3 &v_cruise, int r) {
+static void makeCruiseKnot(const Vec3 &pos, const Vec3 &v_cruise, int r, SlabT &slab, SlabMaskT &slabFixed) {
     // Build fully-pinned constant-velocity transition knot
-    SlabT slab = SlabT::Zero(3, r);
+    slab.setZero(3, r);
+    slabFixed.setConstant(3, r, true);
     Col1(slab, 1) = pos;
     Col1(slab, 2) = v_cruise;
-    return slab;
 }
 
-static SlabT pinTransverse(SlabT slab, const Vec3 &dp, int r) {
+static void pinTransverse(SlabT &slab, SlabMaskT &slabFixed, const Vec3 &dp, int r) {
     // Pin derivatives >= 1 to zero on axes transverse to straight-line displacement
     for (int d = 1; d <= 3; ++d) {
         if (std::fabs(V1(dp, d)) < Real(1e-6)) {
             for (int k = 2; k <= r; ++k) {
-                if (std::isnan(M1(slab, d, k))) {
+                if (!M1(slabFixed, d, k)) { // NO-NAN: isnan(slab(d, k))
                     M1(slab, d, k) = 0;
+                    M1(slabFixed, d, k) = true;
                 }
             }
         }
     }
-    return slab;
 }
 
-static Real initSingleSegTime(const Vec3 &dp, const Vec3 &vA, const Vec3 &vB, const Vec3 &v_max, const Vec3 &a_max, int r, Real MinSegTime) {
+static Real initSingleSegTime(const Vec3 &dp, const Vector3b &dpFixed, const Vec3 &vA, const Vector3b &vAFixed, const Vec3 &vB, const Vector3b &vBFixed,
+                              const Vec3 &v_max, const Vec3 &a_max, int r, Real MinSegTime) {
     // Kinematic duration initializer for a single polynomial segment
     (void)r;
     const Real c_v = Real(315) / Real(128); // ASTRA-ONLY: the r = 5 branch; the r = 3, 4, 6 branches were removed
     const Real c_a = Real(9.3720);
 
+    // NO-NAN: dp_abs(isnan(dp_abs)) = 0 is "use 0 where dp is not fixed"
     Vec3 dp_abs = mabs(dp);
     for (int i = 1; i <= 3; ++i) {
-        if (std::isnan(V1(dp_abs, i))) V1(dp_abs, i) = 0;
+        if (!V1(dpFixed, i)) V1(dp_abs, i) = 0;
     }
-    Vec3 dv_abs = mmax(mabs(vA), mabs(vB));
+    // NO-NAN: max(abs(vA), abs(vB)) ignores a NaN operand and dv_abs(isnan(dv_abs)) = 0: the larger of the fixed ends, 0 if neither is fixed
+    Vec3 dv_abs = Vec3::Zero();
     for (int i = 1; i <= 3; ++i) {
-        if (std::isnan(V1(dv_abs, i))) V1(dv_abs, i) = 0;
+        if (V1(vAFixed, i) && V1(vBFixed, i)) {
+            V1(dv_abs, i) = std::max(std::fabs(V1(vA, i)), std::fabs(V1(vB, i)));
+        } else if (V1(vAFixed, i)) {
+            V1(dv_abs, i) = std::fabs(V1(vA, i));
+        } else if (V1(vBFixed, i)) {
+            V1(dv_abs, i) = std::fabs(V1(vB, i));
+        }
     }
 
     const Real T_v = maxv((c_v * (dp_abs.array() / v_max.array())).matrix());

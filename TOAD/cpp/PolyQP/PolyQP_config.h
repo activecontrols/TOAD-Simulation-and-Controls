@@ -1,10 +1,8 @@
 // PolyQP transpile support header (capacities) for TOAD/Guidance/PolynomialQP @ 5ac6bd23
 #pragma once
 
-// TRANSPILE-FLAG F26: __FINITE_MATH_ONLY__ is predefined as 0 by GCC/Clang in IEEE builds, so the guard tests its value, not only defined(). Transpiled as-is per MATLAB.
-#if defined(__FAST_MATH__) || (defined(__FINITE_MATH_ONLY__) && __FINITE_MATH_ONLY__)
-#error "PolyQP requires IEEE NaN/Inf semantics: do not build with -ffast-math / -ffinite-math-only"
-#endif
+// TRANSPILE-FLAG F26 (removed): the -ffast-math / -ffinite-math-only guard is gone with the NaN sentinel (free boundary conditions are boolean masks).
+// The flight build still must not use -ffast-math: -ffp-contract=off and IEEE rounding keep the C++ comparable with the MATLAB (INTEGRATION.md).
 
 #ifndef POLYQP_MAX_WP
 #define POLYQP_MAX_WP 16

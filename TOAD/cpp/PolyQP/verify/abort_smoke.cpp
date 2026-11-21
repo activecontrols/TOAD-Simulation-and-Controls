@@ -113,30 +113,9 @@ int main() {
         failures += ok ? 0 : 1;
     }
 
-    // FIX-F08 fallback: a non-finite estimate and a forced PolyQP error (z0 = 1e300 makes T_m^(1-2r) underflow -> SingularRPP)
-    for (int c = 0; c < 2; ++c) {
-        AbortGuidanceState state;
-        ReportT Report{};
-        AbortXEstT X_est = makeState(3, -2, 10, 1, 0.5, -1);
-        if (c == 0) {
-            X_est(8) = std::numeric_limits<Real>::quiet_NaN();
-        } else {
-            X_est(6) = Real(1e300);
-        }
-        const AbortStatus st = AbortGuidance(Real(2), X_est, state, Time, States, Inputs, Report, Real(1));
-        const Eigen::Index n = States.rows();
-        const bool shapes = Time.size() == n && Inputs.rows() == n && n >= 2;
-        const bool start = shapes && States(0, 4) == X_est(4) && States(0, 5) == X_est(5) && States(0, 6) == X_est(6) && Time(0) == 0;
-        const bool end = shapes && States(n - 1, 6) == 0 && States(n - 1, 9) == 0 && States.allFinite() && Inputs.allFinite();
-        const Eigen::Index n0 = n;
-        const AbortStatus st2 = AbortGuidance(Real(3), X_est, state, Time, States, Inputs, Report, Real(1));
-        const bool once = st2 == AbortStatus::FALLBACK && States.rows() == n0 && state.tAbort == Real(2);
-        const bool ok = st == AbortStatus::FALLBACK && state.abortCalculated && start && end && once;
-        std::printf("fallback (%s): abortStatus=%s planStatus=%s samples=%ld T=%.6g start=%d end-at-rest=%d no-recompute=%d -> %s\n",
-                    c == 0 ? "NaN velocity" : "forced PolyQP error", abortName(st), statusName(state.planStatus), static_cast<long>(n),
-                    shapes ? static_cast<double>(Time(n - 1)) : -1.0, start ? 1 : 0, end ? 1 : 0, once ? 1 : 0, ok ? "PASS" : "FAIL");
-        failures += ok ? 0 : 1;
-    }
+    // FIX-F08 fallback: the former forced-error cases are gone with the finiteness checks (NO-NAN): a NaN estimate is out of
+    // scope, and z0 = 1e300 no longer trips SingularRPP through a non-finite R_PP diagonal. The fallback is exercised through
+    // CapacityExceeded once the capacities are abort-sized (Phase 4) and directly by verify/abort_harness_test.cpp.
 
     std::printf("%s (%d failure(s))\n", failures == 0 ? "SMOKE PASS" : "SMOKE FAIL", failures);
     return failures == 0 ? 0 : 1;

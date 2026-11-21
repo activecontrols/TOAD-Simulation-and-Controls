@@ -219,7 +219,10 @@ function [ok, md] = regF08(ctx)
     st0 = struct('abortCalculated', false, 'tAbort', 0, 'abortStatus', 0);
     stName = {'OK', 'INFEASIBLE_FLOWN', 'FALLBACK'};
 
-    % Path cases: one feasible, one infeasible (first found), forced PolyQP error, non-finite estimate; both vehicles
+    % Path cases: one feasible, one infeasible (first found), and a start beyond the C++ capacity envelope (z0 = 300 m).
+    % NO-NAN: the former "forced PolyQP error (z0 = 1e300)" and "non-finite estimate" paths were removed with the C++
+    % finiteness checks (the estimate is always real). The C++ fallback is reached through CapacityExceeded instead; it
+    % is then compared with MATLAB abortFallback (MATLAB has no capacity limit, so its abort block plans that start).
     rows = {};
     allOk = true;
     for v = 1:numel(ctx.C)
@@ -243,9 +246,8 @@ function [ok, md] = regF08(ctx)
                 break;
             end
         end
-        Xerr = cand{1}; Xerr(7) = 1e300;
-        Xnan = cand{1}; Xnan(8) = NaN;
-        paths = {'feasible', Xok, 0; 'infeasible', Xinf, 1; 'forced PolyQP error (z0 = 1e300)', Xerr, 2; 'non-finite estimate (vx = NaN)', Xnan, 2};
+        Xcap = cand{1}; Xcap(7) = 300;
+        paths = {'feasible', Xok, 0; 'infeasible', Xinf, 1; 'start above the C++ capacity envelope (z0 = 300 m)', Xcap, -1};
         for pI = 1:size(paths, 1)
             X_est = paths{pI, 2};
             if isempty(X_est)
@@ -255,25 +257,25 @@ function [ok, md] = regF08(ctx)
                 end
                 continue;
             end
-            idErr = '';
-            if pI == 3
-                try
-                    PolyQP(abortWaypoints(X_est), c, struct('R', 5));
-                catch ME
-                    idErr = ME.identifier;
-                end
-            end
             S1 = AbortGuidance(tFire, X_est, c, ABORT, S0);
             S2 = AbortGuidance(tFire + 1, X_est, c, ABORT, S1);
             [Tm, Sm, Im, tAb, aC, ~, aSt, pst] = polyqp_mex('AbortGuidance', tFire, X_est, c, st0, ABORT);
+            expSt = paths{pI, 3};
+            if expSt < 0
+                if strcmp(pst, 'PolyQP:CapacityExceeded')
+                    % C++ capacity fallback: compare with MATLAB's closed-form fallback for the same start
+                    [S1.Time, S1.States, S1.Inputs] = abortFallback(X_est, c, 1);
+                    S1.abortStatus = 2; S2 = S1; S2.tAbort = tFire; S2.abortCalculated = true;
+                    expSt = 2;
+                else
+                    expSt = S1.abortStatus;   % within the compiled capacities: an ordinary planned path
+                end
+            end
             [Tm2, ~, ~, tAb2, aC2, ~, aSt2] = polyqp_mex('AbortGuidance', tFire + 1, X_est, c, struct('abortCalculated', aC, 'tAbort', tAb, 'abortStatus', aSt), ABORT);
             once = isequal(S2.Time, S1.Time) && isequal(S2.States, S1.States) && S2.tAbort == tFire && S2.abortCalculated ...
                 && isempty(Tm2) && tAb2 == tFire && aC2 && aSt2 == aSt;
-            statusOk = S1.abortStatus == paths{pI, 3} && aSt == S1.abortStatus;
-            if pI == 3
-                statusOk = statusOk && ~isempty(idErr) && strcmp(pst, idErr);
-            end
-            if paths{pI, 3} == 2
+            statusOk = S1.abortStatus == expSt && aSt == S1.abortStatus;
+            if expSt == 2
                 tol = 1e-14; mode = 'rel';
             else
                 tol = 1e-6; mode = 'abs';
@@ -281,12 +283,12 @@ function [ok, md] = regF08(ctx)
             [ok1, e1] = cmpN(S1.Time, Tm, mode); [ok2, e2] = cmpN(S1.States, Sm, mode); [ok3, e3] = cmpN(S1.Inputs, Im, mode);
             e = max([e1, e2, e3]);
             par = ok1 && ok2 && ok3 && e <= tol;
-            if ~par && ok1 && ok2 && ok3 && paths{pI, 3} == 2
+            if ~par && ok1 && ok2 && ok3 && expSt == 2
                 par = e <= 10 * fallbackFloor(S1.Time, S1.States, X_est);
             end
             geo = true;
             gs = '-';
-            if paths{pI, 3} == 2
+            if expSt == 2
                 [geo, gs] = fallbackGeometry(S1, X_est, 1);
             end
             okRow = once && statusOk && par && geo;
@@ -304,8 +306,8 @@ function [ok, md] = regF08(ctx)
     % Fallback geometry and closed-form parity over the frozen case set (+ edge cases)
     nG = 0; nGok = 0; eMax = 0; worst = ''; nMiss = 0; ratioMax = 0;
     A = ctx.B.caseLog.abort;
-    extra = {[1; 0; 0; 0; 0; 0; 0; 0; 0; 0; 0; 0; 0; 0; 0], [1; 0; 0; 0; 1; 2; -0.3; 0; 0; 0; 0; 0; 0; 0; 0], [1; 0; 0; 0; 1; 2; 300; 0; 0; 0; 0; 0; 0; 10; 5], ...
-        [1; 0; 0; 0; NaN; Inf; NaN; 0; 0; 0; 0; 0; 0; NaN; NaN]};
+    % NO-NAN: the non-finite edge case was removed with the C++ finiteness checks
+    extra = {[1; 0; 0; 0; 0; 0; 0; 0; 0; 0; 0; 0; 0; 0; 0], [1; 0; 0; 0; 1; 2; -0.3; 0; 0; 0; 0; 0; 0; 0; 0], [1; 0; 0; 0; 1; 2; 300; 0; 0; 0; 0; 0; 0; 10; 5]};
     for i = 1:(numel(A) + numel(extra))
         if i <= numel(A)
             X_est = A{i}.X_est; v = A{i}.veh;
@@ -331,8 +333,8 @@ function [ok, md] = regF08(ctx)
         nGok = nGok + (geo && par && isempty(stF));
     end
     okG = nGok == nG;
-    L{end + 1} = sprintf(['\n`abortFallback` on all %d frozen abort states plus %d edge cases (on the ground, below ground, 300 m, non-finite position and propellant): geometry and parity hold in %d of %d. ' ...
-        'Geometry = starts at the estimated position (exactly), velocity zero at both ends, ends at z = 0 exactly, |vz| <= the 1 m/s cap, consecutive samples within cap x dt, attitude upright, hover thrust, all finite (non-finite inputs replaced as documented). ' ...
+    L{end + 1} = sprintf(['\n`abortFallback` on all %d frozen abort states plus %d edge cases (on the ground, below ground, 300 m with propellant): geometry and parity hold in %d of %d. ' ...
+        'Geometry = starts at the estimated position (exactly), velocity zero at both ends, ends at z = 0 exactly, |vz| <= the 1 m/s cap, consecutive samples within cap x dt, attitude upright, hover thrust, all finite. ' ...
         'Max MATLAB vs C++ relative error: %.2e (at %s). %d cases miss the closed-form tier (rel 1e-14): the profile 126 tau^5 - 420 tau^6 + ... cancels terms of size ~1e3 to a value <= 1, so a few hundred ulps of rounding are expected; ' ...
         'each miss is accepted only within 10 x MATLAB''s own error against the same profile in 60-digit `vpa` (max err / floor = %.2f).\n'], numel(A), numel(extra), nGok, nG, eMax, worst, nMiss, ratioMax);
     ok = allOk && okG;
