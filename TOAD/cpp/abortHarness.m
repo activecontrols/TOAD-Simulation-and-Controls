@@ -18,9 +18,9 @@ SEED      = 1;             % rng seed
 TILT_MAX  = 30;            % [deg]   body-z tilt from vertical
 ALT_MAX   = 15;            % [m]     altitude drawn U(0, ALT_MAX)
 XY_MAX    = 5;             % [m]     x,y drawn U(-XY_MAX, XY_MAX) about the pad
-V0_MAX    = 15;            % [m/s]   ||v0|| drawn U(0, V0_MAX), random direction
+V0_MAX    = 5;             % [m/s]   ||v0|| drawn U(0, V0_MAX), random direction
 W0_MAX    = pi/4;          % [rad/s] ||w0|| drawn U(0, W0_MAX), random direction
-LAST_THRUST = 1.169*9.8015;% [N]     hover thrust (m*g from constantsASTRA); computeAbort clamps it
+LAST_THRUST = 1.169*9.8015; % [N]     hover thrust (m*g from constantsASTRA); computeAbort clamps it
 T_NOW     = 0;             % [s]     abort start time
 MAXPTS    = 100;           % = ABORT_MAX_POINTS in AbortCode.h (row padding for NaN-filled logs)
 

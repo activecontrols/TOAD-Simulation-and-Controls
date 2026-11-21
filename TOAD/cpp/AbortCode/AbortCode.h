@@ -11,6 +11,7 @@ constexpr float ABORT_DT_SAMPLE = 0.2f;
 constexpr int ABORT_MAX_POINTS = 100;         
 constexpr float ABORT_MIN_SEG_TIME = 0.2f;    
 constexpr float ABORT_MAX_T1 = 15.0f;         
+constexpr float ABORT_MAX_T_ARREST = 5.0f;
 constexpr int ABORT_MAX_DILATE_ITERS = 10;    // Iterations for time allocation
 constexpr int ABORT_EVAL_GRID = 41;           
 

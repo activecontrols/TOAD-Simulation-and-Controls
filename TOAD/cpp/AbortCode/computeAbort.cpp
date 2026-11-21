@@ -122,24 +122,23 @@ static float solveThrustFloorStretch(const Vector3 &a, const Vector3 &G_vec, flo
     return 0.0f;
 }
 
-// Minimum-crackle free lateral pad target (c9 = 0), clamped within ABORT_R_MAX
-static Vector2 computePadTargetXY(const Matrix3_5 &bc0_P, const Vector3 &r0, float T1) {
-    float T1_2 = T1 * T1;
-    float T1_3 = T1_2 * T1;
+// Minimum-crackle free 3D arrest target (c9 = 0), XY clamped within ABORT_R_MAX and Z floored at ground
+static Vector3 computeArrestTarget(const Matrix3_5 &bc0_P, const Vector3 &r0, float T0, float rho) {
+    float T0_2 = T0 * T0;
+    float T0_3 = T0_2 * T0;
 
-    Vector2 P0_xy = bc0_P.block<2, 1>(0, 0);
-    Vector2 v0_xy = bc0_P.block<2, 1>(0, 1);
-    Vector2 a0_xy = bc0_P.block<2, 1>(0, 2);
-    Vector2 j0_xy = bc0_P.block<2, 1>(0, 3);
+    Vector3 P_free = bc0_P.col(0)
+                   + 0.5f * bc0_P.col(1) * T0
+                   + (3.0f / 28.0f) * bc0_P.col(2) * T0_2
+                   + (1.0f / 84.0f) * bc0_P.col(3) * T0_3;
 
-    Vector2 P_pad_xy = P0_xy + 0.5f * v0_xy * T1 + (3.0f / 28.0f) * a0_xy * T1_2 + (1.0f / 84.0f) * j0_xy * T1_3;
-
-    Vector2 offset_cg = P_pad_xy - r0.head<2>();
+    Vector2 offset_cg = P_free.head<2>() - r0.head<2>();
     float dist = offset_cg.norm();
     if (dist > ABORT_R_MAX) {
         offset_cg *= (ABORT_R_MAX / dist);
     }
-    return r0.head<2>() + offset_cg;
+    float z_arrest = fmaxf(0.0f, P_free(2) - rho);
+    return Vector3(r0(0) + offset_cg(0), r0(1) + offset_cg(1), z_arrest + rho);
 }
 
 // Eval of Segment 1 velocity, actuator, and tilt limits, returns dilation factor for time 
@@ -224,36 +223,23 @@ void computeAbort(float t_now, const Vector15 &X_est, float last_thrust, const c
     bc0_P.col(3) = (T0 / constants.m) * b3_dot;
     bc0_P.col(4) = Vector3::Zero();
 
-    // Direct to ground below 1m, Pad hover when above 1m.
+    // 3-segment abort: Arrest hover -> rest-to-rest to 1 m -> rest-to-rest to ground
     constexpr float c_v = 315.0f / 128.0f;
     constexpr float c_a = 9.3720f;
 
-    int num_segs = 2;
-    float z_target1 = ABORT_HOVER_ALT;
-    float T2 = fmaxf(ABORT_MIN_SEG_TIME, c_v * (ABORT_HOVER_ALT / ABORT_LAND_VEL_Z));
-    if (r0(2) <= ABORT_HOVER_ALT) {
-        num_segs = 1;
-        z_target1 = 0.0f;
-        T2 = 0.0f;
-    }
-
-    // Time initialization 
+    // Time initialization (arrest only, decoupled from altitude drop)
     float a_up_lim = fmaxf(0.30f, 0.80f * (T_hi / constants.m - constants.g));
     float a_dn_lim = fmaxf(0.30f, 0.80f * (constants.g - T_lo / constants.m));
     float a_z_init = fminf(ABORT_DEF_ACCEL_Z, fminf(a_up_lim, a_dn_lim));
     Vector3 a_init(ABORT_DEF_ACCEL_XY, ABORT_DEF_ACCEL_XY, a_z_init);
-    Vector3 v_max(ABORT_MAX_VEL_XY, ABORT_MAX_VEL_XY, ABORT_MAX_VEL_Z);
 
-    float dz_abs = fabsf(z_target1 - r0(2));
-    float T_v = c_v * (dz_abs / v_max(2));
-    float T_a = sqrtf(c_a * (dz_abs / a_init(2)));
     float T_dv = fmaxf(
         c_v * (fabsf(v0(0)) / a_init(0)),
         fmaxf(c_v * (fabsf(v0(1)) / a_init(1)), c_v * (fabsf(v0(2)) / a_init(2)))
     );
-    float T1 = fmaxf(ABORT_MIN_SEG_TIME, fminf(ABORT_MAX_T1, fmaxf(T_v, fmaxf(T_a, T_dv))));
+    float T_arr = fmaxf(0.4f, fminf(ABORT_MAX_T_ARREST, 0.5f * T_dv));
 
-    // Solve Segment 1 with time dilation
+    // Solve Segment 0 (Arrest) with time dilation
     Vector3 v_cap(
         fmaxf(ABORT_MAX_VEL_XY, fabsf(v0(0))),
         fmaxf(ABORT_MAX_VEL_XY, fabsf(v0(1))),
@@ -262,58 +248,83 @@ void computeAbort(float t_now, const Vector15 &X_est, float last_thrust, const c
     float tilt0 = acosf(fmaxf(-1.0f, fminf(1.0f, b3(2))));
     float tilt_cap = fmaxf(ABORT_MAX_TILT_RAD, tilt0);
 
-    Vector2 pad_xy = Vector2::Zero();
-    Vector3 P1 = Vector3::Zero();
-    Matrix3_10 coef1 = Matrix3_10::Zero();
+    Vector3 P0 = Vector3::Zero();
+    Matrix3_10 coef0 = Matrix3_10::Zero();
 
     float best_s = 1e9f;
-    float best_T1 = T1;
+    float best_T_arr = T_arr;
     int stall_count = 0;
 
     // Time dilation loop
     for (int iter = 0; iter <= ABORT_MAX_DILATE_ITERS; ++iter) {
-        pad_xy = computePadTargetXY(bc0_P, r0, T1);
-        P1 = Vector3(pad_xy(0), pad_xy(1), z_target1 + rho);
-        coef1 = solveRestSegment(bc0_P, P1, T1);
+        P0 = computeArrestTarget(bc0_P, r0, T_arr, rho);
+        coef0 = solveRestSegment(bc0_P, P0, T_arr);
 
-        float s_req = evaluateSegment1Dilation(coef1, T1, rho, v_cap, tilt_cap, q_est, constants);
+        float s_req = evaluateSegment1Dilation(coef0, T_arr, rho, v_cap, tilt_cap, q_est, constants);
         if (iter == 0 || s_req < best_s - 1e-4f) {
             best_s = s_req;
-            best_T1 = T1;
+            best_T_arr = T_arr;
             stall_count = 0;
         } else {
             ++stall_count;
         }
 
-        if (s_req <= 1.001f || T1 >= ABORT_MAX_T1 || iter == ABORT_MAX_DILATE_ITERS || stall_count >= 2) {
-            if (s_req > 1.001f && best_T1 != T1) {
-                T1 = best_T1;
-                pad_xy = computePadTargetXY(bc0_P, r0, T1);
-                P1 = Vector3(pad_xy(0), pad_xy(1), z_target1 + rho);
-                coef1 = solveRestSegment(bc0_P, P1, T1);
-            }
+        if (s_req <= 1.001f || T_arr >= ABORT_MAX_T_ARREST || iter == ABORT_MAX_DILATE_ITERS || stall_count >= 2) {
             break;
         }
 
         float s_apply = fminf(2.0f, 1.02f * s_req);
-        float next_T1 = fminf(ABORT_MAX_T1, T1 * s_apply);
-        if (next_T1 <= T1 + 1e-4f) {
+        float next_T_arr = fminf(ABORT_MAX_T_ARREST, T_arr * s_apply);
+        if (next_T_arr <= T_arr + 1e-4f) {
             break;
         }
-        T1 = next_T1;
+        T_arr = next_T_arr;
     }
 
-    // Solve Segment 2 if available
-    Matrix3_10 coef2 = Matrix3_10::Zero();
-    if (num_segs == 2) {
-        Matrix3_5 bc1_P = Matrix3_5::Zero();
-        bc1_P.col(0) = P1;
-        Vector3 P2(pad_xy(0), pad_xy(1), rho);
-        coef2 = solveRestSegment(bc1_P, P2, T2);
+    // Restore best iterate regardless of how dilation exited
+    if (best_T_arr != T_arr) {
+        T_arr = best_T_arr;
+        P0 = computeArrestTarget(bc0_P, r0, T_arr, rho);
+        coef0 = solveRestSegment(bc0_P, P0, T_arr);
+    }
+
+    // Assemble 1-3 segments: Arrest -> 1 m hover -> 0 m ground
+    Matrix3_10 seg_coef[3];
+    float seg_T[3];
+    int num_segs = 0;
+
+    seg_coef[num_segs] = coef0;
+    seg_T[num_segs++]  = T_arr;
+
+    Vector3 P_cur = P0;
+    float z_cur = P_cur(2) - rho;
+
+    if (z_cur > ABORT_HOVER_ALT + 1e-3f) {
+        float dz = z_cur - ABORT_HOVER_ALT;
+        float T1 = fmaxf(ABORT_MIN_SEG_TIME, fmaxf(c_v * (dz / ABORT_MAX_VEL_Z), sqrtf(c_a * (dz / a_z_init))));
+        Matrix3_5 bc = Matrix3_5::Zero();
+        bc.col(0) = P_cur;
+        Vector3 P1(P_cur(0), P_cur(1), ABORT_HOVER_ALT + rho);
+        seg_coef[num_segs] = solveRestSegment(bc, P1, T1);
+        seg_T[num_segs++]  = T1;
+        P_cur = P1;
+        z_cur = ABORT_HOVER_ALT;
+    }
+
+    if (z_cur > 1e-3f) {
+        float T2 = fmaxf(ABORT_MIN_SEG_TIME, fmaxf(c_v * (z_cur / ABORT_LAND_VEL_Z), sqrtf(c_a * (z_cur / a_z_init))));
+        Matrix3_5 bc = Matrix3_5::Zero();
+        bc.col(0) = P_cur;
+        Vector3 P2(P_cur(0), P_cur(1), rho);
+        seg_coef[num_segs] = solveRestSegment(bc, P2, T2);
+        seg_T[num_segs++]  = T2;
     }
 
     // Sample trajectory on grid 
-    float T_total = T1 + T2;
+    float T_total = 0.0f;
+    for (int s = 0; s < num_segs; ++s) {
+        T_total += seg_T[s];
+    }
     int Nc = static_cast<int>(ceilf(T_total / ABORT_DT_SAMPLE));
     if (Nc < 1) {
         Nc = 1;
@@ -330,12 +341,21 @@ void computeAbort(float t_now, const Vector15 &X_est, float last_thrust, const c
         traj.time[k] = t_now + t_rel;
 
         Vector3 P_pos, P_vel, P_acc, P_jerk, P_snap;
-        if (num_segs == 1 || t_rel <= T1) {
-            float tau = t_rel / T1;
-            evalSegmentDerivs(coef1, T1, tau, P_pos, P_vel, P_acc, P_jerk, P_snap);
+        if (k == Nn - 1) {
+            P_pos = Vector3(P0(0), P0(1), rho);
+            P_vel = Vector3::Zero();
+            P_acc = Vector3::Zero();
+            P_jerk = Vector3::Zero();
+            P_snap = Vector3::Zero();
         } else {
-            float tau = (t_rel - T1) / T2;
-            evalSegmentDerivs(coef2, T2, tau, P_pos, P_vel, P_acc, P_jerk, P_snap);
+            float t_seg = t_rel;
+            int s = 0;
+            while (s < num_segs - 1 && t_seg > seg_T[s]) {
+                t_seg -= seg_T[s];
+                ++s;
+            }
+            float tau = t_seg / seg_T[s];
+            evalSegmentDerivs(seg_coef[s], seg_T[s], tau, P_pos, P_vel, P_acc, P_jerk, P_snap);
         }
 
         Vector15 X_k;
