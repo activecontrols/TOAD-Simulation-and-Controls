@@ -3,40 +3,43 @@
 
 namespace PolyQP {
 
+static_assert(PolyQPCapacity::m == ASTRA::m_dry && PolyQPCapacity::g == ASTRA::g && PolyQPCapacity::MaxThrust == ASTRA::MaxThrust,
+              "STATIC: the grid capacity derivation in PolyQP_config.h must use the ASTRA constants");
+
 PolyQPStatus buildVehicleLimits(LimitsT &Limits) {
     // Build Vehicle Limits and Flatness Parameters
     // TRANSPILE-FLAG F38 (superseded: ASTRA carries no propellant, FIX-F29): the MATLAB Opts argument (InitOxMass/InitFuMass) and Constants argument are not carried; the constants are ASTRA_PolyQP_Constants.h.
     // Fixed planner constants
-    const Real ThrustMargin = Real(0.10);
-    const Real GimbalMargin = Real(0.10);
-    const Real MaxGimbalAngle = deg2rad(10);
-    const Real MaxGimbalRate = deg2rad(30);
-    const Real MaxRollRate = 5;
-    const Real MaxTilt = deg2rad(30);
-    const Real MinSegTime = Real(0.2);
-    const Real DtSample = Real(0.1);
+    const double ThrustMargin = double(0.10);
+    const double GimbalMargin = double(0.10);
+    const double MaxGimbalAngle = deg2rad(10);
+    const double MaxGimbalRate = deg2rad(30);
+    const double MaxRollRate = 5;
+    const double MaxTilt = deg2rad(30);
+    const double MinSegTime = double(0.2);
+    const double DtSample = double(0.1);
 
     // Vehicle selection
     // ASTRA-ONLY: the vehicle 0 (ASTRA) values; the vehicle 1 (TOAD) branch was removed.
-    const Real MT = ASTRA::MaxThrust;
-    const Real MaxThrustRate = 30;
-    const Real minThrottle = Real(0.25);
-    const Real m_lox0 = 0;
-    const Real m_ipa0 = 0;
-    const Vec3 defAccel = Vec3(Real(2.5), Real(2.5), Real(3.5));
+    const double MT = ASTRA::MaxThrust;
+    const double MaxThrustRate = 30;
+    const double minThrottle = double(0.25);
+    const double m_lox0 = 0;
+    const double m_ipa0 = 0;
+    const Vector3d defAccel = Vector3d(double(2.5), double(2.5), double(3.5));
 
     // Initial mass, inertia, and center of percussion offset
-    const Real m_init = ASTRA::m_dry + m_lox0 + m_ipa0;
-    Mat3 J_init;
-    Real CGz_init;
+    const double m_init = ASTRA::m_dry + m_lox0 + m_ipa0;
+    Matrix3_3d J_init;
+    double CGz_init;
     ComputeJtot(m_lox0, m_ipa0, J_init, CGz_init);
-    const Real rho = M1(J_init, 1, 1) / (m_init * CGz_init);
+    const double rho = M1(J_init, 1, 1) / (m_init * CGz_init);
 
     // Effective actuator bands with controller margins
-    const Real T_lo = (minThrottle + ThrustMargin) * MT;
-    const Real T_hi = (Real(1.00) - ThrustMargin) * MT;
-    const Real gimbalLim = (Real(1.00) - GimbalMargin) * MaxGimbalAngle;
-    const Real rollLim = (Real(1.00) - ThrustMargin) * MaxRollRate;
+    const double T_lo = (minThrottle + ThrustMargin) * MT;
+    const double T_hi = (double(1.00) - ThrustMargin) * MT;
+    const double gimbalLim = (double(1.00) - GimbalMargin) * MaxGimbalAngle;
+    const double rollLim = (double(1.00) - ThrustMargin) * MaxRollRate;
 
     Limits.HasVehicle = true;
     Limits.g = ASTRA::g;

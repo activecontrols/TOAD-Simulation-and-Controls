@@ -32,6 +32,22 @@ for f in "${FLIGHT_SRCS[@]}"; do
 done
 echo "flight-flags build OK (${#FLIGHT_SRCS[@]} translation units)"
 
+echo "== 2b. Static RAM per object (flight-flags build): .bss + .data + common, bytes"
+TOTAL=0
+for f in "${FLIGHT_SRCS[@]}"; do
+    o="$OUT/flight_$(basename "${f%.cpp}").o"
+    if size -m "$o" >/dev/null 2>&1; then
+        # Mach-O (macOS): "Section (__DATA, __bss): N"
+        n=$(size -m "$o" | awk '/__DATA, __(bss|data|common)\)/ {if (match($0, /: [0-9]+/)) s += substr($0, RSTART + 2, RLENGTH - 2)} END {print s + 0}')
+    else
+        # ELF (Linux): Berkeley format data + bss
+        n=$(size "$o" | awk 'NR == 2 {print $2 + $3}')
+    fi
+    printf "  %-28s %8d\n" "$(basename "$o")" "$n"
+    TOTAL=$((TOTAL + n))
+done
+printf "  %-28s %8d  (target <= 262144)\n" "TOTAL" "$TOTAL"
+
 if command -v arm-none-eabi-g++ >/dev/null 2>&1; then
     echo "== 3. Cortex-M7 compile (no link)"
     for f in "${FLIGHT_SRCS[@]}"; do

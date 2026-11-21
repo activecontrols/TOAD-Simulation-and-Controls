@@ -19,7 +19,7 @@ if nargin < 1 || isempty(ids)
 end
 warnState = warning('off', 'all');
 cleanupWarn = onCleanup(@() warning(warnState));
-clear polyqp_mex;
+clear polyqp_mex polyqp_mex_wide;
 
 ctx = struct();
 ctx.here = here;
@@ -88,7 +88,7 @@ function [ok, md] = regF07(ctx)
         catch ME
             idML = ME.identifier;
         end
-        [Cc, Dc, Jc, st] = polyqp_mex('solveLeg', e.FixLeg, e.SegTimes, ctx.A0{r}, ctx.H0{r});
+        [Cc, Dc, Jc, st] = polyqp_mex_wide('solveLeg', e.FixLeg, e.SegTimes, ctx.A0{r}, ctx.H0{r});   % STATIC: baseline legs exceed the abort capacities
         if ~strcmp(idML, st)
             parityFail = parityFail + 1;
         end
@@ -263,8 +263,9 @@ function [ok, md] = regF08(ctx)
             expSt = paths{pI, 3};
             if expSt < 0
                 if strcmp(pst, 'PolyQP:CapacityExceeded')
-                    % C++ capacity fallback: compare with MATLAB's closed-form fallback for the same start
-                    [S1.Time, S1.States, S1.Inputs] = abortFallback(X_est, c, 1);
+                    % C++ capacity fallback: compare with MATLAB's closed-form fallback for the same start, on the C++ grid
+                    % (the flight fallback coarsens its grid to fit the node capacity, F34)
+                    [S1.Time, S1.States, S1.Inputs] = abortFallbackOnGrid(X_est, c, 1, size(Sm, 1));
                     S1.abortStatus = 2; S2 = S1; S2.tAbort = tFire; S2.abortCalculated = true;
                     expSt = 2;
                 else
@@ -315,7 +316,7 @@ function [ok, md] = regF08(ctx)
             X_est = extra{i - numel(A)}; v = 1;
         end
         [T1, S1s, I1] = abortFallback(X_est, ctx.C{v}, 1);
-        [T2, S2s, I2, stF] = polyqp_mex('abortFallback', X_est, ctx.C{v}, 1);
+        [T2, S2s, I2, stF] = polyqp_mex_wide('abortFallback', X_est, ctx.C{v}, 1);   % STATIC: MATLAB's 3999-sample grid (the flight build coarsens long descents, F34)
         [~, e1] = cmpN(T1, T2, 'rel'); [~, e2] = cmpN(S1s, S2s, 'rel'); [~, e3] = cmpN(I1, I2, 'rel');
         e = max([e1, e2, e3]);
         if e > eMax
@@ -340,6 +341,23 @@ function [ok, md] = regF08(ctx)
     ok = allOk && okG;
     L{end + 1} = sprintf('**Result: %s**.\n', passFail(ok));
     md = strjoin(L, newline);
+end
+
+function [Time, States, Inputs] = abortFallbackOnGrid(X_est, Constants, vCapZ, Nn)
+% abortFallback.m evaluated on an Nn-node grid instead of its own (the closed-form profile is exact at any node).
+    T = max(0.2, 315 / 128 * abs(X_est(7)) / vCapZ);
+    t_vec = linspace(0, T, Nn);
+    T_hover = (Constants.m_dry + X_est(14) + X_est(15)) * Constants.g;
+    States = zeros(Nn, 15);
+    for k = 1:Nn
+        tau = t_vec(k) / T;
+        s  = 126 * tau^5 - 420 * tau^6 + 540 * tau^7 - 315 * tau^8 + 70 * tau^9;
+        sd = 630 * tau^4 - 2520 * tau^5 + 3780 * tau^6 - 2520 * tau^7 + 630 * tau^8;
+        States(k, [1, 5, 6, 7, 10, 14, 15]) = [1, X_est(5), X_est(6), X_est(7) - X_est(7) * s, -X_est(7) * sd / T, X_est(14), X_est(15)];
+    end
+    Time = t_vec(:);
+    Inputs = zeros(Nn, 4);
+    Inputs(:, 3) = T_hover;
 end
 
 function fl = fallbackFloor(Time, States, X_est)
@@ -625,7 +643,7 @@ function [ok, md] = regF02(ctx)
                     [att(i), tdir(i), tst(i)] = stepAtAbort(IG, X{i}, c);
                     if pin && i <= 20
                         S1 = AbortGuidance(2, X{i}, c, 1, struct('abortCalculated', false, 'tAbort', 0, 'abortStatus', 0, 'Time', [], 'States', [], 'Inputs', []), 2, true);
-                        [Tm, Sm, Im, ~, ~, ~, aSt] = polyqp_mex('AbortGuidance', 2, X{i}, c, struct('abortCalculated', false, 'tAbort', 0, 'abortStatus', 0), 1, true);
+                        [Tm, Sm, Im, ~, ~, ~, aSt] = polyqp_mex_wide('AbortGuidance', 2, X{i}, c, struct('abortCalculated', false, 'tAbort', 0, 'abortStatus', 0), 1, true);   % STATIC: pinned tilted plans can exceed the abort node capacity
                         if isequal(size(Sm), size(S1.States)) && aSt == S1.abortStatus
                             par = max([par, max(abs(Sm - S1.States), [], 'all'), max(abs(Im - S1.Inputs), [], 'all'), max(abs(Tm - S1.Time))]);
                         else

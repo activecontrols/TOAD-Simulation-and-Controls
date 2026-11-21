@@ -3,54 +3,53 @@
 
 namespace PolyQP {
 
-void abortFallback(const AbortXEstT &X_est, Real vCapZ, AbortTimeT &Time, AbortStatesT &States, AbortInputsT &Inputs) {
+void abortFallback(const Vector15d &X_est, double vCapZ, const NodeSink &Sink) {
     // FIX-F08: Closed-Form Vertical Descent Fallback (cannot fail)
     // FIX-F08: hold the lateral position, descend rest-to-rest from z0 to 0 with the degree-9 (r = 5) profile, all derivatives zero at both ends
-    const Real MinSegTime = Real(0.2);
-    const Real DtSample = Real(0.1);
-    const Real c_v = Real(315) / Real(128);
+    const double MinSegTime = double(0.2);
+    const double DtSample = double(0.1);
+    const double c_v = double(315) / double(128);
 
-    const Real x0 = V1(X_est, 5);
-    const Real y0 = V1(X_est, 6);
-    const Real z0 = V1(X_est, 7);
-    const Real m_lox = V1(X_est, 14);
-    const Real m_ipa = V1(X_est, 15);
+    const double x0 = V1(X_est, 5);
+    const double y0 = V1(X_est, 6);
+    const double z0 = V1(X_est, 7);
+    const double m_lox = V1(X_est, 14);
+    const double m_ipa = V1(X_est, 15);
     // NO-NAN: the MATLAB replacement of non-finite estimates was removed (the estimate is always real)
 
     // FIX-F08: duration from the peak velocity c_v * |z0| / T of the rest-to-rest profile at the vertical cap
-    const Real T = std::max(MinSegTime, c_v * std::abs(z0) / vCapZ);
+    const double T = std::max(MinSegTime, c_v * std::abs(z0) / vCapZ);
 
     // FIX-F08: same output grid as sampleOutputs
-    // TRANSPILE-FLAG F34: the 3999 cap is also clamped to POLYQP_MAX_GRID so the fallback cannot exceed a reduced flight capacity profile (identical to MATLAB at the default capacities).
-    const int Nc = static_cast<int>(std::min(std::min(Real(3999), Real(POLYQP_MAX_GRID)), std::max(Real(1), std::ceil(T / DtSample))));
+    // TRANSPILE-FLAG F34: the 3999 cap is also clamped to the sink capacity (at most POLYQP_MAX_NODES) so the fallback always fits the caller's arrays: a long descent is sampled more coarsely (identical to MATLAB when it fits).
+    const int capNc = std::min(POLYQP_MAX_GRID, Sink.capacity - 1);
+    POLYQP_ASSERT(capNc >= 1);
+    const int Nc = static_cast<int>(std::min(std::min(double(3999), double(capNc)), std::max(double(1), std::ceil(T / DtSample))));
     const int Nn = Nc + 1;
-    static RowGrid t_vec;
-    linspace(0, T, Nn, t_vec);
 
     // FIX-F08: hover feedforward, upright attitude, zero rates, propellant held at the estimate
-    const Real m0 = ASTRA::m_dry + m_lox + m_ipa;
-    const Real T_hover = m0 * ASTRA::g;
+    const double m0 = ASTRA::m_dry + m_lox + m_ipa;
+    const double T_hover = m0 * ASTRA::g;
 
-    States.setZero(Nn, 15);
+    // STREAM: States(k, :), Time(k) and Inputs(k, :) are written row by row into Sink
+    Vector15d States_k = Vector15d::Zero();
+    Vector4d Inputs_k = Vector4d::Zero();
     for (int k = 1; k <= Nn; ++k) {
-        const Real tau = V1(t_vec, k) / T;
-        const Real s = Real(126) * std::pow(tau, Real(5)) - Real(420) * std::pow(tau, Real(6)) + Real(540) * std::pow(tau, Real(7)) -
-                       Real(315) * std::pow(tau, Real(8)) + Real(70) * std::pow(tau, Real(9));
-        const Real sd = Real(630) * std::pow(tau, Real(4)) - Real(2520) * std::pow(tau, Real(5)) + Real(3780) * std::pow(tau, Real(6)) -
-                        Real(2520) * std::pow(tau, Real(7)) + Real(630) * std::pow(tau, Real(8));
-        M1(States, k, 1) = 1;
-        M1(States, k, 5) = x0;
-        M1(States, k, 6) = y0;
-        M1(States, k, 7) = z0 - z0 * s;
-        M1(States, k, 10) = -z0 * sd / T;
-        M1(States, k, 14) = m_lox;
-        M1(States, k, 15) = m_ipa;
-    }
-
-    Time = t_vec(R1(1, Nn)).transpose();
-    Inputs.setZero(Nn, 4);
-    for (int k = 1; k <= Nn; ++k) {
-        M1(Inputs, k, 3) = T_hover;
+        const double t_k = linspaceAt(0, T, Nn, k - 1);
+        const double tau = t_k / T;
+        const double s = double(126) * std::pow(tau, double(5)) - double(420) * std::pow(tau, double(6)) + double(540) * std::pow(tau, double(7)) -
+                         double(315) * std::pow(tau, double(8)) + double(70) * std::pow(tau, double(9));
+        const double sd = double(630) * std::pow(tau, double(4)) - double(2520) * std::pow(tau, double(5)) + double(3780) * std::pow(tau, double(6)) -
+                          double(2520) * std::pow(tau, double(7)) + double(630) * std::pow(tau, double(8));
+        V1(States_k, 1) = 1;
+        V1(States_k, 5) = x0;
+        V1(States_k, 6) = y0;
+        V1(States_k, 7) = z0 - z0 * s;
+        V1(States_k, 10) = -z0 * sd / T;
+        V1(States_k, 14) = m_lox;
+        V1(States_k, 15) = m_ipa;
+        V1(Inputs_k, 3) = T_hover;
+        Sink.put(Sink.ctx, k, t_k, States_k, Inputs_k);
     }
 }
 

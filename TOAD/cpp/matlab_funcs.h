@@ -132,6 +132,41 @@ using Vector4d = Eigen::Matrix<double, 4, 1>;
 using Matrix3_3d = Eigen::Matrix<double, 3, 3>;
 using Vector3b = Eigen::Matrix<bool, 3, 1>; // "fixed" mask of a 3-vector boundary condition (replaces the MATLAB NaN = free sentinel)
 
+// PolyQP fixed-size types: every array of the abort solver, fully fixed-size (no Eigen::Dynamic). Suffix d = double,
+// b = bool, i = int. A letter instead of a number is a capacity from PolyQP/PolyQP_config.h: S = POLYQP_MAX_SEG segments,
+// K = POLYQP_MAX_KNOTS knots, NV = POLYQP_MAX_NV (r x K) endpoint derivatives, F = POLYQP_MAX_FREE free unknowns,
+// N = POLYQP_MAX_NODES output nodes. The runtime size travels as an int count next to the array.
+#include "PolyQP/PolyQP_config.h"
+using Vector5d = Eigen::Matrix<double, 5, 1>;
+using Vector9d = Eigen::Matrix<double, 9, 1>;
+using Vector10d = Eigen::Matrix<double, 10, 1>;
+using Vector15d = Eigen::Matrix<double, 15, 1>;
+using Matrix3_5d = Eigen::Matrix<double, 3, 5>;
+using Matrix3_5b = Eigen::Matrix<bool, 3, 5>;
+using Matrix5_5d = Eigen::Matrix<double, 5, 5>;
+using Matrix5_10d = Eigen::Matrix<double, 5, 10>;
+using Matrix10_10d = Eigen::Matrix<double, 10, 10>;
+using Matrix1_Sd = Eigen::Matrix<double, 1, POLYQP_MAX_SEG>;
+using VectorSd = Eigen::Matrix<double, POLYQP_MAX_SEG, 1>;
+using Matrix3_Sd = Eigen::Matrix<double, 3, POLYQP_MAX_SEG>;
+using Matrix9_Sd = Eigen::Matrix<double, 9, POLYQP_MAX_SEG>;
+using Array1_Sb = Eigen::Array<bool, 1, POLYQP_MAX_SEG>;
+using Array1_Si = Eigen::Array<int, 1, POLYQP_MAX_SEG>;
+using Matrix1_Kd = Eigen::Matrix<double, 1, POLYQP_MAX_KNOTS>;
+using Matrix3_Kd = Eigen::Matrix<double, 3, POLYQP_MAX_KNOTS>;
+using Array1_Kb = Eigen::Array<bool, 1, POLYQP_MAX_KNOTS>;
+using Array3_Kb = Eigen::Array<bool, 3, POLYQP_MAX_KNOTS>;
+using MatrixNV_NVd = Eigen::Matrix<double, POLYQP_MAX_NV, POLYQP_MAX_NV>;
+using VectorNVd = Eigen::Matrix<double, POLYQP_MAX_NV, 1>;
+using VectorNVb = Eigen::Matrix<bool, POLYQP_MAX_NV, 1>;
+using MatrixF_Fd = Eigen::Matrix<double, POLYQP_MAX_FREE, POLYQP_MAX_FREE>;
+using VectorFd = Eigen::Matrix<double, POLYQP_MAX_FREE, 1>;
+using MatrixF_NVd = Eigen::Matrix<double, POLYQP_MAX_FREE, POLYQP_MAX_NV>;
+using Matrix1_Nd = Eigen::Matrix<double, 1, POLYQP_MAX_NODES>;
+using Matrix3_Nd = Eigen::Matrix<double, 3, POLYQP_MAX_NODES>;
+using Matrix4_Nd = Eigen::Matrix<double, 4, POLYQP_MAX_NODES>;
+using Matrix15_Nd = Eigen::Matrix<double, 15, POLYQP_MAX_NODES>;
+
 // Verification-only index checks (-DPOLYQP_DEBUG_BOUNDS); compiled out in flight builds.
 #if defined(POLYQP_DEBUG_BOUNDS)
 using BoundsHookT = void (*)(const char *file, int line);
@@ -200,6 +235,14 @@ template <typename T, int D1, int D2, int D3> struct Array3 {
         return data[(i - 1) + n1 * ((j - 1) + n2 * (k - 1))];
     }
 };
+
+// PolyQP 3-D boundary-condition and coefficient arrays (MATLAB 3 x r x K, 3 x 6 x K, nc x M x 3, nc x nc x M), fixed capacity.
+using Array3_5_Kd = Array3<double, 3, POLYQP_MAX_R, POLYQP_MAX_KNOTS>;   // FixCg, FixP, FixLeg, Deriv
+using Array3_5_Kb = Array3<bool, 3, POLYQP_MAX_R, POLYQP_MAX_KNOTS>;     // their "fixed" masks
+using Array3_6_Kd = Array3<double, 3, 6, POLYQP_MAX_KNOTS>;              // QPTraj.Fix (MATLAB FixOut = nan(3, 6, MAX_KNOTS))
+using Array3_6_Kb = Array3<bool, 3, 6, POLYQP_MAX_KNOTS>;                // its mask
+using Array10_S_3d = Array3<double, POLYQP_MAX_NC, POLYQP_MAX_SEG, 3>;   // Coef
+using Array10_10_Sd = Array3<double, POLYQP_MAX_NC, POLYQP_MAX_NC, POLYQP_MAX_SEG>; // per-segment Hessians (solveLeg)
 
 // 1-based element access A(i, j) / v(i), MATLAB-style
 template <typename Derived> inline typename Derived::Scalar &M1(Eigen::DenseBase<Derived> &A, int i, int j) {
@@ -345,27 +388,27 @@ inline double minv(std::initializer_list<double> v) {
     return m;
 }
 
-// MATLAB max(X, [], 1) / max(X, [], 2)
+// MATLAB max(X, [], 1) / max(X, [], 2). STATIC: y is fixed-size; only its first X.cols() (X.rows()) entries are written.
 template <typename Derived, typename Out> inline void maxDim1(const Eigen::DenseBase<Derived> &X, Out &y) {
-    y.resize(1, X.cols());
+    POLYQP_ASSERT(y.size() >= X.cols());
     for (Eigen::Index j = 0; j < X.cols(); ++j) {
         double m = X.derived().coeff(0, j);
         for (Eigen::Index i = 1; i < X.rows(); ++i) {
             const double x = X.derived().coeff(i, j);
             if (x > m) m = x;
         }
-        y(0, j) = m;
+        y(j) = m;
     }
 }
 template <typename Derived, typename Out> inline void maxDim2(const Eigen::DenseBase<Derived> &X, Out &y) {
-    y.resize(X.rows(), 1);
+    POLYQP_ASSERT(y.size() >= X.rows());
     for (Eigen::Index i = 0; i < X.rows(); ++i) {
         double m = X.derived().coeff(i, 0);
         for (Eigen::Index j = 1; j < X.cols(); ++j) {
             const double x = X.derived().coeff(i, j);
             if (x > m) m = x;
         }
-        y(i, 0) = m;
+        y(i) = m;
     }
 }
 
@@ -379,21 +422,11 @@ template <typename Derived> inline double sumv(const Eigen::DenseBase<Derived> &
 template <typename Derived> inline double mean(const Eigen::DenseBase<Derived> &v) { return sumv(v) / double(v.size()); }
 
 template <typename Derived, typename Out> inline void cumsum(const Eigen::DenseBase<Derived> &v, Out &y) {
-    POLYQP_ASSERT(v.rows() == 1 || v.cols() == 1);
-    y.resize(v.rows(), v.cols());
+    POLYQP_ASSERT((v.rows() == 1 || v.cols() == 1) && y.size() >= v.size());
     double s = 0.0;
     for (Eigen::Index i = 0; i < v.size(); ++i) {
         s = s + v.derived().coeff(i);
         y(i) = s;
-    }
-}
-
-// MATLAB diff(U, 1, 2)
-template <typename Derived, typename Out> inline void diff_dim2(const Eigen::DenseBase<Derived> &U, Out &y) {
-    const Eigen::Index nc = std::max<Eigen::Index>(0, U.cols() - 1);
-    y.resize(U.rows(), nc);
-    for (Eigen::Index j = 0; j < nc; ++j) {
-        for (Eigen::Index i = 0; i < U.rows(); ++i) y(i, j) = U.derived().coeff(i, j + 1) - U.derived().coeff(i, j);
     }
 }
 
@@ -412,45 +445,30 @@ inline Vector3d mcross(const Vector3d &a, const Vector3d &b) {
     return Vector3d(c1, c2, c3);
 }
 
-// MATLAB linspace(d1, d2, n), including MATLAB's symmetric and overflow branches
-template <typename Out> inline void linspace(double d1, double d2, int n, Out &y) {
+// MATLAB linspace(d1, d2, n), including MATLAB's symmetric and overflow branches. linspaceAt returns element i (0-based)
+// exactly as the full vector would hold it, so a grid can be streamed without being stored (STREAM).
+inline double linspaceAt(double d1, double d2, int n, int i) {
     const int n1 = n - 1;
-    y.resize(1, std::max(0, n));
     if (d1 == -d2 && n > 2) {
-        for (int i = 0; i < n; ++i) y(i) = double(-n1 + 2 * i) * (d2 / double(n1));
-        y(0) = d1;
-        y(n - 1) = d2;
-        if (n1 % 2 == 0) {
-            y(n1 / 2) = 0.0;
-        }
-    } else {
-        const double c = (d2 - d1) * double(n1 - 1);
-        if (std::isinf(c)) {
-            if (std::isinf(d2 - d1)) {
-                for (int i = 0; i < n; ++i) y(i) = d1 + (d2 / double(n1)) * double(i) - (d1 / double(n1)) * double(i);
-            } else {
-                for (int i = 0; i < n; ++i) y(i) = d1 + double(i) * ((d2 - d1) / double(n1));
-            }
-        } else {
-            for (int i = 0; i < n; ++i) y(i) = d1 + double(i) * (d2 - d1) / double(n1);
-        }
-        if (n > 0) {
-            if (n == 1) {
-                y(0) = d2;
-            } else if (d1 == d2) {
-                for (int i = 0; i < n; ++i) y(i) = d1;
-            } else {
-                y(0) = d1;
-                y(n - 1) = d2;
-            }
-        }
+        if (i == 0) return d1;
+        if (i == n - 1) return d2;
+        if (n1 % 2 == 0 && i == n1 / 2) return 0.0;
+        return double(-n1 + 2 * i) * (d2 / double(n1));
     }
+    if (n == 1) return d2;
+    if (d1 == d2) return d1;
+    if (i == 0) return d1;
+    if (i == n - 1) return d2;
+    const double c = (d2 - d1) * double(n1 - 1);
+    if (std::isinf(c)) {
+        if (std::isinf(d2 - d1)) return d1 + (d2 / double(n1)) * double(i) - (d1 / double(n1)) * double(i);
+        return d1 + double(i) * ((d2 - d1) / double(n1));
+    }
+    return d1 + double(i) * (d2 - d1) / double(n1);
 }
-
-// MATLAB A(:) of an Array3
-template <typename A> inline auto colon(const A &a) {
-    using T = typename std::remove_const<typename std::remove_reference<decltype(a.data[0])>::type>::type;
-    return Eigen::Map<const Eigen::Array<T, Eigen::Dynamic, 1>>(a.data, a.numel());
+template <typename Out> inline void linspace(double d1, double d2, int n, Out &y) {
+    POLYQP_ASSERT(n >= 0 && y.size() >= n);
+    for (int i = 0; i < n; ++i) y(i) = linspaceAt(d1, d2, n, i);
 }
 
 // MATLAB dst = src(i1:i2, j1:j2, k1:k2)
@@ -490,7 +508,7 @@ template <typename Dst, typename T> inline void fillSub3(Dst &dst, int i1, int i
 
 // MATLAB dst(:, 1:r, k) = slab
 template <typename Dst, typename Derived> inline void setSlab(Dst &dst, int k, int r, const Eigen::DenseBase<Derived> &slab) {
-    POLYQP_ASSERT(slab.rows() == dst.n1 && slab.cols() == r);
+    POLYQP_ASSERT(slab.rows() == dst.n1 && slab.cols() >= r);
     for (int j = 1; j <= r; ++j) {
         for (int i = 1; i <= dst.n1; ++i) dst(i, j, k) = slab.derived().coeff(i - 1, j - 1);
     }
@@ -498,7 +516,7 @@ template <typename Dst, typename Derived> inline void setSlab(Dst &dst, int k, i
 
 // MATLAB slab = src(:, 1:r, k)
 template <typename Src, typename Out> inline void getSlab(const Src &src, int k, int r, Out &slab) {
-    slab.resize(src.n1, r);
+    POLYQP_ASSERT(slab.rows() == src.n1 && slab.cols() >= r);
     for (int j = 1; j <= r; ++j) {
         for (int i = 1; i <= src.n1; ++i) slab(i - 1, j - 1) = src(i, j, k);
     }
@@ -515,7 +533,7 @@ template <typename Src> inline auto getFiber3(const Src &src, int j, int k) {
 template <typename Src, typename Out> inline void reshapeRowSlice(const Src &src, int d, int k1, int k2, Out &v) {
     const int r = src.n2;
     const int c = std::max(0, k2 - k1 + 1);
-    v.resize(r * c, 1);
+    POLYQP_ASSERT(v.size() >= r * c);
     for (int k = 1; k <= c; ++k) {
         for (int j = 1; j <= r; ++j) v((j - 1) + (k - 1) * r) = src(d, j, k1 + k - 1);
     }
@@ -525,7 +543,7 @@ template <typename Src, typename Out> inline void reshapeRowSlice(const Src &src
 template <typename Dst, typename Derived> inline void assignRowSlice(Dst &dst, int d, const Eigen::DenseBase<Derived> &v) {
     const int r = dst.n2;
     const int K = dst.n3;
-    POLYQP_ASSERT(v.size() == r * K);
+    POLYQP_ASSERT(v.size() >= r * K);
     for (int k = 1; k <= K; ++k) {
         for (int j = 1; j <= r; ++j) dst(d, j, k) = v.derived().coeff((j - 1) + (k - 1) * r);
     }

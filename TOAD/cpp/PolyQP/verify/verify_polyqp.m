@@ -17,9 +17,17 @@ addpath(fullfile(toadDir, 'Guidance'));   % AbortGuidance.m (the abort block)
 addpath(fullfile(toadDir, 'Guidance', 'PolynomialQP'));
 addpath(fullfile(toadDir, 'Helper'));
 addpath(here);
-clear polyqp_mex;
+clear polyqp_mex polyqp_mex_wide polyqp_mex_p3;
 
 assert(exist('polyqp_mex', 'file') == 3, 'polyqp_mex not built: run build_polyqp_mex first.');
+assert(exist('polyqp_mex_wide', 'file') == 3, 'polyqp_mex_wide not built: run build_polyqp_mex(''wide'') first.');
+% STATIC: polyqp_mex has the flight (abort-sized) capacities and runs every abort case; polyqp_mex_wide is the same source with
+% larger capacities (-D) for what exceeds the abort envelope by design: the missions, fuzzed legs, and grid-sized I/O checks.
+mxF = @polyqp_mex;
+capF = polyqp_mex('capacities');   % [MAX_WP, MAX_SEG, MAX_KNOTS, MAX_FREE, MAX_NODES] of the flight build
+POLYQP_FLIGHT_KNOTS = capF(3);
+mxW = @polyqp_mex_wide;
+haveP3 = exist('polyqp_mex_p3', 'file') == 3;   % the last variable-size build (Phase 3), for the identity-padding check
 
 warnState = warning('off', 'all');
 cleanupWarn = onCleanup(@() warning(warnState));
@@ -106,6 +114,8 @@ addRow('AbortGuidance structural',           'exact',                        0);
 addRow('AbortGuidance end-to-end',           'end-to-end (abs)',             TOL_E2E);
 addRow('Missions structural / status',       'exact',                        0);
 addRow('Missions end-to-end',                'end-to-end (abs)',             TOL_E2E);
+addRow('Padded solve vs variable-size solve', 'linear solve (rel)',           TOL_LIN);
+addRow('Padded vs unpadded rcond',           'closed-form (rel)',            1e-12);
 
 % ---------------------------------------------------------------- 1. constants
 % ASTRA only: the C++ solver is ASTRA-only (vehicle 0, compiled-in constants, r = 5); the TOAD and r ~= 5 cases were dropped.
@@ -337,7 +347,7 @@ for v = 1:numel(C)
 
         % ---- per-function checks on inputs from this run
         if isempty(idML)
-            lc = perFunctionChecks(Waypoints, c, Lim, QT, 5, tag);
+            lc = perFunctionChecks(Waypoints, c, Lim, QT, 5, tag, mxF);
             maxLogCondAll = max(maxLogCondAll, lc);
         end
     end
@@ -377,7 +387,7 @@ for v = 1:numel(C)
             rec('PolyQP end-to-end', okE1 && okE2 && okE3, max([e1, e2, e3]), sprintf('%s: IG %s | QT %s | RP %s', tag, m1, m2, m3), ...
                 @() floorPolyQP(Waypoints, c, 5, IG, QT, RP, OptsQ));
             tiltStats(v, :) = tiltStats(v, :) + [1, RP.Feasible];
-            lc = perFunctionChecks(Waypoints, c, LimQ, QT, 5, tag);
+            lc = perFunctionChecks(Waypoints, c, LimQ, QT, 5, tag, mxF);
             maxLogCondAll = max(maxLogCondAll, lc);
         else
             rec('PolyQP structural / status', okS, NaN, sprintf('%s: MATLAB "%s" vs C++ "%s"', tag, idML, st));
@@ -415,7 +425,7 @@ for mi = 1:numel(missions)
         catch ME
             idML = ME.identifier;
         end
-        [IGc, QTc, RPc, st] = polyqp_mex('PolyQP', Waypoints, C{v}, struct('R', 5));
+        [IGc, QTc, RPc, st] = polyqp_mex_wide('PolyQP', Waypoints, C{v}, struct('R', 5));
         okS = strcmp(idML, st);
         if okS && isempty(idML)
             [okR, ~, mR] = cmpStruct(RP, RPc, 'exactonly', 0, {'Feasible', 'OuterIterations'});
@@ -430,7 +440,7 @@ for mi = 1:numel(missions)
             Plan = resolveWaypoints(Waypoints, 5, LimML{v});
             missionLog{end + 1} = sprintf('| %s | %d | %d | %d | %d | %d | %d | %.3f | %d | %.3g |', tag, Plan.SegCount, Plan.LegCount, ...
                 nnz(Plan.IsHold), nnz(Plan.IsCruise), RP.Feasible, RP.OuterIterations, RP.T_total, RPc.OuterIterations, max([e1, e2, e3])); %#ok<AGROW>
-            lc = perFunctionChecks(Waypoints, C{v}, LimML{v}, QT, 5, tag);
+            lc = perFunctionChecks(Waypoints, C{v}, LimML{v}, QT, 5, tag, mxW);
             maxLogCondAll = max(maxLogCondAll, lc);
         else
             rec('Missions structural / status', okS, NaN, sprintf('%s: MATLAB "%s" vs C++ "%s"', tag, idML, st));
@@ -493,7 +503,7 @@ for q = 1:nFuzz
         kind = 3; r = 5; K = 3; FixLeg = abortLikeFixLeg(r); SegTimes = [6, 2];
     end
     fuzzKinds(kind) = fuzzKinds(kind) + 1;
-    lc = checkSolveLeg(FixLeg, SegTimes, A0ML{r}, H0ML{r}, 'solveLeg (fuzzed)', sprintf('fuzz #%d kind %d r=%d K=%d T=%s', q, kind, r, K, mat2str(SegTimes, 4)));
+    lc = checkSolveLeg(FixLeg, SegTimes, A0ML{r}, H0ML{r}, mxW, 'solveLeg (fuzzed)', sprintf('fuzz #%d kind %d r=%d K=%d T=%s', q, kind, r, K, mat2str(SegTimes, 4)));
     fuzzLogCond = max(fuzzLogCond, lc);
 end
 note('solveLeg (fuzzed)', sprintf('300 random NaN patterns, 80 with < r fixed, 82 near-singular (unbalanced T incl. (10,0.6) and (6,2)), 38 boundary-pinned; max log10 cond(R_PP_eq) among solved cases = %.1f; MATLAB statuses: %d ok, %d IllPosedQP, %d SingularRPP', ...
@@ -518,9 +528,62 @@ for q = 1:nAT
         FixLeg(3, 2, 2:(K - 1)) = 0;   % one axis with pinned interior velocity, others free
     end
     T0 = 0.3 + 3.7 * rand(1, K - 1);
-    checkAllocateTimes(FixLeg, T0, A0ML{r}, H0ML{r}, 0.2, sprintf('allocTimes #%d r=%d K=%d T0=%s', q, r, K, mat2str(T0, 4)));
+    checkAllocateTimes(FixLeg, T0, A0ML{r}, H0ML{r}, 0.2, mxW, sprintf('allocTimes #%d r=%d K=%d T0=%s', q, r, K, mat2str(T0, 4)));
 end
 note('allocateTimes', sprintf('%d fuzzed legs (10 single-segment for the M < 2 return), pinned rest endpoints and free interior derivatives; %d legs where the line search moved the times; also run on every qualifying mission leg', nAT, atMoved));
+
+% ---------------------------------------------------------------- STATIC: identity-padded R_PP solve (Phase 4)
+% Every solveLeg case of this run that fits the flight capacities, through polyqp_mex (fixed POLYQP_MAX_FREE x POLYQP_MAX_FREE
+% system, identity-padded) and polyqp_mex_p3 (the Phase-3 build: variable-size, fixed-max storage, the system solved at its
+% own size). Same status required; outputs within the linear-solve tier or 10 x cond(R_PP_eq) * eps. Separately, the rcond the
+% padded system gives against the rcond of its unpadded leading nP x nP block (fixed-size Eigen in the MEX), and whether the
+% 1e-13 guard decides the same.
+fprintf('[padding] identity-padded solve vs variable-size solve\n');
+padStats = struct('n', 0, 'beyond', 0, 'statusDiff', 0, 'rcN', 0, 'rcDecisionDiff', 0, 'maxRcRel', 0);
+for i = 1:numel(caseLog.solveLeg)
+    e = caseLog.solveLeg{i};
+    if size(e.FixLeg, 3) > POLYQP_FLIGHT_KNOTS
+        padStats.beyond = padStats.beyond + 1;
+        continue;
+    end
+    [Cf, Df, Jf, stf] = polyqp_mex('solveLeg', e.FixLeg, e.SegTimes, A0ML{5}, H0ML{5});
+    if strcmp(stf, 'PolyQP:CapacityExceeded')
+        padStats.beyond = padStats.beyond + 1;
+        continue;
+    end
+    padStats.n = padStats.n + 1;
+    [rcP, nFree, rcU] = polyqp_mex('solveLegRcond', e.FixLeg, e.SegTimes, A0ML{5}, H0ML{5});
+    for d = 1:3
+        if nFree(d) > 0 && isfinite(rcU(d))
+            padStats.rcN = padStats.rcN + 1;
+            relRc = abs(rcP(d) - rcU(d)) / max(abs(rcU(d)), realmin);
+            padStats.maxRcRel = max(padStats.maxRcRel, relRc);
+            padStats.rcDecisionDiff = padStats.rcDecisionDiff + ((rcP(d) >= 1e-13) ~= (rcU(d) >= 1e-13));
+            rec('Padded vs unpadded rcond', relRc <= 1e-12 && ((rcP(d) >= 1e-13) == (rcU(d) >= 1e-13)), relRc, sprintf('%s axis %d nFree=%d rc padded %.3g, unpadded %.3g', e.tag, d, nFree(d), rcP(d), rcU(d)));
+        end
+    end
+    if haveP3
+        [Cp, Dp, Jp, stp] = polyqp_mex_p3('solveLeg', e.FixLeg, e.SegTimes, A0ML{5}, H0ML{5});
+        if ~strcmp(stp, stf)
+            padStats.statusDiff = padStats.statusDiff + 1;
+            rec('Padded solve vs variable-size solve', false, NaN, sprintf('%s: status padded "%s" vs variable-size "%s"', e.tag, stf, stp));
+            continue;
+        end
+        if isempty(stf)
+            [ok1, e1] = cmpNum(Cp, Cf, 'rel', TOL_LIN);
+            [ok2, e2] = cmpNum(Dp, Df, 'rel', TOL_LIN);
+            [ok3, e3] = cmpNum(Jp, Jf, 'rel', TOL_LIN);
+            lcp = logCondRPP(e.FixLeg, e.SegTimes, H0ML{5});
+            rec('Padded solve vs variable-size solve', ok1 && ok2 && ok3, max([e1, e2, e3]), sprintf('%s: eCoef=%.3g eDeriv=%.3g eCost=%.3g log10cond=%.1f', e.tag, e1, e2, e3, lcp), ...
+                @() 10 ^ lcp * eps);
+        else
+            rec('Padded solve vs variable-size solve', true, 0, '');
+        end
+    end
+end
+note('Padded solve vs variable-size solve', sprintf('%d solveLeg cases within the flight capacities (%d beyond them skipped); %s; status mismatches %d', ...
+    padStats.n, padStats.beyond, ternary(haveP3, 'against polyqp_mex_p3 (Phase 3 build)', 'polyqp_mex_p3 NOT available: outputs not compared'), padStats.statusDiff));
+note('Padded vs unpadded rcond', sprintf('%d axis solves; max relative difference %.2e; guard decisions that differ: %d', padStats.rcN, padStats.maxRcRel, padStats.rcDecisionDiff));
 
 % ---------------------------------------------------------------- self-review (step 9): comments + flight-source scan
 selfReview = selfReviewRows(toadDir, fileparts(here));
@@ -561,10 +624,11 @@ end
 fprintf('ALL DOUBLE-PRECISION CHECKS PASSED\n');
 
 % ================================================================ nested helpers
-    function lcMax = perFunctionChecks(Waypoints, c, Lim, QT, r, tag)
+    function lcMax = perFunctionChecks(Waypoints, c, Lim, QT, r, tag, mx)
+        % mx: the MEX build for this case (flight for aborts, wide for missions); grid-sized I/O always uses the wide build
         % resolveWaypoints
         Plan = resolveWaypoints(Waypoints, r, Lim);
-        [Pc, st] = polyqp_mex('resolveWaypoints', Waypoints, r, Lim);
+        [Pc, st] = mx('resolveWaypoints', Waypoints, r, Lim);
         structF = {'R', 'KnotCount', 'SegCount', 'KnotIsRest', 'IsHold', 'IsCruise', 'LegCount', 'LegStartSeg', 'LegEndSeg'};
         okS = isempty(st);
         if okS
@@ -602,12 +666,12 @@ fprintf('ALL DOUBLE-PRECISION CHECKS PASSED\n');
             m1 = Plan.LegStartSeg(leg);
             m2 = Plan.LegEndSeg(leg);
             FixLeg = FixP(:, 1:r, m1:(m2 + 1));
-            lcMax = max(lcMax, checkSolveLeg(FixLeg, Plan.SegT(m1:m2), A0ML{r}, H0ML{r}, 'solveLeg (from solveAllLegs)', sprintf('%s leg %d initial T', tag, leg)));
-            lcMax = max(lcMax, checkSolveLeg(FixLeg, QT.T(m1:m2), A0ML{r}, H0ML{r}, 'solveLeg (from solveAllLegs)', sprintf('%s leg %d final T', tag, leg)));
+            lcMax = max(lcMax, checkSolveLeg(FixLeg, Plan.SegT(m1:m2), A0ML{r}, H0ML{r}, mx, 'solveLeg (from solveAllLegs)', sprintf('%s leg %d initial T', tag, leg)));
+            lcMax = max(lcMax, checkSolveLeg(FixLeg, QT.T(m1:m2), A0ML{r}, H0ML{r}, mx, 'solveLeg (from solveAllLegs)', sprintf('%s leg %d final T', tag, leg)));
             if m2 > m1
                 midVelBins = FixP(:, 2, (m1 + 1):m2);
                 if all(any(isnan(midVelBins), 1))
-                    checkAllocateTimes(FixLeg, Plan.SegT(m1:m2), A0ML{r}, H0ML{r}, Lim.MinSegTime, sprintf('%s leg %d', tag, leg));
+                    checkAllocateTimes(FixLeg, Plan.SegT(m1:m2), A0ML{r}, H0ML{r}, Lim.MinSegTime, mx, sprintf('%s leg %d', tag, leg));
                 end
             end
         end
@@ -618,12 +682,12 @@ fprintf('ALL DOUBLE-PRECISION CHECKS PASSED\n');
         tq = [linspace(0, T_total, 57), QT.KeyTimes(1:(M + 1)), -0.5, T_total + 0.5, 0.5 * (QT.KeyTimes(1:M) + QT.KeyTimes(2:(M + 1)))];
         for k = [0:5, 2 * r]
             Out = PolyEval(QT, tq, k);
-            [Oc, st] = polyqp_mex('PolyEval', QT, tq, k);
+            [Oc, st] = mx('PolyEval', QT, tq, k);
             [ok, err] = cmpNum(Out, Oc, 'rel', TOL_ALG);
             rec('PolyEval', ok && isempty(st), err, sprintf('%s k=%d err=%.3g', tag, k, err), @() floorPolyEval(QT, tq, k, Out));
         end
         Out = PolyEval(QT, tq);
-        [Oc, st] = polyqp_mex('PolyEval', QT, tq);
+        [Oc, st] = mx('PolyEval', QT, tq);
         [ok, err] = cmpNum(Out, Oc, 'rel', TOL_ALG);
         rec('PolyEval', ok && isempty(st), err, sprintf('%s default k err=%.3g', tag, err), @() floorPolyEval(QT, tq, 0, Out));
 
@@ -634,38 +698,38 @@ fprintf('ALL DOUBLE-PRECISION CHECKS PASSED\n');
         nGrid = min(3999, max(41, ceil(T_total / dt_eval) + 1));
         t_grid = linspace(0, T_total, nGrid);
         [X, Wr, AccelCg] = flatnessInvert(QT, t_grid, PlanE.HDGRef, c, Lim);
-        [Xc, Wrc, Ac, st] = polyqp_mex('flatnessInvert', QT, t_grid, PlanE.HDGRef, c, Lim);
+        [Xc, Wrc, Ac, st] = polyqp_mex_wide('flatnessInvert', QT, t_grid, PlanE.HDGRef, c, Lim);   % grid I/O (up to 3999 samples)
         [ok1, e1] = cmpNum(X, Xc, 'relabs', TOL_NL);
         [ok2, e2, m2] = cmpStruct(Wr, Wrc, 'relabs', TOL_NL, {});
         [ok3, e3] = cmpNum(AccelCg, Ac, 'relabs', TOL_NL);
         rec('flatnessInvert', ok1 && ok2 && ok3 && isempty(st), max([e1, e2, e3]), sprintf('%s eX=%.3g W:%s eA=%.3g', tag, e1, m2, e3));
 
         U = allocateControls(Wr, Lim);
-        [Uc, st] = polyqp_mex('allocateControls', Wr, Lim);
+        [Uc, st] = polyqp_mex_wide('allocateControls', Wr, Lim);
         [ok, err] = cmpNum(U, Uc, 'relabs', TOL_NL);
         rec('allocateControls', ok && isempty(st), err, sprintf('%s eU=%.3g', tag, err));
 
         [EO, Fe] = evaluateConstraints(QT, PlanE, c, Lim);
-        [EOc, Fec, st] = polyqp_mex('evaluateConstraints', QT, PlanE, c, Lim);
+        [EOc, Fec, st] = mx('evaluateConstraints', QT, PlanE, c, Lim);
         rec('evaluateConstraints structural', isempty(st) && isequal(Fe, Fec) && isequal(size(EO.SegUtil), size(EOc.SegUtil)), NaN, ...
             sprintf('%s Feasible %d vs %d', tag, Fe, Fec));
         [ok, err, msg] = cmpStruct(EO, EOc, 'relabs', TOL_NL, {});
         rec('evaluateConstraints numeric', ok && isempty(st), err, sprintf('%s %s', tag, msg));
 
         IG = sampleOutputs(QT, PlanE, c, Lim);
-        [IGc, st] = polyqp_mex('sampleOutputs', QT, PlanE, c, Lim);
+        [IGc, st] = mx('sampleOutputs', QT, PlanE, c, Lim);
         [ok, err, msg] = cmpStruct(IG, IGc, 'relabs', TOL_NL, {});
         rec('sampleOutputs', ok && isempty(st), err, sprintf('%s %s', tag, msg));
     end
 
-    function lc = checkSolveLeg(FixLeg, SegTimes, A0, H0, rowName, tag)
+    function lc = checkSolveLeg(FixLeg, SegTimes, A0, H0, mx, rowName, tag)
         idML = '';
         try
             [Cml, Dml, Jml] = solveLeg(FixLeg, SegTimes, A0, H0);
         catch ME
             idML = ME.identifier;
         end
-        [Ccx, Dcx, Jcx, st] = polyqp_mex('solveLeg', FixLeg, SegTimes, A0, H0);
+        [Ccx, Dcx, Jcx, st] = mx('solveLeg', FixLeg, SegTimes, A0, H0);
         if isempty(idML)
             caseLog.solveLeg{end + 1} = struct('row', rowName, 'tag', tag, 'FixLeg', FixLeg, 'SegTimes', SegTimes, 'idML', idML, 'st', st, ...
                 'Cml', Cml, 'Dml', Dml, 'Jml', Jml, 'Ccx', Ccx, 'Dcx', Dcx, 'Jcx', Jcx);
@@ -719,14 +783,14 @@ fprintf('ALL DOUBLE-PRECISION CHECKS PASSED\n');
         end
     end
 
-    function checkAllocateTimes(FixLeg, T0, A0, H0, MinSegTime, tag)
+    function checkAllocateTimes(FixLeg, T0, A0, H0, MinSegTime, mx, tag)
         idML = '';
         try
             [Tml, Jml] = allocateTimes(FixLeg, T0, A0, H0, MinSegTime);
         catch ME
             idML = ME.identifier;
         end
-        [Tcx, Jcx, st] = polyqp_mex('allocateTimes', FixLeg, T0, A0, H0, MinSegTime);
+        [Tcx, Jcx, st] = mx('allocateTimes', FixLeg, T0, A0, H0, MinSegTime);
         if ~strcmp(idML, st)
             rec('allocateTimes', false, NaN, sprintf('%s: MATLAB "%s" vs C++ "%s"', tag, idML, st));
             return;
@@ -859,6 +923,14 @@ fprintf('ALL DOUBLE-PRECISION CHECKS PASSED\n');
 end
 
 % ================================================================ local helpers
+
+function s = ternary(c, a, b)
+    if c
+        s = a;
+    else
+        s = b;
+    end
+end
 
 function checkAbortCopyIsVerbatim(toadDir, here)
 % Every waypoint line of the abort block (Guidance/AbortGuidance.m) must appear verbatim in abortWaypoints.m.

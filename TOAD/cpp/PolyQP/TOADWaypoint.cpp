@@ -3,7 +3,7 @@
 
 namespace PolyQP {
 
-TOADWaypointT TOADWaypoint(const Vec3 &pos, const TOADWaypointOptions &options, const Vector3b &posFixed) {
+TOADWaypointT TOADWaypoint(const Vector3d &pos, const TOADWaypointOptions &options, const Vector3b &posFixed) {
     // TOADWaypoint Builder
     // FIX-F03: thrust axis b3 at this knot for the P-space BC (NaN: b3 = e3)
     // FIX-F03: db3/dt at this knot for the P-space velocity BC (NaN: not applied)
@@ -27,11 +27,11 @@ TOADWaypointT TOADWaypoint(const Vec3 &pos, const TOADWaypointOptions &options, 
     const bool isPassAndGo = !options.HoldTimeGiven; // NO-NAN: isnan(HoldTime)
 
     // Resolve rest knot derivative defaults
-    Vec3 velBC = options.VelBC;
+    Vector3d velBC = options.VelBC;
     Vector3b velFixed = options.VelFixed;
-    Vec3 accelBC = options.AccelBC;
+    Vector3d accelBC = options.AccelBC;
     Vector3b accelFixed = options.AccelFixed;
-    Vec3 jerkBC = options.JerkBC;
+    Vector3d jerkBC = options.JerkBC;
     Vector3b jerkFixed = options.JerkFixed;
     if (!isPassAndGo) {
         // NO-NAN: isnan(x) is !fixed; a defaulted entry becomes a fixed 0
@@ -64,7 +64,7 @@ TOADWaypointT TOADWaypoint(const Vec3 &pos, const TOADWaypointOptions &options, 
     wp.AccelFixed = accelFixed;
     wp.JerkBC = jerkBC;
     wp.JerkFixed = jerkFixed;
-    wp.HoldTime = options.HoldTimeGiven ? options.HoldTime : Real(0); // NO-NAN: pass-and-go (MATLAB NaN) holds 0
+    wp.HoldTime = options.HoldTimeGiven ? options.HoldTime : double(0); // NO-NAN: pass-and-go (MATLAB NaN) holds 0
     wp.MaxVel = options.MaxVel;
     wp.MaxAccel = options.MaxAccel;
     wp.StraightLine = options.StraightLine;
