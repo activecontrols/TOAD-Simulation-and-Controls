@@ -16,6 +16,8 @@ Vector4 last_U_cmd;
 float last_thrust;
 bool last_GND;
 const float tau = 0.002; // seconds - time constant for ema low pass filter applied to gimbal angles
+Vector15 last_X_ctrl = Vector15::Zero(); // abort harness: read-only copy of X_ctrl (get_controller_x_est)
+Vector3 last_a_dist = Vector3::Zero();   // abort harness: read-only copy of a_dist (get_position_disturbance)
 
 // Hand off ground attitude/pos/vel/gyro-bias covariance and reset OU mag-bias slack for flight.
 static void init_flight_covariance() {
@@ -152,6 +154,8 @@ Controller_Output get_controller_output(Controller_Input ci, const Vector15 &X_t
   Vector3 u_dist = LESO_Attitude(ci.GND_val, X_ctrl, last_U_cmd, constantsASTRA.L_Att, constantsASTRA, loop_dT, xhat_att);
   Vector6 Dist_LESO;
   Dist_LESO << a_dist, u_dist;
+  last_X_ctrl = X_ctrl; // abort harness: copies only, no effect on the estimator or controller
+  last_a_dist = a_dist;
 
   // Main control loop
   Vector4 raw_co = ASTRAv2_Controller(ci.GND_val, X_ctrl, X_trg, U_ff, constantsASTRA, Dist_LESO, loop_dT, cs);
@@ -206,4 +210,8 @@ Controller_Output get_controller_output(Controller_Input ci, const Vector15 &X_t
   cs->x_est.mag_bias_z = x_est(18);
   return co;
 }
+
+const Vector15 &get_controller_x_est() { return last_X_ctrl; }
+
+const Vector3 &get_position_disturbance() { return last_a_dist; }
 } // namespace ControllerAndEstimator

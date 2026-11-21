@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Verification only: host build + smoke test, flight-flags standalone build, optional Cortex-M7 compile.
+# Verification only: host build + smoke test + harness test, flight-flags standalone build and RAM report, optional Cortex-M7
+# compile, host solve time over the verification starts.
 set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -17,7 +18,7 @@ mkdir -p "$OUT"
 cd "$POLYQP"
 
 FLIGHT_SRCS=(PolyQP.cpp resolveWaypoints.cpp assembleQP.cpp solveLeg.cpp allocateTimes.cpp evaluateConstraints.cpp flatnessInvert.cpp
-    allocateControls.cpp sampleOutputs.cpp PolyEval.cpp buildVehicleLimits.cpp TOADWaypoint.cpp AbortGuidance.cpp abortFallback.cpp ../matlab_helpers.cpp)
+    allocateControls.cpp sampleOutputs.cpp PolyEval.cpp buildVehicleLimits.cpp TOADWaypoint.cpp AbortGuidance.cpp abortFallback.cpp ../matlab_helpers.cpp ../Abort.cpp)
 
 echo "== 1. Host build + smoke test (verification flags) [$CXX]"
 "$CXX" -std=c++17 -O2 -Wall -Wextra -Wpedantic -Werror -ffp-contract=off \
@@ -25,6 +26,12 @@ echo "== 1. Host build + smoke test (verification flags) [$CXX]"
     -isystem "$EIGEN" -I. -I.. -I../Extras \
     "${FLIGHT_SRCS[@]}" verify/abort_smoke.cpp -o "$OUT/abort_smoke"
 "$OUT/abort_smoke"
+
+echo "== 1b. Harness test: Abort::plan into ASTRA_Trajectory_Data.h-shaped arrays (-Werror -DEIGEN_NO_MALLOC, no verification defines)"
+"$CXX" -std=c++17 -O2 -Wall -Wextra -Wpedantic -Werror -ffp-contract=off -DEIGEN_NO_MALLOC \
+    -isystem "$EIGEN" -I. -I.. -I../Extras \
+    "${FLIGHT_SRCS[@]}" ../verify/abort_harness_test.cpp -o "$OUT/abort_harness_test"
+"$OUT/abort_harness_test"
 
 echo "== 2. Flight-flags build of cpp/PolyQP/*.cpp alone (no verification defines)"
 for f in "${FLIGHT_SRCS[@]}"; do
@@ -57,4 +64,14 @@ if command -v arm-none-eabi-g++ >/dev/null 2>&1; then
     arm-none-eabi-size "$OUT"/m7_*.o
 else
     echo "== 3. Cortex-M7 compile skipped: arm-none-eabi-g++ not found"
+fi
+
+CASES="$HERE/results/abort_cases_X_est.csv"
+if [ -f "$CASES" ]; then
+    echo "== 4. Host solve time of Abort::plan (flight flags, -O2) over the verification starts ($CASES)"
+    "$CXX" -std=c++17 -O2 -Wall -Wextra -Werror -ffp-contract=off -isystem "$EIGEN" -I. -I.. -I../Extras \
+        "${FLIGHT_SRCS[@]}" verify/abort_timing.cpp -o "$OUT/abort_timing"
+    "$OUT/abort_timing" "$CASES"
+else
+    echo "== 4. Solve timing skipped: run verify_polyqp first (it writes $CASES)"
 fi

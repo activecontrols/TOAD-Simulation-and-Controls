@@ -26,6 +26,7 @@ assert(exist('polyqp_mex_wide', 'file') == 3, 'polyqp_mex_wide not built: run bu
 mxF = @polyqp_mex;
 capF = polyqp_mex('capacities');   % [MAX_WP, MAX_SEG, MAX_KNOTS, MAX_FREE, MAX_NODES] of the flight build
 POLYQP_FLIGHT_KNOTS = capF(3);
+POLYQP_FLIGHT_NODES = capF(5);    % Abort::MAX_POINTS
 mxW = @polyqp_mex_wide;
 haveP3 = exist('polyqp_mex_p3', 'file') == 3;   % the last variable-size build (Phase 3), for the identity-padding check
 
@@ -311,39 +312,22 @@ for v = 1:numel(C)
                 'IGc', [], 'QTc', [], 'RPc', []);
         end
 
-        % ---- AbortGuidance vs the MATLAB abort block (persistent semantics as explicit state)
-        ABORT = 1;
-        tFire = 2;
-        S0 = struct('abortCalculated', false, 'tAbort', 0, 'abortStatus', 0, 'Time', [], 'States', [], 'Inputs', []);
-        idML = '';
-        try
-            S1 = AbortGuidance(tFire, X_est, c, ABORT, S0);
-        catch ME
-            idML = ME.identifier;
+        % ---- AbortGuidance vs the MATLAB abort block (Guidance/AbortGuidance.m). The caller decides when to abort, so each side plans once.
+        idPQ = idML;
+        [S1, Sc, okS, mS] = abortPair(X_est, c, POLYQP_FLIGHT_NODES);
+        rec('AbortGuidance structural', okS, NaN, sprintf('%s: %s', tag, mS));
+        if okS
+            [ok1, e1] = cmpNum(S1.Time, Sc.Time, 'abs', TOL_E2E);
+            [ok2, e2] = cmpNum(S1.States, Sc.States, 'abs', TOL_E2E);
+            [ok3, e3] = cmpNum(S1.Inputs, Sc.Inputs, 'abs', TOL_E2E);
+            if isempty(idPQ) && S1.abortStatus ~= 2
+                flAb = @() max(floorAbort(X_est, c, S1), exactFinalSolveFloor(Waypoints, c, 5, QT));
+            else
+                flAb = @() floorAbort(X_est, c, S1);
+            end
+            rec('AbortGuidance end-to-end', ok1 && ok2 && ok3, max([e1, e2, e3]), sprintf('%s: eTime=%.3g eStates=%.3g eInputs=%.3g %s', tag, e1, e2, e3, mS), flAb);
         end
-        st0 = struct('abortCalculated', false, 'tAbort', 0, 'abortStatus', 0);
-        [Tm, Sm, Im, tAb, aC, ~, aSt, st] = polyqp_mex('AbortGuidance', tFire, X_est, c, st0, ABORT);
-        okS = strcmp(idML, st);
-        if okS && isempty(idML)
-            okS = isequal(size(S1.Time), size(Tm)) && isequal(size(S1.States), size(Sm)) && isequal(size(S1.Inputs), size(Im)) ...
-                && tAb == S1.tAbort && aC == S1.abortCalculated && aSt == S1.abortStatus;
-            % Second call: abortCalculated persists, nothing is recomputed
-            S2 = AbortGuidance(tFire + 1, X_est, c, ABORT, S1);
-            [Tm2, ~, ~, tAb2, aC2, ~, aSt2, st2] = polyqp_mex('AbortGuidance', tFire + 1, X_est, c, struct('abortCalculated', aC, 'tAbort', tAb, 'abortStatus', aSt), ABORT);
-            okS = okS && isempty(st2) && isempty(Tm2) && tAb2 == S2.tAbort && aC2 == S2.abortCalculated && aSt2 == S2.abortStatus;
-            % Default trigger (MATLAB ABORT = 0): never fires
-            S3 = AbortGuidance(tFire, X_est, c, 0, S0);
-            [Tm3, ~, ~, tAb3, aC3, ~, ~, st3] = polyqp_mex('AbortGuidance', tFire, X_est, c, st0);
-            okS = okS && isempty(st3) && isempty(Tm3) && tAb3 == S3.tAbort && aC3 == S3.abortCalculated;
-            rec('AbortGuidance structural', okS, NaN, sprintf('%s: shapes/tAbort/abortCalculated/abortStatus/persistence mismatch', tag));
-            [ok1, e1] = cmpNum(S1.Time, Tm, 'abs', TOL_E2E);
-            [ok2, e2] = cmpNum(S1.States, Sm, 'abs', TOL_E2E);
-            [ok3, e3] = cmpNum(S1.Inputs, Im, 'abs', TOL_E2E);
-            rec('AbortGuidance end-to-end', ok1 && ok2 && ok3, max([e1, e2, e3]), sprintf('%s: eTime=%.3g eStates=%.3g eInputs=%.3g', tag, e1, e2, e3), ...
-                @() max(floorAbort(tFire, X_est, c, ABORT, S0, S1), exactFinalSolveFloor(Waypoints, c, 5, QT)));
-        else
-            rec('AbortGuidance structural', okS, NaN, sprintf('%s: MATLAB "%s" vs C++ "%s"', tag, idML, st));
-        end
+        idML = idPQ;
 
         % ---- per-function checks on inputs from this run
         if isempty(idML)
@@ -359,6 +343,7 @@ fprintf('[abort] tilted / depleted starts\n');
 trs = RandStream('mt19937ar', 'Seed', 4242);
 nTilt = 40;
 tiltStats = zeros(numel(C), 2);
+tiltStates = {};
 for v = 1:numel(C)
     c = C{v};
     for q = 1:nTilt
@@ -392,21 +377,22 @@ for v = 1:numel(C)
         else
             rec('PolyQP structural / status', okS, NaN, sprintf('%s: MATLAB "%s" vs C++ "%s"', tag, idML, st));
         end
-        S0 = struct('abortCalculated', false, 'tAbort', 0, 'abortStatus', 0, 'Time', [], 'States', [], 'Inputs', []);
-        S1 = AbortGuidance(2, X_est, c, 1, S0);
-        [Tm, Sm, Im, tAb, aC, ~, aSt] = polyqp_mex('AbortGuidance', 2, X_est, c, struct('abortCalculated', false, 'tAbort', 0, 'abortStatus', 0), 1);
-        okS = isequal(size(S1.Time), size(Tm)) && isequal(size(S1.States), size(Sm)) && isequal(size(S1.Inputs), size(Im)) ...
-            && tAb == S1.tAbort && aC == S1.abortCalculated && aSt == S1.abortStatus;
-        rec('AbortGuidance structural', okS, NaN, sprintf('%s: shapes/tAbort/abortCalculated/abortStatus mismatch', tag));
+        [S1, Sc, okS, mS] = abortPair(X_est, c, POLYQP_FLIGHT_NODES);
+        rec('AbortGuidance structural', okS, NaN, sprintf('%s: %s', tag, mS));
         if okS
-            [ok1, e1] = cmpNum(S1.Time, Tm, 'abs', TOL_E2E);
-            [ok2, e2] = cmpNum(S1.States, Sm, 'abs', TOL_E2E);
-            [ok3, e3] = cmpNum(S1.Inputs, Im, 'abs', TOL_E2E);
-            rec('AbortGuidance end-to-end', ok1 && ok2 && ok3, max([e1, e2, e3]), sprintf('%s: eTime=%.3g eStates=%.3g eInputs=%.3g', tag, e1, e2, e3), ...
-                @() floorAbort(2, X_est, c, 1, S0, S1));
+            [ok1, e1] = cmpNum(S1.Time, Sc.Time, 'abs', TOL_E2E);
+            [ok2, e2] = cmpNum(S1.States, Sc.States, 'abs', TOL_E2E);
+            [ok3, e3] = cmpNum(S1.Inputs, Sc.Inputs, 'abs', TOL_E2E);
+            rec('AbortGuidance end-to-end', ok1 && ok2 && ok3, max([e1, e2, e3]), sprintf('%s: eTime=%.3g eStates=%.3g eInputs=%.3g %s', tag, e1, e2, e3, mS), ...
+                @() floorAbort(X_est, c, S1));
         end
+        tiltStates{end + 1} = X_est; %#ok<AGROW>
     end
 end
+
+% Every abort start checked above, for the host solve-time measurement (abort_timing.cpp, build_host.sh step 4)
+abortStatesAll = [cellfun(@(a) a.X_est, caseLog.abort, 'UniformOutput', false), tiltStates];
+writematrix(cell2mat(abortStatesAll).', fullfile(here, 'results', 'abort_cases_X_est.csv'));
 
 % ---------------------------------------------------------------- 4. missions
 fprintf('[missions]\n');
@@ -895,7 +881,7 @@ fprintf('ALL DOUBLE-PRECISION CHECKS PASSED\n');
         fprintf(fid, '## Coverage notes\n\n');
         fprintf(fid, '- Local functions are covered through their parents: `solveAllLegs`, `buildReport` (via `PolyQP`); `wpToFix`, `makeCruiseKnot`, `pinTransverse`, `initSingleSegTime` (via `resolveWaypoints`); `softmaxTimes` (via `allocateTimes`); `solveThrustStretch`, `solveThrustFloorStretch` (via `evaluateConstraints`).\n');
         fprintf(fid, '- ASTRA only (vehicle 0, r = 5): the C++ solver is ASTRA-only with compiled-in constants, so the TOAD and r ~= 5 cases of the transpile verification were dropped. Abort cases: %d; x, y in [-20, 20] m, z in [0.5, 40] m, vx, vy in [-5, 5] m/s, vz in [-6, 4] m/s, quaternion [1 0 0 0], zero propellant. Waypoints from `abortWaypoints` (lines copied verbatim from `Guidance/AbortGuidance.m`; the script asserts they still match the file). Plus %d tilted, rotating starts (tilt <= 30 deg about a random horizontal axis, random heading, |w_B| <= 1 rad/s) through PolyQP, AbortGuidance and every per-function check, on a separate RNG stream.\n', nAbort, nTilt);
-        fprintf(fid, '- `AbortGuidance` is compared with `Guidance/AbortGuidance.m`, the abort block (moved out of `TrajectoryManager.m`) with the persistents passed explicitly and `ABORT` set to 1 (the file hard-codes 0, so the block can never run as shipped). Each case checks: fire at t = 2, no recompute on a second call (abortCalculated/tAbort persist), and no fire with the default trigger (C++ default ABORT = 0).\n');
+        fprintf(fid, '- `AbortGuidance` is compared with `Guidance/AbortGuidance.m`, the abort block (moved out of `TrajectoryManager.m`). The caller decides when to abort (Phase 6 removed the `ABORT` / `tAbort` / `abortCalculated` trigger), so each case is one call on each side with the default command (hover thrust, gimbal centred, no disturbance). The C++ runs at the flight node capacity (`Abort::MAX_POINTS`); a C++ `CapacityExceeded` passes only if MATLAB''s plan needs more nodes than that, and is then compared with MATLAB''s closed-form fallback on the C++ grid (F34).\n');
         fprintf(fid, '- `flatnessInvert`, `allocateControls`, `evaluateConstraints`, `sampleOutputs`, `PolyEval` use `QPTraj` from MATLAB `PolyQP` and `Plan` from `resolveWaypoints` with `Plan.SegT(1:M) = QPTraj.T(1:M)`. `flatnessInvert` runs on the `evaluateConstraints` grid; `allocateControls` on MATLAB''s `Wrench`.\n');
         fprintf(fid, '- `solveLeg` inputs from runs are rebuilt exactly as `solveAllLegs` pass 1 builds `FixP`, at both the initial and the final segment times. For the abort, passes 2-3 do not change `FixP` (F04).\n');
         fprintf(fid, '- `resolveWaypoints`/`PolyQP` error IDs: 1 waypoint, r = 2, r = 7, zero first HDGRef, inconsistent HDGRef, zero MaxVel, negative MaxAccel, scaled-but-consistent HDGRef (no error). The MEX rejects more than 16 waypoints before the call (capacity), so the > MAX_WP branch is checked only through the count-of-1 case.\n\n');
@@ -947,9 +933,10 @@ function checkAbortCopyIsVerbatim(toadDir, here)
 % Every waypoint line of the abort block (Guidance/AbortGuidance.m) must appear verbatim in abortWaypoints.m.
     tm = readlines(fullfile(toadDir, 'Guidance', 'AbortGuidance.m'));
     wp = fileread(fullfile(here, 'abortWaypoints.m'));
-    i1 = find(contains(tm, 'if ABORT > 0 && t > ABORT && ~abortCalculated'), 1);
-    i2 = find(contains(tm, 'tAbort = t;'), 1);
-    assert(~isempty(i1) && ~isempty(i2) && i2 > i1, 'Abort block not found in AbortGuidance.m');
+    % Phase 6: the whole file is the abort block (the trigger that bracketed it is gone)
+    i1 = find(contains(tm, 'function [Time, States, Inputs, abortStatus, Report] = AbortGuidance('), 1);
+    i2 = numel(tm);
+    assert(~isempty(i1), 'Abort block not found in AbortGuidance.m');
     for i = (i1 + 1):i2
         ln = strtrim(tm(i));
         if strlength(ln) == 0
@@ -1242,13 +1229,13 @@ function fl = floorPolyQP(Waypoints, c, r, IG, QT, RP, Opts)
     end
 end
 
-function fl = floorAbort(t, X_est, c, ABORT, S0, S1)
+function fl = floorAbort(X_est, c, S1)
     fl = 0;
     for p = 1:3
         X2 = X_est;
         X2(5:10) = pert(X_est(5:10));
         try
-            S2 = AbortGuidance(t, X2, c, ABORT, S0);
+            [S2.Time, S2.States, S2.Inputs] = AbortGuidance(X2, c);
         catch
             continue;
         end
@@ -1393,11 +1380,7 @@ function R = selfReviewRows(toadDir, polyDir)
     forbidden = '(mex\.h|\bmx[A-Z]\w*\(|iostream|fstream|std::cout|std::cerr|\bfopen\b|\bprintf\(|<chrono>|\bclock\()';
     for i = 1:size(pairs, 1)
         mLines = readlines(fullfile(toadDir, pairs{i, 1}));
-        if strcmp(pairs{i, 3}, 'abort')
-            i1 = find(contains(mLines, 'ABORT = 0'), 1);
-            i2 = find(contains(mLines, 'tAbort = t;'), 1) + 1;
-            mLines = mLines(i1:i2);
-        end
+        % 'abort': Guidance/AbortGuidance.m is the abort block as a whole (Phase 6: no trigger brackets it any more)
         cText = fileread(fullfile(polyDir, pairs{i, 2}));
         cLines = splitlines(string(cText));
         if strcmp(pairs{i, 3}, 'region')

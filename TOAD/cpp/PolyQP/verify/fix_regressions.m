@@ -213,10 +213,7 @@ end
 function [ok, md] = regF08(ctx)
     L = {};
     L{end + 1} = sprintf('## FIX-F08 / FIX-F32: defined behaviour when the abort plan fails\n');
-    ABORT = 1;
-    tFire = 2;
-    S0 = struct('abortCalculated', false, 'tAbort', 0, 'abortStatus', 0, 'Time', [], 'States', [], 'Inputs', []);
-    st0 = struct('abortCalculated', false, 'tAbort', 0, 'abortStatus', 0);
+    capF = polyqp_mex('capacities');   % [MAX_WP, MAX_SEG, MAX_KNOTS, MAX_FREE, MAX_NODES] of the flight build
     stName = {'OK', 'INFEASIBLE_FLOWN', 'FALLBACK'};
 
     % Path cases: one feasible, one infeasible (first found), and a start beyond the C++ capacity envelope (z0 = 300 m).
@@ -257,25 +254,18 @@ function [ok, md] = regF08(ctx)
                 end
                 continue;
             end
-            S1 = AbortGuidance(tFire, X_est, c, ABORT, S0);
-            S2 = AbortGuidance(tFire + 1, X_est, c, ABORT, S1);
-            [Tm, Sm, Im, tAb, aC, ~, aSt, pst] = polyqp_mex('AbortGuidance', tFire, X_est, c, st0, ABORT);
+            % Phase 6: the caller decides when to abort, so each side plans once (the trigger and its "no recompute" check are gone)
+            [S1, Sc, okS, mS] = abortPair(X_est, c, capF(5));
+            Tm = Sc.Time; Sm = Sc.States; Im = Sc.Inputs; aSt = Sc.abortStatus; pst = Sc.planStatus;
             expSt = paths{pI, 3};
             if expSt < 0
                 if strcmp(pst, 'PolyQP:CapacityExceeded')
-                    % C++ capacity fallback: compare with MATLAB's closed-form fallback for the same start, on the C++ grid
-                    % (the flight fallback coarsens its grid to fit the node capacity, F34)
-                    [S1.Time, S1.States, S1.Inputs] = abortFallbackOnGrid(X_est, c, 1, size(Sm, 1));
-                    S1.abortStatus = 2; S2 = S1; S2.tAbort = tFire; S2.abortCalculated = true;
-                    expSt = 2;
+                    expSt = 2;               % C++ capacity fallback; abortPair compares it with MATLAB's fallback on the C++ grid (F34)
                 else
-                    expSt = S1.abortStatus;   % within the compiled capacities: an ordinary planned path
+                    expSt = S1.abortStatus;  % within the compiled capacities: an ordinary planned path
                 end
             end
-            [Tm2, ~, ~, tAb2, aC2, ~, aSt2] = polyqp_mex('AbortGuidance', tFire + 1, X_est, c, struct('abortCalculated', aC, 'tAbort', tAb, 'abortStatus', aSt), ABORT);
-            once = isequal(S2.Time, S1.Time) && isequal(S2.States, S1.States) && S2.tAbort == tFire && S2.abortCalculated ...
-                && isempty(Tm2) && tAb2 == tFire && aC2 && aSt2 == aSt;
-            statusOk = S1.abortStatus == expSt && aSt == S1.abortStatus;
+            statusOk = okS && S1.abortStatus == expSt && aSt == S1.abortStatus;
             if expSt == 2
                 tol = 1e-14; mode = 'rel';
             else
@@ -292,16 +282,19 @@ function [ok, md] = regF08(ctx)
             if expSt == 2
                 [geo, gs] = fallbackGeometry(S1, X_est, 1);
             end
-            okRow = once && statusOk && par && geo;
+            okRow = statusOk && par && geo;
             allOk = allOk && okRow;
-            rows{end + 1} = sprintf('| %s | %s | %s / %s | %s | %d | %.2e (%s) | %s | %s | %s |', ctx.vehName{v}, paths{pI, 1}, stName{S1.abortStatus + 1}, stName{aSt + 1}, ... %#ok<AGROW>
-                okOr(pst), size(S1.States, 1), e, mode, yesNo(once), gs, passFail(okRow));
+            rows{end + 1} = sprintf('| %s | %s | %s / %s | %s | %d | %.2e (%s) | %s | %s |', ctx.vehName{v}, paths{pI, 1}, stName{S1.abortStatus + 1}, stName{aSt + 1}, ... %#ok<AGROW>
+                okOr(pst), size(S1.States, 1), e, mode, gs, passFail(okRow));
+            if ~okS
+                rows{end + 1} = sprintf('|  | %s |  |  |  |  |  |  |', mS); %#ok<AGROW>
+            end
         end
     end
-    L{end + 1} = 'Each path fires at t = 2 with ABORT = 1 (MATLAB `Guidance/AbortGuidance.m`, the abort block, against `polyqp_mex(''AbortGuidance'')`), then is called again at t = 3. "No recompute": the second call changes nothing and the C++ writes no outputs. The fallback is closed-form, so it is compared at the closed-form tier (rel 1e-14); planned paths at the end-to-end tier (abs 1e-6).';
+    L{end + 1} = 'Each path is one call on each side (MATLAB `Guidance/AbortGuidance.m`, the abort block, against `polyqp_mex(''AbortGuidance'')` at the flight node capacity). The caller decides when to abort (Phase 6), so the former fire-once / no-recompute check is moot. The fallback is closed-form, so it is compared at the closed-form tier (rel 1e-14); planned paths at the end-to-end tier (abs 1e-6).';
     L{end + 1} = '';
-    L{end + 1} = '| Vehicle | Path | abortStatus MATLAB / C++ | C++ planStatus | Samples | Max MATLAB vs C++ error | No recompute | Fallback geometry | Result |';
-    L{end + 1} = '|---|---|---|---|---|---|---|---|---|';
+    L{end + 1} = '| Vehicle | Path | abortStatus MATLAB / C++ | C++ planStatus | Samples | Max MATLAB vs C++ error | Fallback geometry | Result |';
+    L{end + 1} = '|---|---|---|---|---|---|---|---|';
     L = [L, rows];
 
     % Fallback geometry and closed-form parity over the frozen case set (+ edge cases)
@@ -341,23 +334,6 @@ function [ok, md] = regF08(ctx)
     ok = allOk && okG;
     L{end + 1} = sprintf('**Result: %s**.\n', passFail(ok));
     md = strjoin(L, newline);
-end
-
-function [Time, States, Inputs] = abortFallbackOnGrid(X_est, Constants, vCapZ, Nn)
-% abortFallback.m evaluated on an Nn-node grid instead of its own (the closed-form profile is exact at any node).
-    T = max(0.2, 315 / 128 * abs(X_est(7)) / vCapZ);
-    t_vec = linspace(0, T, Nn);
-    T_hover = (Constants.m_dry + X_est(14) + X_est(15)) * Constants.g;
-    States = zeros(Nn, 15);
-    for k = 1:Nn
-        tau = t_vec(k) / T;
-        s  = 126 * tau^5 - 420 * tau^6 + 540 * tau^7 - 315 * tau^8 + 70 * tau^9;
-        sd = 630 * tau^4 - 2520 * tau^5 + 3780 * tau^6 - 2520 * tau^7 + 630 * tau^8;
-        States(k, [1, 5, 6, 7, 10, 14, 15]) = [1, X_est(5), X_est(6), X_est(7) - X_est(7) * s, -X_est(7) * sd / T, X_est(14), X_est(15)];
-    end
-    Time = t_vec(:);
-    Inputs = zeros(Nn, 4);
-    Inputs(:, 3) = T_hover;
 end
 
 function fl = fallbackFloor(Time, States, X_est)
