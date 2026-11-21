@@ -79,9 +79,9 @@ Vector4 DCM_Quat_Conversion(Matrix3_3 R) {
 }
 
 // Transpiled from TOAD/Helper/ComputeJtot.m @ 5ac6bd23 (double; moved from cpp/PolyQP/ComputeJtot.cpp)
-// ASTRA-ONLY: ASTRA carries no propellant (m_lox = m_ipa = 0), and with zero propellant mass ComputeJtot.m reduces exactly
-// to J_tot = J and CGz = rTB (every propellant term is an exact zero and (m_dry * rTB) / m_dry rounds to rTB for ASTRA's
-// values). The function and its (zero) mass arguments are kept so the call sites stay comparable with the MATLAB.
+// ASTRA-ONLY: ASTRA carries no propellant (m_lox = m_ipa = 0), and with zero propellant mass ComputeJtot.m reduces exactly to J_tot = J and CGz = rTB.
+// ASTRA-ONLY: every propellant term is an exact zero and (m_dry * rTB) / m_dry rounds to rTB for ASTRA's values (checked).
+// ASTRA-ONLY: the function and its (zero) mass arguments are kept so the call sites stay comparable with the MATLAB.
 void ComputeJtot(double m_lox, double m_ipa, Matrix3_3d &J_tot, double &CGz) {
     (void)m_lox;
     (void)m_ipa;
