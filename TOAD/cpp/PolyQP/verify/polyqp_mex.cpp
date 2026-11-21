@@ -6,6 +6,7 @@
 #include "AbortGuidance.h"
 #include "PolyQP.h"
 
+#include <cmath>
 #include <cstring>
 #include <string>
 #include <vector>
@@ -136,11 +137,49 @@ LimitsT readLimits(const mxArray *s) {
     return L;
 }
 
+// MATLAB resolveWaypoints.m sizes Plan.FixCg with its own capacity MAX_R = 6 (3 x 6 x MAX_KNOTS); the ASTRA-only C++
+// stores the r = 5 columns. Column 6 is never used at r = 5 (all NaN), so it is dropped on input and restored on output.
+constexpr int MATLAB_MAX_R = 6;
+
+void readFixCg(const mxArray *a, Fix3 &F) {
+    const mwSize nd = mxGetNumberOfDimensions(a);
+    const mwSize *dims = mxGetDimensions(a);
+    const int n1 = static_cast<int>(dims[0]);
+    const int n2 = static_cast<int>(dims[1]);
+    const int n3 = nd == 3 ? static_cast<int>(dims[2]) : 1;
+    if (n1 != 3 || (n2 != POLYQP_R && n2 != MATLAB_MAX_R) || n3 > Fix3::Cap3) mexErrMsgIdAndTxt("polyqp_mex:capacity", "'FixCg' is %dx%dx%d", n1, n2, n3);
+    F.resize(3, POLYQP_R, n3);
+    for (int k = 1; k <= n3; ++k) {
+        for (int j = 1; j <= n2; ++j) {
+            for (int i = 1; i <= 3; ++i) {
+                const double v = elem(a, static_cast<size_t>((i - 1) + 3 * ((j - 1) + n2 * (k - 1))));
+                if (j <= POLYQP_R) {
+                    F(i, j, k) = static_cast<Real>(v);
+                } else if (!std::isnan(v)) {
+                    mexErrMsgIdAndTxt("polyqp_mex:order", "'FixCg' column %d is not NaN, but the C++ solver hardcodes r = %d", j, POLYQP_R);
+                }
+            }
+        }
+    }
+}
+
+mxArray *writeFixCg(const Fix3 &F) {
+    const mwSize dims[3] = {3, static_cast<mwSize>(MATLAB_MAX_R), static_cast<mwSize>(F.n3)};
+    mxArray *a = mxCreateNumericArray(3, dims, mxDOUBLE_CLASS, mxREAL);
+    double *p = mxGetPr(a);
+    for (int k = 1; k <= F.n3; ++k) {
+        for (int j = 1; j <= MATLAB_MAX_R; ++j) {
+            for (int i = 1; i <= 3; ++i) p[(i - 1) + 3 * ((j - 1) + MATLAB_MAX_R * (k - 1))] = j <= F.n2 ? static_cast<double>(F(i, j, k)) : mxGetNaN();
+        }
+    }
+    return a;
+}
+
 void readPlan(const mxArray *s, PlanT &P) {
     P.R = static_cast<int>(numField(s, "R"));
     P.KnotCount = static_cast<int>(numField(s, "KnotCount"));
     P.SegCount = static_cast<int>(numField(s, "SegCount"));
-    readArray3(getField(s, "FixCg"), P.FixCg, "FixCg");
+    readFixCg(getField(s, "FixCg"), P.FixCg);
     readBoolRow(getField(s, "KnotIsRest"), P.KnotIsRest, "KnotIsRest");
     readMatField(s, "SegT", P.SegT);
     readBoolRow(getField(s, "IsHold"), P.IsHold, "IsHold");
@@ -277,7 +316,7 @@ mxArray *writePlan(const PlanT &P) {
         .add("R", scal(P.R))
         .add("KnotCount", scal(P.KnotCount))
         .add("SegCount", scal(P.SegCount))
-        .add("FixCg", toMx3(P.FixCg))
+        .add("FixCg", writeFixCg(P.FixCg))
         .add("KnotIsRest", toMxLogical(P.KnotIsRest))
         .add("SegT", toMx(P.SegT))
         .add("IsHold", toMxLogical(P.IsHold))
