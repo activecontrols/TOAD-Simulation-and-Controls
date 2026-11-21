@@ -59,30 +59,15 @@ static void printRow(const char *label, int row) {
 int main() {
     int failures = 0;
 
-    {
-        AbortGuidanceState state;
-        ReportT Report{};
-        nRows = 0;
-        const AbortStatus st = AbortGuidance(100, makeState(3, -2, 10, 1, 0.5, -1), state, sink, Report);
-        const bool ok = st == AbortStatus::OK && !state.abortCalculated && state.tAbort == 0 && nRows == 0;
-        std::printf("default ABORT = 0: abortStatus=%s abortCalculated=%d outputs untouched=%d -> %s\n", abortName(st), state.abortCalculated ? 1 : 0, nRows == 0 ? 1 : 0,
-                    ok ? "PASS" : "FAIL");
-        failures += ok ? 0 : 1;
-    }
-
     const double cases[3][6] = {{3, -2, 10, 1, 0.5, -1}, {0, 0, 5, 0, 0, 0}, {-15, 12, 30, -3, 4, 2}};
     for (int c = 0; c < 3; ++c) {
-        AbortGuidanceState state;
         ReportT Report{};
         nRows = 0;
         const Vector15d X_est = makeState(cases[c][0], cases[c][1], cases[c][2], cases[c][3], cases[c][4], cases[c][5]);
-        const double ABORT = 1;
-        const double t = 2;
-        const AbortStatus ast = AbortGuidance(t, X_est, state, sink, Report, ABORT);
-        const PolyQPStatus st = state.planStatus;
+        PolyQPStatus st = PolyQPStatus::Ok;
+        const AbortStatus ast = AbortGuidance(X_est, Vector4d(0, 0, ASTRA::m_dry * ASTRA::g, 0), Vector3d::Zero(), sink, Report, st);
         std::printf("case %d: X_est pos=(%g, %g, %g) vel=(%g, %g, %g)\n", c + 1, cases[c][0], cases[c][1], cases[c][2], cases[c][3], cases[c][4], cases[c][5]);
-        std::printf("  abortStatus=%s planStatus=%s abortCalculated=%d tAbort=%g Feasible=%d T_total=%.9g samples=%d OuterIterations=%d\n", abortName(ast), statusName(st),
-                    state.abortCalculated ? 1 : 0, state.tAbort, Report.Feasible ? 1 : 0, Report.T_total, nRows, Report.OuterIterations);
+        std::printf("  abortStatus=%s planStatus=%s Feasible=%d T_total=%.9g samples=%d OuterIterations=%d\n", abortName(ast), statusName(st), Report.Feasible ? 1 : 0, Report.T_total, nRows, Report.OuterIterations);
         if (st != PolyQPStatus::Ok || ast == AbortStatus::FALLBACK) {
 #if defined(POLYQP_ERROR_MESSAGES)
             std::printf("  error %s: %s\n", lastError().identifier, lastError().message);
@@ -95,26 +80,23 @@ int main() {
         bool dup = true;
         for (int i = 0; i < 4; ++i) dup = dup && Inputs[nRows - 1][i] == Inputs[nRows - 2][i];
         const bool timeOk = Time[0] == 0 && Time[nRows - 1] == Report.T_total;
-        const int n0 = nRows;
-        const AbortStatus st2 = AbortGuidance(3, X_est, state, sink, Report, ABORT);
-        const bool once = st2 == ast && state.tAbort == t && nRows == n0;
-        std::printf("  last-input-duplicated=%d time-grid=%d no-recompute=%d\n", dup ? 1 : 0, timeOk ? 1 : 0, once ? 1 : 0);
-        failures += (dup && timeOk && once) ? 0 : 1;
+        std::printf("  last-input-duplicated=%d time-grid=%d\n", dup ? 1 : 0, timeOk ? 1 : 0);
+        failures += (dup && timeOk) ? 0 : 1;
     }
 
     // FIX-F08 fallback through CapacityExceeded: a 300 m start needs more output nodes than POLYQP_MAX_NODES.
     {
-        AbortGuidanceState state;
         ReportT Report{};
         nRows = 0;
         const Vector15d X_est = makeState(3, -2, 300, 1, 0.5, -1);
-        const AbortStatus st = AbortGuidance(2, X_est, state, sink, Report, 1);
+        PolyQPStatus planStatus = PolyQPStatus::Ok;
+        const AbortStatus st = AbortGuidance(X_est, Vector4d(0, 0, ASTRA::m_dry * ASTRA::g, 0), Vector3d::Zero(), sink, Report, planStatus);
         const int n = nRows;
         const bool start = n >= 2 && States[0][4] == X_est(4) && States[0][5] == X_est(5) && States[0][6] == X_est(6) && Time[0] == 0;
         const bool end = n >= 2 && States[n - 1][6] == 0 && States[n - 1][9] == 0;
-        const bool ok = st == AbortStatus::FALLBACK && state.planStatus == PolyQPStatus::CapacityExceeded && state.abortCalculated && start && end && n <= POLYQP_MAX_NODES;
+        const bool ok = st == AbortStatus::FALLBACK && planStatus == PolyQPStatus::CapacityExceeded && start && end && n <= POLYQP_MAX_NODES;
         std::printf("fallback (300 m start, CapacityExceeded): abortStatus=%s planStatus=%s samples=%d T=%.6g start=%d end-at-rest=%d -> %s\n", abortName(st),
-                    statusName(state.planStatus), n, n >= 1 ? Time[n - 1] : -1.0, start ? 1 : 0, end ? 1 : 0, ok ? "PASS" : "FAIL");
+                    statusName(planStatus), n, n >= 1 ? Time[n - 1] : -1.0, start ? 1 : 0, end ? 1 : 0, ok ? "PASS" : "FAIL");
         failures += ok ? 0 : 1;
     }
 

@@ -825,48 +825,30 @@ void mexFunction(int nlhs, mxArray *plhs[], int nrhs, const mxArray *prhs[]) {
         out.push(toMx(::DCM_Quat_Conversion(R)));
         out.finish(PolyQPStatus::Ok, nlhs, plhs);
     } else if (cmd == "AbortGuidance") {
-        if (nrhs < 4 || nrhs > 8)
-            mexErrMsgIdAndTxt("polyqp_mex:usage", "Usage: [Time, States, Inputs, tAbort, abortCalculated, Report, abortStatus, planStatus, msg] = "
-                                                  "polyqp_mex('AbortGuidance', t, X_est, constantsTOAD, state[, ABORT[, u_cmd[, a_dist]]])");
-        const double t = num(prhs[1], "t");
+        if (nrhs < 3 || nrhs > 5)
+            mexErrMsgIdAndTxt("polyqp_mex:usage", "Usage: [Time, States, Inputs, Report, abortStatus, planStatus, msg] = polyqp_mex('AbortGuidance', X_est, constantsTOAD[, u_cmd[, a_dist]])");
         Vector15d X_est;
-        readVecN(prhs[2], X_est, "X_est");
-        checkConstants(prhs[3]);
-        AbortGuidanceState state;
-        if (nrhs >= 5 && mxIsStruct(prhs[4]) && !mxIsEmpty(prhs[4])) {
-            state.abortCalculated = numField(prhs[4], "abortCalculated") != 0.0;
-            state.tAbort = numField(prhs[4], "tAbort");
-            if (mxGetField(prhs[4], 0, "abortStatus") != nullptr) state.abortStatus = static_cast<AbortStatus>(static_cast<int>(numField(prhs[4], "abortStatus")));
-        }
-        static ReportT Rep;
-        const bool before = state.abortCalculated;
-        // STATIC: the flight node capacity, as the harness gives it (Abort::MAX_POINTS = POLYQP_MAX_NODES)
-        const NodeSink sk = g_sink.sink(POLYQP_MAX_NODES);
+        readVecN(prhs[1], X_est, "X_est");
+        checkConstants(prhs[2]);
         // FIX-F02: optional u_cmd (4) and a_dist (3); MATLAB defaults: hover thrust with the gimbal centred, no disturbance
-        const double ABORT = nrhs >= 6 ? num(prhs[5], "ABORT") : 0.0;
         Vector4d u_cmd(0, 0, ASTRA::m_dry * ASTRA::g, 0);
         Vector3d a_dist = Vector3d::Zero();
-        if (nrhs >= 7 && !mxIsEmpty(prhs[6])) readVecN(prhs[6], u_cmd, "u_cmd");
-        if (nrhs >= 8 && !mxIsEmpty(prhs[7])) readVecN(prhs[7], a_dist, "a_dist");
-        const AbortStatus ast = AbortGuidance(t, X_est, state, sk, Rep, ABORT, u_cmd, a_dist);
-        const bool fired = state.abortCalculated && !before;
-        mxArray *Time = empty();
-        mxArray *States = empty();
-        mxArray *Inputs = empty();
-        if (fired) {
-            mxDestroyArray(Time);
-            mxDestroyArray(States);
-            mxDestroyArray(Inputs);
-            g_sink.trajectory(Time, States, Inputs);
-        }
+        if (nrhs >= 4 && !mxIsEmpty(prhs[3])) readVecN(prhs[3], u_cmd, "u_cmd");
+        if (nrhs >= 5 && !mxIsEmpty(prhs[4])) readVecN(prhs[4], a_dist, "a_dist");
+        static ReportT Rep;
+        PolyQPStatus planStatus = PolyQPStatus::Ok;
+        // STATIC: the flight node capacity, as the harness gives it (Abort::MAX_POINTS = POLYQP_MAX_NODES)
+        const AbortStatus ast = AbortGuidance(X_est, u_cmd, a_dist, g_sink.sink(POLYQP_MAX_NODES), Rep, planStatus);
+        mxArray *Time;
+        mxArray *States;
+        mxArray *Inputs;
+        g_sink.trajectory(Time, States, Inputs);
         out.push(Time);
         out.push(States);
         out.push(Inputs);
-        out.push(scal(state.tAbort));
-        out.push(lscal(state.abortCalculated));
-        out.push(fired && state.planStatus == PolyQPStatus::Ok ? writeReport(Rep, workspace().AbortGuidance.QPTraj.Count) : emptyStruct());
+        out.push(planStatus == PolyQPStatus::Ok ? writeReport(Rep, workspace().AbortGuidance.QPTraj.Count) : emptyStruct());
         out.push(scal(static_cast<double>(static_cast<int>(ast))));
-        out.finish(state.planStatus, nlhs, plhs);
+        out.finish(planStatus, nlhs, plhs);
     } else if (cmd == "quatRot") {
         needArgs(nrhs, 1, "[CIB, status, msg] = polyqp_mex('quatRot', q)");
         Vector4d qv;
