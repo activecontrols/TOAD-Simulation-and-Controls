@@ -1,6 +1,7 @@
 // PolyQP transpile support header (types and structs) for TOAD/Guidance/PolynomialQP @ 5ac6bd23
 #pragma once
 
+#include "ASTRA_PolyQP_Constants.h"
 #include "PolyQP_config.h"
 
 #include "matlab_funcs.h"
@@ -69,31 +70,6 @@ enum class PolyQPStatus : int {
     CapacityExceeded
 };
 
-struct PolyQPConstants {
-    Real Vehicle;
-    Real m_dry;
-    Real g;
-    Real rTB;
-    Mat3 J;
-    Real MaxThrust;
-    Real MaxMdot;
-    Real OF;
-    Real OxMass;
-    Real FuMass;
-    Real OxHeight;
-    Real FuHeight;
-    Real OxRadius;
-    Real FuRadius;
-    Real Ox_Z;
-    Real Fu_Z;
-};
-
-struct PolyQPOpts {
-    int R = 5;
-    Real InitOxMass = std::numeric_limits<Real>::quiet_NaN(); // FIX-F29: NaN = full tank (Constants.OxMass)
-    Real InitFuMass = std::numeric_limits<Real>::quiet_NaN(); // FIX-F29: NaN = full tank (Constants.FuMass)
-};
-
 struct TOADWaypointT {
     Vec3 PosBC;
     Vec3 VelBC;
@@ -141,15 +117,10 @@ struct TOADWaypointArray {
 
 struct LimitsT {
     bool HasVehicle;
-    Real Vehicle;
     Real g;
     Real m_init;
     Real m_dry;
-    Real OxMass;
-    Real FuMass;
     Real MaxThrust;
-    Real MaxMdot;
-    Real OF;
     Real rTB;
     Real CGz_init;
     Mat3 J_init;

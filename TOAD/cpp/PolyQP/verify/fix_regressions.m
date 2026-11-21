@@ -13,7 +13,7 @@ addpath(fullfile(toadDir, 'Guidance'));   % AbortGuidance.m (the abort block)
 addpath(fullfile(toadDir, 'Guidance', 'PolynomialQP'));
 addpath(fullfile(toadDir, 'Helper'));
 addpath(here);
-allIds = {'F07', 'F08', 'F01', 'F03', 'F29', 'F27', 'F02'};
+allIds = {'F07', 'F08', 'F01', 'F03', 'F27', 'F02'};   % F29 removed: superseded (ASTRA carries no propellant)
 if nargin < 1 || isempty(ids)
     ids = allIds;
 end
@@ -24,10 +24,13 @@ clear polyqp_mex;
 ctx = struct();
 ctx.here = here;
 ctx.toadDir = toadDir;
-ctx.C = {LoadTOADParams(0), LoadTOADParams(1)};
-ctx.vehName = {'ASTRA', 'TOAD'};
-ctx.Lim = {buildVehicleLimits(ctx.C{1}), buildVehicleLimits(ctx.C{2})};
+% ASTRA only (the C++ solver is ASTRA-only with r = 5): the TOAD sets and the r ~= 5 baseline cases are dropped.
+ctx.C = {LoadTOADParams(0)};
+ctx.vehName = {'ASTRA'};
+ctx.Lim = {buildVehicleLimits(ctx.C{1})};
 ctx.B = load(fullfile(here, 'results', 'baseline_cases_slim.mat'));
+ctx.B.caseLog.abort = ctx.B.caseLog.abort(cellfun(@(a) a.veh, ctx.B.caseLog.abort) == 1);
+ctx.B.caseLog.solveLeg = ctx.B.caseLog.solveLeg(cellfun(@(a) size(a.FixLeg, 2), ctx.B.caseLog.solveLeg) == 5);
 for r = 3:6
     [ctx.A0{r}, ~, ctx.H0{r}] = assembleQP(r);
 end
@@ -46,8 +49,6 @@ for i = 1:numel(ids)
             [ok, md] = regF03(ctx);
         case 'F02'
             [ok, md] = regF02(ctx);
-        case 'F29'
-            [ok, md] = regF29(ctx);
         case 'F27'
             [ok, md] = regF27(ctx);
         otherwise
@@ -162,7 +163,7 @@ function [ok, md] = regF07(ctx)
     rs = RandStream('mt19937ar', 'Seed', 1207);
     nV = 6;
     sing = 0; errs = 0; parS = 0; nRun = 0; maxCond = 0; maxCondInit = 0;
-    for v = 1:2
+    for v = 1:numel(ctx.C)
         for z0 = z0s
             for iv = 1:nV
                 vel = [-4 + 8 * rand(rs); -4 + 8 * rand(rs); -5 + 9 * rand(rs)];
@@ -221,7 +222,7 @@ function [ok, md] = regF08(ctx)
     % Path cases: one feasible, one infeasible (first found), forced PolyQP error, non-finite estimate; both vehicles
     rows = {};
     allOk = true;
-    for v = 1:2
+    for v = 1:numel(ctx.C)
         c = ctx.C{v};
         cand = cellfun(@(a) a.X_est, ctx.B.caseLog.abort([cellfun(@(a) a.veh, ctx.B.caseLog.abort)] == v), 'UniformOutput', false);
         ext = {[1; 0; 0; 0; 2; -3; 0.6; 0; 0; -8; 0; 0; 0; c.OxMass; c.FuMass], [1; 0; 0; 0; 0; 0; 1.5; 6; -6; -7; 0; 0; 0; c.OxMass; c.FuMass]};
@@ -309,7 +310,7 @@ function [ok, md] = regF08(ctx)
         if i <= numel(A)
             X_est = A{i}.X_est; v = A{i}.veh;
         else
-            X_est = extra{i - numel(A)}; v = 2;
+            X_est = extra{i - numel(A)}; v = 1;
         end
         [T1, S1s, I1] = abortFallback(X_est, ctx.C{v}, 1);
         [T2, S2s, I2, stF] = polyqp_mex('abortFallback', X_est, ctx.C{v}, 1);
@@ -401,13 +402,13 @@ function [ok, md] = regF01(ctx)
     sets = {};
     % Frozen 200 + 200 (mixed), then explicit within-cap and over-cap sets (100 per vehicle each, separate stream)
     A = ctx.B.caseLog.abort;
-    for v = 1:2
+    for v = 1:numel(ctx.C)
         idx = find(cellfun(@(a) a.veh, A) == v);
         X = cellfun(@(a) a.X_est, A(idx), 'UniformOutput', false);
         before = cellfun(@(a) a.RP.Feasible, A(idx));
         sets(end + 1, :) = {v, 'frozen (mixed)', X, before}; %#ok<AGROW>
     end
-    for v = 1:2
+    for v = 1:numel(ctx.C)
         c = ctx.C{v};
         Xw = cell(1, 100); Xo = cell(1, 100);
         for i = 1:100
@@ -509,7 +510,7 @@ function [ok, md] = regF03(ctx)
     L{end + 1} = '| Vehicle | P position BC error (MATLAB / C++) | P velocity BC error (MATLAB / C++) | CG(0) position error, without F03: median / 95th / max (m) | with F03 | CG(0) velocity error, without F03 (m/s) | with F03 | MATLAB vs C++ (abs) | Infeasible |';
     L{end + 1} = '|---|---|---|---|---|---|---|---|---|';
     okBC = true; okPar = true;
-    for v = 1:2
+    for v = 1:numel(ctx.C)
         c = ctx.C{v}; rho = ctx.Lim{v}.Rho;
         X = tiltedStates(v, nT, ctx);
         ePB = 0; eVB = 0; ePBc = 0; eVBc = 0; par = 0; nInf = 0;
@@ -543,7 +544,7 @@ function [ok, md] = regF03(ctx)
     L{end + 1} = '| Vehicle | Starts | CG(0) position error max (MATLAB / C++, m) | CG(0) velocity error max (MATLAB / C++, m/s) | Infeasible | Dominant utilisation of infeasible (count, max) |';
     L{end + 1} = '|---|---|---|---|---|---|';
     okPin = true;
-    for v = 1:2
+    for v = 1:numel(ctx.C)
         c = ctx.C{v};
         for tilted = [true, false]
             if tilted
@@ -608,7 +609,7 @@ function [ok, md] = regF02(ctx)
     L{end + 1} = '| Vehicle | Starts | Pin | Attitude step (deg) | Thrust direction step (deg) | Thrust step / hover | Infeasible | AbortGuidance with pin: MATLAB vs C++ (abs) |';
     L{end + 1} = '|---|---|---|---|---|---|---|---|';
     okPar = true;
-    for v = 1:2
+    for v = 1:numel(ctx.C)
         c = ctx.C{v};
         sets = {sprintf('upright frozen (%d)', 200), frozenStates(ctx, v); 'tilted (100)', tiltedStates(v, 100, ctx)};
         for si = 1:2
@@ -700,85 +701,6 @@ function s = onOff(b)
     end
 end
 
-% ================================================================ FIX-F29
-function [ok, md] = regF29(ctx)
-    L = {};
-    L{end + 1} = sprintf('## FIX-F29: TOAD mass integration starts from the estimated propellant\n');
-    S0 = struct('abortCalculated', false, 'tAbort', 0, 'abortStatus', 0, 'Time', [], 'States', [], 'Inputs', []);
-    st0 = struct('abortCalculated', false, 'tAbort', 0, 'abortStatus', 0);
-    rs = RandStream('mt19937ar', 'Seed', 2929);
-    A = ctx.B.caseLog.abort;
-    A = A(cellfun(@(a) a.veh, A) == 2);
-    c = ctx.C{2};
-    fr = [0.5, 0.2, 0.05, 0];
-    L{end + 1} = 'TOAD abort states from the frozen set with the tanks at a fraction of full (oxidiser and fuel independently jittered by +-10 %), through the abort block (`Guidance/AbortGuidance.m`) and `polyqp_mex(''AbortGuidance'')`.';
-    L{end + 1} = '';
-    L{end + 1} = '| Tank fraction | Cases | States(1, 14:15) = X_est(14:15) (MATLAB / C++) | Mass non-increasing | buildVehicleLimits m_init, Rho = from estimate (MATLAB / C++) | MATLAB vs C++ (abs) | Feasible | T_total change vs full tank: median / max (s) |';
-    L{end + 1} = '|---|---|---|---|---|---|---|---|';
-    okAll = true;
-    for f = fr
-        nOkM = 0; nOkC = 0; nMono = 0; nLim = 0; par = 0; feas = 0; dT = []; n = 0;
-        for i = 1:25
-            X = A{i}.X_est;
-            X(14) = max(0, f * c.OxMass * (1 + 0.1 * (2 * rand(rs) - 1)));
-            X(15) = max(0, f * c.FuMass * (1 + 0.1 * (2 * rand(rs) - 1)));
-            S1 = AbortGuidance(2, X, c, 1, S0);
-            [~, Sm, ~, ~, ~, Rc, aSt] = polyqp_mex('AbortGuidance', 2, X, c, st0, 1);
-            n = n + 1;
-            nOkM = nOkM + isequal(S1.States(1, 14:15), X(14:15).');
-            nOkC = nOkC + isequal(Sm(1, 14:15), X(14:15).');
-            nMono = nMono + (all(diff(S1.States(:, 14)) <= 0) && all(diff(S1.States(:, 15)) <= 0));
-            Lm = buildVehicleLimits(c, struct('InitOxMass', X(14), 'InitFuMass', X(15)));
-            Lc = polyqp_mex('buildVehicleLimits', c, struct('InitOxMass', X(14), 'InitFuMass', X(15)));
-            [Jc, CGc] = ComputeJtot(X(14), X(15), c);
-            rhoEx = Jc(1, 1) / ((c.m_dry + X(14) + X(15)) * CGc);
-            nLim = nLim + (Lm.m_init == c.m_dry + X(14) + X(15) && Lm.Rho == rhoEx && Lc.m_init == Lm.m_init && abs(Lc.Rho - Lm.Rho) <= 1e-14 * Lm.Rho && Lm.OxMass == X(14));
-            if isequal(size(Sm), size(S1.States)) && aSt == S1.abortStatus
-                par = max(par, max(abs(Sm - S1.States), [], 'all'));
-            else
-                par = Inf;
-            end
-            [~, ~, RPf] = PolyQP(abortWaypoints(A{i}.X_est), c, struct('R', 5));
-            [~, ~, RPe] = PolyQP(abortWaypoints(X), c, struct('R', 5, 'InitOxMass', X(14), 'InitFuMass', X(15)));
-            feas = feas + RPe.Feasible;
-            dT(end + 1) = RPe.T_total - RPf.T_total; %#ok<AGROW>
-            if isempty(Rc)
-                par = Inf;
-            end
-        end
-        okRow = nOkM == n && nOkC == n && nMono == n && nLim == n && par <= 1e-6;
-        okAll = okAll && okRow;
-        L{end + 1} = sprintf('| %.2f | %d | %d / %d | %d | %d | %.1e | %d | %.3g / %.3g |', f, n, nOkM, nOkC, nMono, nLim, par, feas, median(dT), max(abs(dT))); %#ok<AGROW>
-    end
-    % Full tank (TOAD) and ASTRA: unchanged (bit-identical to calling PolyQP without the mass options)
-    nSame = 0; nAll = 0;
-    for v = 1:2
-        Av = ctx.B.caseLog.abort(cellfun(@(a) a.veh, ctx.B.caseLog.abort) == v);
-        for i = 1:numel(Av)
-            X = Av{i}.X_est;
-            if v == 1
-                X(14) = 3 * rand(rs); X(15) = 2 * rand(rs);   % ASTRA ignores the estimate (no propellant model)
-            end
-            W = abortWaypoints(X);
-            [IG1, QT1, RP1] = PolyQP(W, ctx.C{v}, struct('R', 5));
-            [IG2, QT2, RP2] = PolyQP(W, ctx.C{v}, struct('R', 5, 'InitOxMass', X(14), 'InitFuMass', X(15)));
-            if v == 1
-                same = isequaln(IG1, IG2) && isequaln(QT1, QT2) && isequaln(RP1, RP2);
-            else
-                same = isequaln(IG1, IG2) && isequaln(QT1, QT2) && isequaln(RP1, RP2);   % frozen TOAD states have full tanks
-            end
-            nAll = nAll + 1;
-            nSame = nSame + same;
-        end
-    end
-    okU = nSame == nAll;
-    L{end + 1} = sprintf(['\n**Unchanged where it should be.** Full-tank TOAD (the 200 frozen states) and ASTRA (200 frozen states, with arbitrary non-zero X_est(14:15), which ASTRA ignores): ' ...
-        'PolyQP with `InitOxMass`/`InitFuMass` is bit-identical to PolyQP without them in %d of %d cases. A missing, empty or non-finite estimate falls back to full tank.\n'], nSame, nAll);
-    ok = okAll && okU;
-    L{end + 1} = sprintf('**Result: %s**.\n', passFail(ok));
-    md = strjoin(L, newline);
-end
-
 % ================================================================ FIX-F27
 function [ok, md] = regF27(ctx)
     L = {};
@@ -791,7 +713,7 @@ function [ok, md] = regF27(ctx)
     t0 = 0.5; E = 5; jy = 2; jz = 3; sy = 1.5; sz = -2;
     rows = {};
     okFD = true;
-    for v = 1:2
+    for v = 1:numel(ctx.C)
         c = ctx.C{v}; Lm = ctx.Lim{v}; g = Lm.g;
         QT = syntheticQT(t0, E, g, jy, jz, sy, sz, Lm.Rho);
         tv = [0.25, t0, 0.75];

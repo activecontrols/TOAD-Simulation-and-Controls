@@ -4,6 +4,7 @@
 namespace PolyQP {
 
 PolyQPStatus allocateControls(const WrenchT &Wrench, const LimitsT &Limits, Mat4Grid &U) {
+    (void)Limits; // ASTRA-ONLY: Limits was read only for the vehicle selection
     // Algebraic Control Allocation Matching 6-DoF Plant Dynamics
     const Mat3Grid &F_body = Wrench.F_body;
     const Mat3Grid &Tau_body = Wrench.Tau_body;
@@ -19,30 +20,19 @@ PolyQPStatus allocateControls(const WrenchT &Wrench, const LimitsT &Limits, Mat4
         // Axial force from translational dynamics
         const Real Fz = mmax(Real(1e-3), V1(Fk, 3));
 
-        Real Fx;
-        Real Fy;
-        Real T_mag;
-        Real roll_cmd;
-        if (Limits.Vehicle == 0) {
-            // Vehicle 0 (ASTRA): M_B = [0; 0; -l] x T_B + roll * t_dir
-            // Coupling: tau_x = l*Fy + roll*(Fx/T), tau_y = -l*Fx + roll*(Fy/T), tau_z = roll*(Fz/T)
-            // Initialize from pure moment arm, then 2-step exact fixed-point refinement for roll * t_dir
-            Fx = -V1(tauk, 2) / l_k;
-            Fy = V1(tauk, 1) / l_k;
+        // ASTRA-ONLY: the vehicle 0 branch below is the only one; the vehicle 1 (TOAD) branch was removed.
+        // Vehicle 0 (ASTRA): M_B = [0; 0; -l] x T_B + roll * t_dir
+        // Coupling: tau_x = l*Fy + roll*(Fx/T), tau_y = -l*Fx + roll*(Fy/T), tau_z = roll*(Fz/T)
+        // Initialize from pure moment arm, then 2-step exact fixed-point refinement for roll * t_dir
+        Real Fx = -V1(tauk, 2) / l_k;
+        Real Fy = V1(tauk, 1) / l_k;
+        Real T_mag = std::sqrt(std::pow(Fx, Real(2)) + std::pow(Fy, Real(2)) + std::pow(Fz, Real(2)));
+        Real roll_cmd = V1(tauk, 3) * (T_mag / Fz);
+        for (int it = 1; it <= 2; ++it) {
+            Fx = (-V1(tauk, 2) + roll_cmd * (Fy / T_mag)) / l_k;
+            Fy = (V1(tauk, 1) - roll_cmd * (Fx / T_mag)) / l_k;
             T_mag = std::sqrt(std::pow(Fx, Real(2)) + std::pow(Fy, Real(2)) + std::pow(Fz, Real(2)));
             roll_cmd = V1(tauk, 3) * (T_mag / Fz);
-            for (int it = 1; it <= 2; ++it) {
-                Fx = (-V1(tauk, 2) + roll_cmd * (Fy / T_mag)) / l_k;
-                Fy = (V1(tauk, 1) - roll_cmd * (Fx / T_mag)) / l_k;
-                T_mag = std::sqrt(std::pow(Fx, Real(2)) + std::pow(Fy, Real(2)) + std::pow(Fz, Real(2)));
-                roll_cmd = V1(tauk, 3) * (T_mag / Fz);
-            }
-        } else {
-            // Vehicle 1 (TOAD): M_B = [0; 0; -l] x T_B + [0; 0; roll]
-            Fx = -V1(tauk, 2) / l_k;
-            Fy = V1(tauk, 1) / l_k;
-            T_mag = std::sqrt(std::pow(Fx, Real(2)) + std::pow(Fy, Real(2)) + std::pow(Fz, Real(2)));
-            roll_cmd = V1(tauk, 3);
         }
 
         // Exact trigonometric gimbal inversion for T_B = T * [cos(th)*sin(ph); -sin(th); cos(th)*cos(ph)]

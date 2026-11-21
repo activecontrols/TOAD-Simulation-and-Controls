@@ -108,26 +108,25 @@ addRow('Missions structural / status',       'exact',                        0);
 addRow('Missions end-to-end',                'end-to-end (abs)',             TOL_E2E);
 
 % ---------------------------------------------------------------- 1. constants
-C = {LoadTOADParams(0), LoadTOADParams(1)};
-vehName = {'ASTRA', 'TOAD'};
+% ASTRA only: the C++ solver is ASTRA-only (vehicle 0, compiled-in constants, r = 5); the TOAD and r ~= 5 cases were dropped.
+C = {LoadTOADParams(0)};
+vehName = {'ASTRA'};
+LIMITS_REMOVED = {'Vehicle', 'OxMass', 'FuMass', 'MaxMdot', 'OF'};   % Limits fields the ASTRA-only C++ does not carry
 
 % ---------------------------------------------------------------- closed-form leaves
 fprintf('[leaves] buildVehicleLimits, ComputeJtot, DCM_Quat_Conversion, TOADWaypoint, assembleQP\n');
 LimML = cell(1, 2);
-for v = 1:2
+for v = 1:numel(C)
     LimML{v} = buildVehicleLimits(C{v});
     [Lm, st] = polyqp_mex('buildVehicleLimits', C{v});
-    [ok, err, msg] = cmpStruct(LimML{v}, Lm, 'rel', TOL_ALG, {'HasVehicle', 'Vehicle'});
+    [ok, err, msg] = cmpStruct(rmfield(LimML{v}, LIMITS_REMOVED), Lm, 'rel', TOL_ALG, {'HasVehicle'});
     ok = ok && isempty(st);
     rec('buildVehicleLimits', ok, err, sprintf('%s: %s %s', vehName{v}, msg, st));
 end
 
-for v = 1:2
+for v = 1:numel(C)
     c = C{v};
-    massCases = [0, 0; c.OxMass, c.FuMass; 0.5 * c.OxMass, 0.25 * c.FuMass];
-    for q = 1:12
-        massCases(end + 1, :) = rand(1, 2) .* [max(c.OxMass, 1), max(c.FuMass, 1)]; %#ok<AGROW>
-    end
+    massCases = [0, 0; c.OxMass, c.FuMass; 0.5 * c.OxMass, 0.25 * c.FuMass];   % ASTRA carries no propellant: every case is (0, 0)
     for q = 1:size(massCases, 1)
         [J_ml, CGz_ml] = ComputeJtot(massCases(q, 1), massCases(q, 2), c);
         [J_cx, CGz_cx, st] = polyqp_mex('ComputeJtot', massCases(q, 1), massCases(q, 2), c);
@@ -196,7 +195,7 @@ end
 
 A0ML = cell(1, 6);
 H0ML = cell(1, 6);
-for r = 3:6
+for r = 5
     [A0, Q0, H0] = assembleQP(r);
     A0ML{r} = A0;
     H0ML{r} = H0;
@@ -207,7 +206,7 @@ for r = 3:6
     rec('assembleQP A0, Q0', ok1 && ok2 && isempty(st), max(e1, e2), sprintf('r=%d eA0=%.3g eQ0=%.3g', r, e1, e2));
     rec('assembleQP H0', ok3 && isempty(st), e3, sprintf('r=%d eH0=%.3g', r, e3));
 end
-note('assembleQP H0', sprintf('log10 cond(A11): r=3..6 -> %s', mat2str(round(arrayfun(@(r) log10(cond(A0ML{r}((r+1):2*r, (r+1):2*r))), 3:6), 1))));
+note('assembleQP H0', sprintf('r = 5 only; log10 cond(A11) = %.1f', log10(cond(A0ML{5}(6:10, 6:10)))));
 
 % ---------------------------------------------------------------- resolveWaypoints error IDs
 fprintf('[resolveWaypoints] error-ID cases\n');
@@ -215,8 +214,7 @@ c0 = C{1};
 Wok = abortWaypoints([1; 0; 0; 0; 3; -2; 10; 1; 0.5; -1; 0; 0; 0; 0; 0]);
 errCases = {};
 errCases{end + 1} = {Wok(1), 5};
-errCases{end + 1} = {Wok, 2};
-errCases{end + 1} = {Wok, 7};
+% (the r = 2 and r = 7 InvalidOrder cases were dropped: the C++ hardcodes r = 5)
 Wbad = Wok; Wbad(1).HDGRef = [0; 0; 0];   errCases{end + 1} = {Wbad, 5};
 Wbad = Wok; Wbad(2).HDGRef = [0; 1; 0];   errCases{end + 1} = {Wbad, 5};
 Wbad = Wok; Wbad(2).MaxVel = [1; 0; 1];   errCases{end + 1} = {Wbad, 5};
@@ -246,7 +244,7 @@ end
 nAbort = 200;
 abortStats = struct('veh', {}, 'n', {}, 'feasible', {}, 'outerHist', {}, 'T_total', {}, 'maxLogCond', {}, 'nOver', {}, 'feasOver', {});
 maxLogCondAll = -Inf;
-for v = 1:2
+for v = 1:numel(C)
     c = C{v};
     Lim = LimML{v};
     fprintf('[abort] %s: %d cases\n', vehName{v}, nAbort);
@@ -346,45 +344,12 @@ for v = 1:2
     abortStats(end + 1) = struct('veh', vehName{v}, 'n', nAbort, 'feasible', feas, 'outerHist', outerIters, 'T_total', Ttot, 'maxLogCond', maxLogCondAll, 'nOver', nOver, 'feasOver', feasOver); %#ok<AGROW>
 end
 
-% ---- PolyQP / resolveWaypoints at other orders r = 3, 4, 6 (abort waypoints)
-fprintf('[abort] r = 3, 4, 6\n');
-for r = [3, 4, 6]
-    for q = 1:15
-        X_est = [1; 0; 0; 0; -20 + 40 * rand(2, 1); 0.5 + 39.5 * rand; -5 + 10 * rand(2, 1); -6 + 10 * rand; 0; 0; 0; 0; 0];
-        Waypoints = abortWaypoints(X_est);
-        tag = sprintf('ASTRA abort r=%d #%d', r, q);
-        idML = '';
-        try
-            [IG, QT, RP] = PolyQP(Waypoints, C{1}, struct('R', r));
-        catch ME
-            idML = ME.identifier;
-        end
-        [IGc, QTc, RPc, st] = polyqp_mex('PolyQP', Waypoints, C{1}, struct('R', r));
-        okS = strcmp(idML, st);
-        if okS && isempty(idML)
-            [okR, ~, mR] = cmpStruct(RP, RPc, 'exactonly', 0, {'Feasible', 'OuterIterations'});
-            [okQ, ~, mQ] = cmpStruct(QT, QTc, 'exactonly', 0, {'R', 'Count', 'IsHold', 'IsCruise'});
-            [okG, ~, mG] = sameShapes(IG, IGc);
-            rec('PolyQP structural / status', okR && okQ && okG, NaN, sprintf('%s: %s %s %s', tag, mR, mQ, mG));
-            [okE1, e1, m1] = cmpStruct(IG, IGc, 'abs', TOL_E2E, {});
-            [okE2, e2, m2] = cmpStruct(QT, QTc, 'abs', TOL_E2E, {'R', 'Count', 'IsHold', 'IsCruise'});
-            [okE3, e3, m3] = cmpStruct(RP, RPc, 'abs', TOL_E2E, {'Feasible', 'OuterIterations'});
-            rec('PolyQP end-to-end', okE1 && okE2 && okE3, max([e1, e2, e3]), sprintf('%s: IG %s | QT %s | RP %s', tag, m1, m2, m3), ...
-                @() floorPolyQP(Waypoints, C{1}, r, IG, QT, RP));
-            lc = perFunctionChecks(Waypoints, C{1}, LimML{1}, QT, r, tag);
-            maxLogCondAll = max(maxLogCondAll, lc);
-        else
-            rec('PolyQP structural / status', okS, NaN, sprintf('%s: MATLAB "%s" vs C++ "%s"', tag, idML, st));
-        end
-    end
-end
-
-% ---- Tilted, rotating starts and depleted TOAD tanks (FIX-F03 / FIX-F29 code paths); separate RNG stream
+% ---- Tilted, rotating starts (FIX-F03 code path); separate RNG stream
 fprintf('[abort] tilted / depleted starts\n');
 trs = RandStream('mt19937ar', 'Seed', 4242);
 nTilt = 40;
-tiltStats = zeros(2, 2);
-for v = 1:2
+tiltStats = zeros(numel(C), 2);
+for v = 1:numel(C)
     c = C{v};
     for q = 1:nTilt
         X_est = tiltedAbortState(trs, c);
@@ -441,7 +406,7 @@ missions{end + 1} = {'Synthetic: hold + cruise split', cruiseMissionWaypoints()}
 missions{end + 1} = {'Synthetic: free pass-through corners', cornerMissionWaypoints()};
 missionLog = {};
 for mi = 1:numel(missions)
-    for v = 1:2
+    for v = 1:numel(C)
         Waypoints = missions{mi}{2};
         tag = sprintf('%s / %s', missions{mi}{1}, vehName{v});
         idML = '';
@@ -482,7 +447,7 @@ fuzzLogCond = -Inf;
 for q = 1:nFuzz
     if q <= 300
         kind = 1;   % random NaN patterns
-        r = randi([3, 6]);
+        r = 5;
         K = randi([2, 5]);
         FixLeg = 3 * randn(3, r, K);
         p = 0.2 + 0.5 * rand;
@@ -490,7 +455,7 @@ for q = 1:nFuzz
         SegTimes = 0.2 + 9.8 * rand(1, K - 1);
     elseif q <= 380
         kind = 2;   % fewer than r fixed values on at least one axis
-        r = randi([3, 6]);
+        r = 5;
         K = randi([2, 4]);
         FixLeg = 3 * randn(3, r, K);
         d = randi(3);
@@ -514,7 +479,7 @@ for q = 1:nFuzz
         end
     else
         kind = 4;   % fixed boundary-pinned legs with free interior knots
-        r = randi([3, 6]);
+        r = 5;
         K = randi([3, 6]);
         FixLeg = nan(3, r, K);
         FixLeg(:, 1, :) = 5 * randn(3, 1, K);
@@ -539,7 +504,7 @@ note('solveLeg (from solveAllLegs)', sprintf('FixP built as solveAllLegs pass 1,
 fprintf('[allocateTimes] fuzzed multi-segment legs\n');
 nAT = 150;
 for q = 1:nAT
-    r = randi([3, 6]);
+    r = 5;
     if q <= 10
         K = 2;
     else
@@ -854,7 +819,7 @@ fprintf('ALL DOUBLE-PRECISION CHECKS PASSED\n');
         fprintf(fid, '\n');
         fprintf(fid, '## Coverage notes\n\n');
         fprintf(fid, '- Local functions are covered through their parents: `solveAllLegs`, `buildReport` (via `PolyQP`); `wpToFix`, `makeCruiseKnot`, `pinTransverse`, `initSingleSegTime` (via `resolveWaypoints`); `softmaxTimes` (via `allocateTimes`); `solveThrustStretch`, `solveThrustFloorStretch` (via `evaluateConstraints`).\n');
-        fprintf(fid, '- Abort cases: %d per vehicle (ASTRA, TOAD); x, y in [-20, 20] m, z in [0.5, 40] m, vx, vy in [-5, 5] m/s, vz in [-6, 4] m/s, quaternion [1 0 0 0], masses OxMass/FuMass. Waypoints from `abortWaypoints` (lines copied verbatim from `Guidance/AbortGuidance.m`; the script asserts they still match the file). Plus 15 ASTRA abort cases each at r = 3, 4, 6, and %d tilted, rotating starts per vehicle (tilt <= 30 deg about a random horizontal axis, random heading, |w_B| <= 1 rad/s; TOAD tanks uniformly 0-100 %%, passed as Opts.InitOxMass/InitFuMass) through PolyQP, AbortGuidance and every per-function check, on a separate RNG stream.\n', nAbort, nTilt);
+        fprintf(fid, '- ASTRA only (vehicle 0, r = 5): the C++ solver is ASTRA-only with compiled-in constants, so the TOAD and r ~= 5 cases of the transpile verification were dropped. Abort cases: %d; x, y in [-20, 20] m, z in [0.5, 40] m, vx, vy in [-5, 5] m/s, vz in [-6, 4] m/s, quaternion [1 0 0 0], zero propellant. Waypoints from `abortWaypoints` (lines copied verbatim from `Guidance/AbortGuidance.m`; the script asserts they still match the file). Plus %d tilted, rotating starts (tilt <= 30 deg about a random horizontal axis, random heading, |w_B| <= 1 rad/s) through PolyQP, AbortGuidance and every per-function check, on a separate RNG stream.\n', nAbort, nTilt);
         fprintf(fid, '- `AbortGuidance` is compared with `Guidance/AbortGuidance.m`, the abort block (moved out of `TrajectoryManager.m`) with the persistents passed explicitly and `ABORT` set to 1 (the file hard-codes 0, so the block can never run as shipped). Each case checks: fire at t = 2, no recompute on a second call (abortCalculated/tAbort persist), and no fire with the default trigger (C++ default ABORT = 0).\n');
         fprintf(fid, '- `flatnessInvert`, `allocateControls`, `evaluateConstraints`, `sampleOutputs`, `PolyEval` use `QPTraj` from MATLAB `PolyQP` and `Plan` from `resolveWaypoints` with `Plan.SegT(1:M) = QPTraj.T(1:M)`. `flatnessInvert` runs on the `evaluateConstraints` grid; `allocateControls` on MATLAB''s `Wrench`.\n');
         fprintf(fid, '- `solveLeg` inputs from runs are rebuilt exactly as `solveAllLegs` pass 1 builds `FixP`, at both the initial and the final segment times. For the abort, passes 2-3 do not change `FixP` (F04).\n');
@@ -866,11 +831,25 @@ fprintf('ALL DOUBLE-PRECISION CHECKS PASSED\n');
                 abortStats(i).n - abortStats(i).nOver, abortStats(i).feasible - abortStats(i).feasOver, abortStats(i).nOver, abortStats(i).feasOver, mat2str(h), ...
                 min(abortStats(i).T_total), median(abortStats(i).T_total), max(abortStats(i).T_total));
         end
-        fprintf(fid, '\nTilted / depleted set (%d per vehicle; tilt <= 30 deg, |w| <= 1 rad/s, TOAD tanks 0-100 %%): feasible ASTRA %d / %d, TOAD %d / %d.\n', nTilt, tiltStats(1, 2), tiltStats(1, 1), tiltStats(2, 2), tiltStats(2, 1));
+        fprintf(fid, '\nTilted set (%d; tilt <= 30 deg, |w| <= 1 rad/s): feasible %d / %d.\n', nTilt, tiltStats(1, 2), tiltStats(1, 1));
         fprintf(fid, '\n## Missions\n\n');
         fprintf(fid, '`BuildTrajectory.m` is a script (`clear; clc; close all`, CSV export, plots), so it is not run. Its one mission (Circle) defines its waypoints without Simulink; those lines are copied verbatim into `circleMissionWaypoints`. Two synthetic missions add an initial hold, a cruise split and free pass-through corners.\n\n');
         fprintf(fid, '| Mission / vehicle | Segs | Legs | Holds | Cruise | Feasible | OuterIter (MATLAB) | T_total (s) | OuterIter (C++) | Max end-to-end err |\n|---|---|---|---|---|---|---|---|---|---|\n');
         fprintf(fid, '%s\n', missionLog{:});
+        fprintf(fid, '\n## MATLAB comment correspondence\n\n');
+        fprintf(fid, 'The C++ comments of each file (C++-only tags such as `TRANSPILE-FLAG`, `ASTRA-ONLY`, `NO-NAN`, `STATIC`, `STREAM` excluded) must be the MATLAB comments in order. A MATLAB comment may be missing only where the code it annotates was deleted; every such comment is listed here.\n\n');
+        fprintf(fid, '| MATLAB | C++ | MATLAB comments | Kept in C++ | Result |\n|---|---|---|---|---|\n');
+        for i = 1:numel(selfReview)
+            fprintf(fid, '| `%s` | `%s` | %d | %d | %s |\n', selfReview(i).m, selfReview(i).cpp, selfReview(i).nM, selfReview(i).nC, passStr(selfReview(i).ok));
+        end
+        for i = 1:numel(selfReview)
+            if ~isempty(selfReview(i).dropped)
+                fprintf(fid, '\nDropped from `%s` (code deleted):\n', selfReview(i).cpp);
+                for j = 1:numel(selfReview(i).dropped)
+                    fprintf(fid, '- `%s`\n', selfReview(i).dropped(j));
+                end
+            end
+        end
         fprintf(fid, '\n# Abort-fix regressions (`fix_regressions.m`)\n\n');
         fprintf(fid, 'One section per FIX in `ABORT_FIXES.md`, checking its acceptance criteria on the fixed MATLAB and C++. Overall: %s.\n\n', passStr(all([fixR.pass])));
         for i = 1:numel(fixR)
@@ -1306,7 +1285,10 @@ function R = selfReviewRows(toadDir, polyDir)
         'Guidance/PolynomialQP/abortFallback.m',       'abortFallback.cpp',       [];
         'Helper/quatRot.m',                            '../matlab_funcs.h',       'region';
         };
-    R = struct('m', {}, 'cpp', {}, 'nM', {}, 'nC', {}, 'commentsOk', {}, 'scanOk', {}, 'ok', {}, 'msg', {});
+    R = struct('m', {}, 'cpp', {}, 'nM', {}, 'nC', {}, 'commentsOk', {}, 'scanOk', {}, 'ok', {}, 'msg', {}, 'dropped', {});
+    % C++-only comment tags (not MATLAB comments): transpile flags, file headers, and the notes of the ASTRA integration
+    % (ASTRA-ONLY: vehicle 1 / r ~= 5 removal, NO-NAN: NaN sentinel -> masks, STATIC: fixed-size storage, STREAM: streamed grids).
+    cppOnly = {'TRANSPILE-FLAG', 'Transpiled from', 'ASTRA-ONLY', 'NO-NAN', 'STATIC', 'STREAM'};
     forbidden = '(mex\.h|\bmx[A-Z]\w*\(|iostream|fstream|std::cout|std::cerr|\bfopen\b|\bprintf\(|<chrono>|\bclock\()';
     for i = 1:size(pairs, 1)
         mLines = readlines(fullfile(toadDir, pairs{i, 1}));
@@ -1339,23 +1321,45 @@ function R = selfReviewRows(toadDir, polyDir)
                 continue;
             end
             t = strip(tok{1}, 'right');
-            if startsWith(t, 'TRANSPILE-FLAG') || startsWith(t, 'Transpiled from')
+            if startsWith(t, cppOnly)
                 continue;
             end
             cc(end + 1, 1) = t; %#ok<AGROW>
         end
-        commentsOk = isequal(mc, cc);
+        % The C++ comments must be the MATLAB comments in order; a MATLAB comment may be missing only where its code was
+        % deleted (vehicle 1, r ~= 5, NaN/finiteness checks). Every dropped comment is listed in the report.
+        [commentsOk, dropped] = orderedSubsequence(cc, mc);
         scanOk = isempty(regexp(cText, forbidden, 'once'));
         msg = 'ok';
         if ~commentsOk
-            k = find([mc; ""] ~= [cc; strings(numel(mc) - numel(cc) + 1, 1)], 1);
-            msg = sprintf('comment mismatch near MATLAB comment %d', k);
+            msg = sprintf('C++ comment not found (in order) among the MATLAB comments: "%s"', dropped);
         elseif ~scanOk
             msg = 'verification code in flight source';
         end
+        if ~commentsOk
+            dropped = strings(0, 1);
+        end
         R(end + 1) = struct('m', pairs{i, 1}, 'cpp', pairs{i, 2}, 'nM', numel(mc), 'nC', numel(cc), ...
-            'commentsOk', commentsOk, 'scanOk', scanOk, 'ok', commentsOk && scanOk, 'msg', msg); %#ok<AGROW>
+            'commentsOk', commentsOk, 'scanOk', scanOk, 'ok', commentsOk && scanOk, 'msg', msg, 'dropped', {dropped}); %#ok<AGROW>
     end
+end
+
+function [ok, out] = orderedSubsequence(cc, mc)
+% ok: every element of cc appears in mc in the same order. out: the mc elements not matched (or, if not ok, the first unmatched cc element).
+    j = 0;
+    used = false(numel(mc), 1);
+    for i = 1:numel(cc)
+        k = find(mc((j + 1):end) == cc(i), 1);
+        if isempty(k)
+            ok = false;
+            out = cc(i);
+            return;
+        end
+        j = j + k;
+        used(j) = true;
+    end
+    ok = true;
+    out = mc(~used);
 end
 
 function c = matlabComments(lines)

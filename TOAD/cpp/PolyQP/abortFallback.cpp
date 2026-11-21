@@ -3,7 +3,7 @@
 
 namespace PolyQP {
 
-void abortFallback(const AbortXEstT &X_est, const PolyQPConstants &Constants, Real vCapZ, AbortTimeT &Time, AbortStatesT &States, AbortInputsT &Inputs) {
+void abortFallback(const AbortXEstT &X_est, Real vCapZ, AbortTimeT &Time, AbortStatesT &States, AbortInputsT &Inputs) {
     // FIX-F08: Closed-Form Vertical Descent Fallback (cannot fail)
     // FIX-F08: hold the lateral position, descend rest-to-rest from z0 to 0 with the degree-9 (r = 5) profile, all derivatives zero at both ends
     const Real MinSegTime = Real(0.2);
@@ -27,10 +27,10 @@ void abortFallback(const AbortXEstT &X_est, const PolyQPConstants &Constants, Re
         z0 = 0;
     }
     if (!std::isfinite(m_lox)) {
-        m_lox = Constants.OxMass;
+        m_lox = 0; // ASTRA-ONLY: Constants.OxMass, the full ASTRA tank, is 0
     }
     if (!std::isfinite(m_ipa)) {
-        m_ipa = Constants.FuMass;
+        m_ipa = 0; // ASTRA-ONLY: Constants.FuMass, the full ASTRA tank, is 0
     }
 
     // FIX-F08: duration from the peak velocity c_v * |z0| / T of the rest-to-rest profile at the vertical cap
@@ -44,8 +44,8 @@ void abortFallback(const AbortXEstT &X_est, const PolyQPConstants &Constants, Re
     linspace(0, T, Nn, t_vec);
 
     // FIX-F08: hover feedforward, upright attitude, zero rates, propellant held at the estimate
-    const Real m0 = Constants.m_dry + m_lox + m_ipa;
-    const Real T_hover = m0 * Constants.g;
+    const Real m0 = ASTRA::m_dry + m_lox + m_ipa;
+    const Real T_hover = m0 * ASTRA::g;
 
     States.setZero(Nn, 15);
     for (int k = 1; k <= Nn; ++k) {

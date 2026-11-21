@@ -10,19 +10,17 @@ static SlabT makeCruiseKnot(const Vec3 &pos, const Vec3 &v_cruise, int r);
 static SlabT pinTransverse(SlabT slab, const Vec3 &dp, int r);
 static Real initSingleSegTime(const Vec3 &dp, const Vec3 &vA, const Vec3 &vB, const Vec3 &v_max, const Vec3 &a_max, int r, Real MinSegTime);
 
-PolyQPStatus resolveWaypoints(const TOADWaypointArray &Waypoints, int r, const LimitsT &Limits, PlanT &Plan) {
+PolyQPStatus resolveWaypoints(const TOADWaypointArray &Waypoints, const LimitsT &Limits, PlanT &Plan) {
     // Validate Waypoints, Expand Holds & Cruise Profiles, and Partition Legs
     const int MAX_WP = POLYQP_MAX_WP;
     const int MAX_SEG = POLYQP_MAX_SEG;
     const int MAX_KNOTS = MAX_SEG + 1;
     const int MAX_R = POLYQP_MAX_R;
+    const int r = POLYQP_R; // ASTRA-ONLY: the polynomial order is hardcoded (r = 5), so the MATLAB InvalidOrder check (r in 3..6) cannot fail and was removed
 
     const int nWP = Waypoints.numel();
     if (nWP < 2 || nWP > MAX_WP) {
         POLYQP_ERROR(InvalidWaypointCount, "Waypoint count must be between 2 and %d (got %d).", MAX_WP, nWP);
-    }
-    if (r < 3 || r > MAX_R) {
-        POLYQP_ERROR(InvalidOrder, "Order r must be in 3..%d (got %d).", MAX_R, r);
     }
 
     // Validate heading reference consistency and rest knots
@@ -43,16 +41,7 @@ PolyQPStatus resolveWaypoints(const TOADWaypointArray &Waypoints, int r, const L
     }
 
     // Peak velocity factor c_v = (2r-1)! / ((r-1)!^2 * 4^(r-1)) for degree 2r-1 rest-to-rest profile
-    Real c_v;
-    if (r == 3) {
-        c_v = Real(15) / Real(8);
-    } else if (r == 4) {
-        c_v = Real(35) / Real(16);
-    } else if (r == 5) {
-        c_v = Real(315) / Real(128);
-    } else {
-        c_v = Real(693) / Real(256);
-    }
+    const Real c_v = Real(315) / Real(128); // ASTRA-ONLY: the r = 5 branch; the r = 3, 4, 6 branches were removed
 
     // Fixed-capacity knot and segment buffers
     static Fix3 FixCg;
@@ -303,9 +292,7 @@ static PolyQPStatus wpToFix(const TOADWaypointT &wp, int r, SlabT &slab, bool &i
     Col1(slab, 1) = wp.PosBC;
     Col1(slab, 2) = wp.VelBC;
     Col1(slab, 3) = wp.AccelBC;
-    if (r >= 4) {
-        Col1(slab, 4) = wp.JerkBC;
-    }
+    Col1(slab, 4) = wp.JerkBC; // ASTRA-ONLY: r = 5 >= 4 always
     isRest = !wp.IsPassAndGo;
     if (isRest) {
         for (int k = 2; k <= r; ++k) {
@@ -343,21 +330,9 @@ static SlabT pinTransverse(SlabT slab, const Vec3 &dp, int r) {
 
 static Real initSingleSegTime(const Vec3 &dp, const Vec3 &vA, const Vec3 &vB, const Vec3 &v_max, const Vec3 &a_max, int r, Real MinSegTime) {
     // Kinematic duration initializer for a single polynomial segment
-    Real c_v;
-    Real c_a;
-    if (r == 3) {
-        c_v = Real(15) / Real(8);
-        c_a = Real(5.7735);
-    } else if (r == 4) {
-        c_v = Real(35) / Real(16);
-        c_a = Real(7.5131);
-    } else if (r == 5) {
-        c_v = Real(315) / Real(128);
-        c_a = Real(9.3720);
-    } else {
-        c_v = Real(693) / Real(256);
-        c_a = Real(11.2);
-    }
+    (void)r;
+    const Real c_v = Real(315) / Real(128); // ASTRA-ONLY: the r = 5 branch; the r = 3, 4, 6 branches were removed
+    const Real c_a = Real(9.3720);
 
     Vec3 dp_abs = mabs(dp);
     for (int i = 1; i <= 3; ++i) {

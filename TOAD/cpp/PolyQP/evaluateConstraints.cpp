@@ -6,8 +6,7 @@ namespace PolyQP {
 static Real solveThrustStretch(const Vec3 &a, const Vec3 &G_vec, Real e_allow, Real u_thi);
 static Real solveThrustFloorStretch(const Vec3 &a, const Vec3 &G_vec, Real e_floor, Real u_tlo);
 
-PolyQPStatus evaluateConstraints(const QPTrajT &QPTraj, const PlanT &Plan, const PolyQPConstants &Constants, const LimitsT &Limits, EvalOutT &EvalOut,
-                                 bool &Feasible) {
+PolyQPStatus evaluateConstraints(const QPTrajT &QPTraj, const PlanT &Plan, const LimitsT &Limits, EvalOutT &EvalOut, bool &Feasible) {
     // Dense-Grid Constraint Utilisation & Per-Segment Dilation Ratios
     const int M = QPTraj.Count;
     const Real T_total = QPTraj.T_total;
@@ -23,7 +22,7 @@ PolyQPStatus evaluateConstraints(const QPTrajT &QPTraj, const PlanT &Plan, const
     static Mat15Grid X;
     static WrenchT Wrench;
     static Mat3Grid AccelCg;
-    POLYQP_TRY(flatnessInvert(QPTraj, t_grid, Plan.HDGRef, Constants, Limits, X, Wrench, AccelCg));
+    POLYQP_TRY(flatnessInvert(QPTraj, t_grid, Plan.HDGRef, Limits, X, Wrench, AccelCg));
     static Mat4Grid U;
     POLYQP_TRY(allocateControls(Wrench, Limits, U));
 

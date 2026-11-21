@@ -3,9 +3,9 @@
 
 namespace PolyQP {
 
-PolyQPStatus buildVehicleLimits(const PolyQPConstants &Constants, LimitsT &Limits, const PolyQPOpts &Opts) {
+PolyQPStatus buildVehicleLimits(LimitsT &Limits) {
     // Build Vehicle Limits and Flatness Parameters
-    // TRANSPILE-FLAG F38: the optional MATLAB Opts (nargin >= 2, isfield, isempty) is the default argument Opts = PolyQPOpts() placed last; a missing, empty or non-finite InitOxMass/InitFuMass is the NaN default (full tank).
+    // TRANSPILE-FLAG F38 (superseded: ASTRA carries no propellant, FIX-F29): the MATLAB Opts argument (InitOxMass/InitFuMass) and Constants argument are not carried; the constants are ASTRA_PolyQP_Constants.h.
     // Fixed planner constants
     const Real ThrustMargin = Real(0.10);
     const Real GimbalMargin = Real(0.10);
@@ -17,39 +17,19 @@ PolyQPStatus buildVehicleLimits(const PolyQPConstants &Constants, LimitsT &Limit
     const Real DtSample = Real(0.1);
 
     // Vehicle selection
-    const Real veh = Constants.Vehicle;
-    const Real MT = Constants.MaxThrust;
-    Real MaxThrustRate;
-    Real minThrottle;
-    Real m_lox0;
-    Real m_ipa0;
-    Vec3 defAccel;
-    if (veh == 1) {
-        MaxThrustRate = 1500;
-        minThrottle = Real(0.50);
-        m_lox0 = Constants.OxMass;
-        m_ipa0 = Constants.FuMass;
-        // FIX-F29: start from the estimated propellant when given (Constants.OxMass/FuMass stay the full-tank reference for ComputeJtot)
-        if (std::isfinite(Opts.InitOxMass)) {
-            m_lox0 = Opts.InitOxMass;
-        }
-        if (std::isfinite(Opts.InitFuMass)) {
-            m_ipa0 = Opts.InitFuMass;
-        }
-        defAccel = Vec3(Real(2.0), Real(2.0), Real(3.0));
-    } else {
-        MaxThrustRate = 30;
-        minThrottle = Real(0.25);
-        m_lox0 = 0;
-        m_ipa0 = 0;
-        defAccel = Vec3(Real(2.5), Real(2.5), Real(3.5));
-    }
+    // ASTRA-ONLY: the vehicle 0 (ASTRA) values; the vehicle 1 (TOAD) branch was removed.
+    const Real MT = ASTRA::MaxThrust;
+    const Real MaxThrustRate = 30;
+    const Real minThrottle = Real(0.25);
+    const Real m_lox0 = 0;
+    const Real m_ipa0 = 0;
+    const Vec3 defAccel = Vec3(Real(2.5), Real(2.5), Real(3.5));
 
     // Initial mass, inertia, and center of percussion offset
-    const Real m_init = Constants.m_dry + m_lox0 + m_ipa0;
+    const Real m_init = ASTRA::m_dry + m_lox0 + m_ipa0;
     Mat3 J_init;
     Real CGz_init;
-    ComputeJtot(m_lox0, m_ipa0, Constants, J_init, CGz_init);
+    ComputeJtot(m_lox0, m_ipa0, J_init, CGz_init);
     const Real rho = M1(J_init, 1, 1) / (m_init * CGz_init);
 
     // Effective actuator bands with controller margins
@@ -59,16 +39,11 @@ PolyQPStatus buildVehicleLimits(const PolyQPConstants &Constants, LimitsT &Limit
     const Real rollLim = (Real(1.00) - ThrustMargin) * MaxRollRate;
 
     Limits.HasVehicle = true;
-    Limits.Vehicle = veh;
-    Limits.g = Constants.g;
+    Limits.g = ASTRA::g;
     Limits.m_init = m_init;
-    Limits.m_dry = Constants.m_dry;
-    Limits.OxMass = m_lox0;
-    Limits.FuMass = m_ipa0;
+    Limits.m_dry = ASTRA::m_dry;
     Limits.MaxThrust = MT;
-    Limits.MaxMdot = Constants.MaxMdot;
-    Limits.OF = Constants.OF;
-    Limits.rTB = Constants.rTB;
+    Limits.rTB = ASTRA::rTB;
     Limits.CGz_init = CGz_init;
     Limits.J_init = J_init;
     Limits.Rho = rho;

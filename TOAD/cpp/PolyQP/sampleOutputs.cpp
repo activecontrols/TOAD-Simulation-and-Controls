@@ -3,7 +3,7 @@
 
 namespace PolyQP {
 
-PolyQPStatus sampleOutputs(const QPTrajT &QPTraj, const PlanT &Plan, const PolyQPConstants &Constants, const LimitsT &Limits, InitialGuessT &InitialGuess) {
+PolyQPStatus sampleOutputs(const QPTrajT &QPTraj, const PlanT &Plan, const LimitsT &Limits, InitialGuessT &InitialGuess) {
     // Sample Trajectory on Uniform DtSample Grid
     const Real T_total = QPTraj.T_total;
     const Real dt_target = Limits.DtSample;
@@ -27,7 +27,7 @@ PolyQPStatus sampleOutputs(const QPTrajT &QPTraj, const PlanT &Plan, const PolyQ
     static Mat15Grid X_nodes;
     static WrenchT Wrench;
     static Mat3Grid AccelCgIgnored;
-    POLYQP_TRY(flatnessInvert(QPTraj, t_vec, Plan.HDGRef, Constants, Limits, X_nodes, Wrench, AccelCgIgnored));
+    POLYQP_TRY(flatnessInvert(QPTraj, t_vec, Plan.HDGRef, Limits, X_nodes, Wrench, AccelCgIgnored));
     static Mat4Grid U_nodes;
     POLYQP_TRY(allocateControls(Wrench, Limits, U_nodes));
     static Mat4Grid U_ctrl;

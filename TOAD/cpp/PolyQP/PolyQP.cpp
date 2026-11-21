@@ -6,28 +6,21 @@ namespace PolyQP {
 static PolyQPStatus solveAllLegs(PlanT &Plan, const MatNC &A0, const MatNC &H0, const LimitsT &Limits, bool doAllocateTimes, QPTrajT &QPTraj);
 static PolyQPStatus buildReport(bool Feasible, const Vec9 &MaxUtilPerType, int outerIter, const QPTrajT &QPTraj, ReportT &Report);
 
-PolyQPStatus PolyQP(const TOADWaypointArray &Waypoints, const PolyQPConstants &Constants, InitialGuessT &InitialGuess, QPTrajT &QPTraj, ReportT &Report,
-                    const PolyQPOpts &Opts) {
+PolyQPStatus PolyQP(const TOADWaypointArray &Waypoints, InitialGuessT &InitialGuess, QPTrajT &QPTraj, ReportT &Report) {
     // Waypoint-Driven Closed-Form Polynomial Trajectory Generator
-    // TRANSPILE-FLAG F10: the nargin < 2 branch (Constants = []) cannot occur in C++ (Constants is always supplied) and is dead in MATLAB (buildVehicleLimits dereferences Constants.Vehicle). Transpiled as-is per MATLAB.
-    // TRANSPILE-FLAG F33: nargin < 3 / isempty(Opts) is the default argument Opts = PolyQPOpts() (R = 5, placed last); Opts.R is always present, so ~isfield/isempty(Opts.R) is constant false. Transpiled as-is per MATLAB.
-    const bool OptsRMissing = false;
-    int r;
-    if (OptsRMissing) {
-        r = 5;
-    } else {
-        r = Opts.R;
-    }
+    // TRANSPILE-FLAG F10: the nargin < 2 branch (Constants = []) cannot occur in C++ (the ASTRA constants are compiled in) and is dead in MATLAB (buildVehicleLimits dereferences Constants.Vehicle). Transpiled as-is per MATLAB.
+    // TRANSPILE-FLAG F33: the MATLAB Opts argument is not carried: r is the constexpr POLYQP_R = 5 (the MATLAB default), and InitOxMass/InitFuMass were superseded (ASTRA carries no propellant).
+    const int r = POLYQP_R;
 
     // 1. Build vehicle limits and resolve waypoints
     LimitsT Limits;
-    POLYQP_TRY(buildVehicleLimits(Constants, Limits, Opts)); // FIX-F29: Opts.InitOxMass/InitFuMass set the initial propellant
+    POLYQP_TRY(buildVehicleLimits(Limits));
     static PlanT Plan;
-    POLYQP_TRY(resolveWaypoints(Waypoints, r, Limits, Plan));
+    POLYQP_TRY(resolveWaypoints(Waypoints, Limits, Plan));
     MatNC A0;
     MatNC Q0Ignored;
     MatNC H0;
-    POLYQP_TRY(assembleQP(r, A0, Q0Ignored, H0));
+    POLYQP_TRY(assembleQP(A0, Q0Ignored, H0));
 
     // 2. Convert CG position BCs to Centre-of-Percussion P-space and solve all legs
     // Run Richter time redistribution only on legs where intermediate knots have no fixed VelBC
@@ -67,7 +60,7 @@ PolyQPStatus PolyQP(const TOADWaypointArray &Waypoints, const PolyQPConstants &C
 
     static EvalOutT EvalOut;
     bool Feasible;
-    POLYQP_TRY(evaluateConstraints(QPTraj, Plan, Constants, Limits, EvalOut, Feasible));
+    POLYQP_TRY(evaluateConstraints(QPTraj, Plan, Limits, EvalOut, Feasible));
     Real bestUtil = EvalOut.MaxOverallUtil;
     RowSeg bestSegT = Plan.SegT;
     RowSeg prevSegUtil;
@@ -106,7 +99,7 @@ PolyQPStatus PolyQP(const TOADWaypointArray &Waypoints, const PolyQPConstants &C
         // Re-solve legs with updated segment durations (preserving optimal relative time shares)
         Plan.R = r;
         POLYQP_TRY(solveAllLegs(Plan, A0, H0, Limits, false, QPTraj));
-        POLYQP_TRY(evaluateConstraints(QPTraj, Plan, Constants, Limits, EvalOut, Feasible));
+        POLYQP_TRY(evaluateConstraints(QPTraj, Plan, Limits, EvalOut, Feasible));
 
         if (didContract) {
             bestUtil = EvalOut.MaxOverallUtil;
@@ -141,14 +134,14 @@ PolyQPStatus PolyQP(const TOADWaypointArray &Waypoints, const PolyQPConstants &C
             if (stallCount >= 4) {
                 Plan.SegT = bestSegT;
                 POLYQP_TRY(solveAllLegs(Plan, A0, H0, Limits, false, QPTraj));
-                POLYQP_TRY(evaluateConstraints(QPTraj, Plan, Constants, Limits, EvalOut, Feasible));
+                POLYQP_TRY(evaluateConstraints(QPTraj, Plan, Limits, EvalOut, Feasible));
                 break;
             }
         }
     }
 
     // 5. Sample uniform output grid and build Report
-    POLYQP_TRY(sampleOutputs(QPTraj, Plan, Constants, Limits, InitialGuess));
+    POLYQP_TRY(sampleOutputs(QPTraj, Plan, Limits, InitialGuess));
     POLYQP_TRY(buildReport(Feasible, EvalOut.MaxUtilPerType, outerIter, QPTraj, Report));
     return PolyQPStatus::Ok;
 }

@@ -3,11 +3,11 @@
 
 namespace PolyQP {
 
-PolyQPStatus assembleQP(int r, MatNC &A0, MatNC &Q0, MatNC &H0) {
+PolyQPStatus assembleQP(MatNC &A0, MatNC &Q0, MatNC &H0) {
     // Assemble Normalised-Time QP Matrices (Paper Eq. ??)
     // TRANSPILE-FLAG F14: "Paper Eq. ??" equation number missing in the source comment; preserved verbatim. Transpiled as-is per MATLAB.
+    const int r = POLYQP_R; // ASTRA-ONLY: the polynomial order is hardcoded (r = 5)
     const int nc = 2 * r;
-    POLYQP_CAPACITY(r >= 0 && r <= POLYQP_MAX_R && nc <= POLYQP_MAX_NC);
     A0.setZero(nc, nc);
     Q0.setZero(nc, nc);
 

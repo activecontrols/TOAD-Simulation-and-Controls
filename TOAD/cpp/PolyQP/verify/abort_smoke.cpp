@@ -1,5 +1,5 @@
 // Verification only (never part of the flight build): host smoke test for AbortGuidance.
-// ASTRA constants copied from LoadTOADParams(0) @ 5ac6bd23.
+// ASTRA only: the constants are compiled in (ASTRA_PolyQP_Constants.h).
 #include "AbortGuidance.h"
 #include "PolyQP.h"
 
@@ -7,27 +7,6 @@
 #include <limits>
 
 using namespace PolyQP;
-
-static PolyQPConstants astraConstants() {
-    PolyQPConstants c;
-    c.Vehicle = 0;
-    c.m_dry = 1.1690;
-    c.g = 9.80145;
-    c.rTB = 0.26;
-    c.J = Vec3(0.067, 0.067, 0.02).asDiagonal();
-    c.MaxThrust = 16;
-    c.MaxMdot = 0;
-    c.OF = 1;
-    c.OxMass = 0;
-    c.FuMass = 0;
-    c.OxHeight = 1;
-    c.FuHeight = 1;
-    c.OxRadius = 1;
-    c.FuRadius = 1;
-    c.Ox_Z = 1;
-    c.Fu_Z = 1;
-    return c;
-}
 
 static AbortXEstT makeState(Real x, Real y, Real z, Real vx, Real vy, Real vz) {
     AbortXEstT X(15);
@@ -70,7 +49,6 @@ static AbortStatesT States;
 static AbortInputsT Inputs;
 
 int main() {
-    const PolyQPConstants constantsTOAD = astraConstants();
     int failures = 0;
 
     {
@@ -78,7 +56,7 @@ int main() {
         ReportT Report{};
         Time.resize(1);
         Time(0) = -1;
-        const AbortStatus st = AbortGuidance(Real(100), makeState(3, -2, 10, 1, 0.5, -1), constantsTOAD, state, Time, States, Inputs, Report);
+        const AbortStatus st = AbortGuidance(Real(100), makeState(3, -2, 10, 1, 0.5, -1), state, Time, States, Inputs, Report);
         const bool ok = st == AbortStatus::OK && !state.abortCalculated && state.tAbort == 0 && Time.size() == 1 && Time(0) == -1;
         std::printf("default ABORT = 0: abortStatus=%s abortCalculated=%d outputs untouched=%d -> %s\n", abortName(st), state.abortCalculated ? 1 : 0,
                     (Time.size() == 1 && Time(0) == -1) ? 1 : 0, ok ? "PASS" : "FAIL");
@@ -92,7 +70,7 @@ int main() {
         const AbortXEstT X_est = makeState(cases[c][0], cases[c][1], cases[c][2], cases[c][3], cases[c][4], cases[c][5]);
         const Real ABORT = 1;
         const Real t = 2;
-        const AbortStatus ast = AbortGuidance(t, X_est, constantsTOAD, state, Time, States, Inputs, Report, ABORT);
+        const AbortStatus ast = AbortGuidance(t, X_est, state, Time, States, Inputs, Report, ABORT);
         const PolyQPStatus st = state.planStatus;
         std::printf("case %d: X_est pos=(%g, %g, %g) vel=(%g, %g, %g)\n", c + 1, static_cast<double>(cases[c][0]), static_cast<double>(cases[c][1]),
                     static_cast<double>(cases[c][2]), static_cast<double>(cases[c][3]), static_cast<double>(cases[c][4]), static_cast<double>(cases[c][5]));
@@ -113,7 +91,7 @@ int main() {
         const Real T_last = Time(Time.size() - 1);
         const bool timeOk = Time(0) == 0 && T_last == Report.T_total;
         const Real T0 = Report.T_total;
-        const AbortStatus st2 = AbortGuidance(Real(3), X_est, constantsTOAD, state, Time, States, Inputs, Report, ABORT);
+        const AbortStatus st2 = AbortGuidance(Real(3), X_est, state, Time, States, Inputs, Report, ABORT);
         const bool once = st2 == ast && state.tAbort == t && Report.T_total == T0;
         std::printf("  shapes=%d time-grid=%d no-recompute=%d\n", shapes ? 1 : 0, timeOk ? 1 : 0, once ? 1 : 0);
         failures += (shapes && timeOk && once) ? 0 : 1;
@@ -127,7 +105,7 @@ int main() {
         static AbortTimeF TimeF;
         static AbortStatesF StatesF;
         static AbortInputsF InputsF;
-        const AbortStatus st = AbortGuidance(2.0f, X_est_f, constantsTOAD, state, TimeF, StatesF, InputsF, Report, 1.0f);
+        const AbortStatus st = AbortGuidance(2.0f, X_est_f, state, TimeF, StatesF, InputsF, Report, 1.0f);
         const bool ok = st != AbortStatus::FALLBACK && state.planStatus == PolyQPStatus::Ok && state.abortCalculated && TimeF.size() == StatesF.rows() &&
                         StatesF.cols() == 15;
         std::printf("float flight overload: abortStatus=%s samples=%ld T_total=%.9g -> %s\n", abortName(st), static_cast<long>(TimeF.size()),
@@ -145,13 +123,13 @@ int main() {
         } else {
             X_est(6) = Real(1e300);
         }
-        const AbortStatus st = AbortGuidance(Real(2), X_est, constantsTOAD, state, Time, States, Inputs, Report, Real(1));
+        const AbortStatus st = AbortGuidance(Real(2), X_est, state, Time, States, Inputs, Report, Real(1));
         const Eigen::Index n = States.rows();
         const bool shapes = Time.size() == n && Inputs.rows() == n && n >= 2;
         const bool start = shapes && States(0, 4) == X_est(4) && States(0, 5) == X_est(5) && States(0, 6) == X_est(6) && Time(0) == 0;
         const bool end = shapes && States(n - 1, 6) == 0 && States(n - 1, 9) == 0 && States.allFinite() && Inputs.allFinite();
         const Eigen::Index n0 = n;
-        const AbortStatus st2 = AbortGuidance(Real(3), X_est, constantsTOAD, state, Time, States, Inputs, Report, Real(1));
+        const AbortStatus st2 = AbortGuidance(Real(3), X_est, state, Time, States, Inputs, Report, Real(1));
         const bool once = st2 == AbortStatus::FALLBACK && States.rows() == n0 && state.tAbort == Real(2);
         const bool ok = st == AbortStatus::FALLBACK && state.abortCalculated && start && end && once;
         std::printf("fallback (%s): abortStatus=%s planStatus=%s samples=%ld T=%.6g start=%d end-at-rest=%d no-recompute=%d -> %s\n",

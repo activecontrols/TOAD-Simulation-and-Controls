@@ -31,12 +31,12 @@ struct AbortGuidanceState {
 
 // FIX-F08: Time/States/Inputs are written exactly once, when the abort fires (plan or fallback); the return value is state.abortStatus.
 // FIX-F02: ABORT_PIN_THRUST (default false, the MATLAB constant) pins the knot-1 accel/jerk to hover thrust along the current b3 (DECISION-D4).
-AbortStatus AbortGuidance(Real t, const AbortXEstT &X_est, const PolyQPConstants &constantsTOAD, AbortGuidanceState &state, AbortTimeT &Time,
-                          AbortStatesT &States, AbortInputsT &Inputs, ReportT &Report, Real ABORT = 0, bool ABORT_PIN_THRUST = false);
+AbortStatus AbortGuidance(Real t, const AbortXEstT &X_est, AbortGuidanceState &state, AbortTimeT &Time, AbortStatesT &States, AbortInputsT &Inputs,
+                          ReportT &Report, Real ABORT = 0, bool ABORT_PIN_THRUST = false);
 
-AbortStatus AbortGuidance(float t, const Vector15 &X_est, const PolyQPConstants &constantsTOAD, AbortGuidanceState &state, AbortTimeF &Time,
-                          AbortStatesF &States, AbortInputsF &Inputs, ReportT &Report, float ABORT = 0, bool ABORT_PIN_THRUST = false);
+AbortStatus AbortGuidance(float t, const Vector15 &X_est, AbortGuidanceState &state, AbortTimeF &Time, AbortStatesF &States, AbortInputsF &Inputs,
+                          ReportT &Report, float ABORT = 0, bool ABORT_PIN_THRUST = false);
 
-void abortFallback(const AbortXEstT &X_est, const PolyQPConstants &Constants, Real vCapZ, AbortTimeT &Time, AbortStatesT &States, AbortInputsT &Inputs);
+void abortFallback(const AbortXEstT &X_est, Real vCapZ, AbortTimeT &Time, AbortStatesT &States, AbortInputsT &Inputs);
 
 }

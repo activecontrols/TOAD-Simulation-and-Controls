@@ -667,10 +667,7 @@ template <typename Derived, EnableIfDouble<Derived> = 0> inline Vector4d DCM_Qua
     return q;
 }
 
-// Transpiled from TOAD/Helper/ComputeJtot.m @ 5ac6bd23 (defined in matlab_helpers.cpp)
-namespace PolyQP {
-struct PolyQPConstants;
-}
-void ComputeJtot(double m_lox, double m_ipa, const PolyQP::PolyQPConstants &constants6DoF, Matrix3_3d &J_tot, double &CGz);
+// Transpiled from TOAD/Helper/ComputeJtot.m @ 5ac6bd23 (ASTRA closed form; defined in matlab_helpers.cpp)
+void ComputeJtot(double m_lox, double m_ipa, Matrix3_3d &J_tot, double &CGz);
 
 #endif // MATLAB_FUNCS_H

@@ -96,39 +96,28 @@ template <typename IntArr> void readIntRow(const mxArray *a, IntArr &b, const ch
     for (size_t i = 0; i < n; ++i) b(static_cast<Eigen::Index>(i)) = static_cast<int>(elem(a, i));
 }
 
-PolyQPConstants readConstants(const mxArray *s) {
-    PolyQPConstants c;
-    c.Vehicle = static_cast<Real>(numField(s, "Vehicle"));
-    c.m_dry = static_cast<Real>(numField(s, "m_dry"));
-    c.g = static_cast<Real>(numField(s, "g"));
-    c.rTB = static_cast<Real>(numField(s, "rTB"));
-    readMatField(s, "J", c.J);
-    c.MaxThrust = static_cast<Real>(numField(s, "MaxThrust"));
-    c.MaxMdot = static_cast<Real>(numField(s, "MaxMdot"));
-    c.OF = static_cast<Real>(numField(s, "OF"));
-    c.OxMass = static_cast<Real>(numField(s, "OxMass"));
-    c.FuMass = static_cast<Real>(numField(s, "FuMass"));
-    c.OxHeight = static_cast<Real>(numField(s, "OxHeight"));
-    c.FuHeight = static_cast<Real>(numField(s, "FuHeight"));
-    c.OxRadius = static_cast<Real>(numField(s, "OxRadius"));
-    c.FuRadius = static_cast<Real>(numField(s, "FuRadius"));
-    c.Ox_Z = static_cast<Real>(numField(s, "Ox_Z"));
-    c.Fu_Z = static_cast<Real>(numField(s, "Fu_Z"));
-    return c;
+// ASTRA only: the solver's constants are compiled in (ASTRA_PolyQP_Constants.h). The MATLAB constants struct is still
+// passed by the verification scripts; it must be LoadTOADParams(0), so check every value the solver uses.
+void checkConstants(const mxArray *s) {
+    Mat3 J;
+    readMatField(s, "J", J);
+    const Mat3 Jc = Vec3(ASTRA::J_xx, ASTRA::J_yy, ASTRA::J_zz).asDiagonal();
+    if (numField(s, "Vehicle") != 0.0 || numField(s, "m_dry") != ASTRA::m_dry || numField(s, "g") != ASTRA::g || numField(s, "rTB") != ASTRA::rTB ||
+        numField(s, "MaxThrust") != ASTRA::MaxThrust || J != Jc)
+        mexErrMsgIdAndTxt("polyqp_mex:constants", "The constants struct is not LoadTOADParams(0): the C++ solver is ASTRA-only with compiled-in constants");
+}
+
+void checkOrder(int r) {
+    if (r != POLYQP_R) mexErrMsgIdAndTxt("polyqp_mex:order", "The C++ solver hardcodes r = %d (got r = %d)", POLYQP_R, r);
 }
 
 LimitsT readLimits(const mxArray *s) {
     LimitsT L;
     L.HasVehicle = numField(s, "HasVehicle") != 0.0;
-    L.Vehicle = static_cast<Real>(numField(s, "Vehicle"));
     L.g = static_cast<Real>(numField(s, "g"));
     L.m_init = static_cast<Real>(numField(s, "m_init"));
     L.m_dry = static_cast<Real>(numField(s, "m_dry"));
-    L.OxMass = static_cast<Real>(numField(s, "OxMass"));
-    L.FuMass = static_cast<Real>(numField(s, "FuMass"));
     L.MaxThrust = static_cast<Real>(numField(s, "MaxThrust"));
-    L.MaxMdot = static_cast<Real>(numField(s, "MaxMdot"));
-    L.OF = static_cast<Real>(numField(s, "OF"));
     L.rTB = static_cast<Real>(numField(s, "rTB"));
     L.CGz_init = static_cast<Real>(numField(s, "CGz_init"));
     readMatField(s, "J_init", L.J_init);
@@ -145,14 +134,6 @@ LimitsT readLimits(const mxArray *s) {
     L.MinSegTime = static_cast<Real>(numField(s, "MinSegTime"));
     L.DtSample = static_cast<Real>(numField(s, "DtSample"));
     return L;
-}
-
-// FIX-F29: optional Opts.InitOxMass/InitFuMass (missing or empty -> NaN default)
-void readMassOpts(const mxArray *s, PolyQPOpts &Opts) {
-    const mxArray *a = mxGetField(s, 0, "InitOxMass");
-    if (a != nullptr && !mxIsEmpty(a)) Opts.InitOxMass = static_cast<Real>(num(a, "Opts.InitOxMass"));
-    const mxArray *b = mxGetField(s, 0, "InitFuMass");
-    if (b != nullptr && !mxIsEmpty(b)) Opts.InitFuMass = static_cast<Real>(num(b, "Opts.InitFuMass"));
 }
 
 void readPlan(const mxArray *s, PlanT &P) {
@@ -269,15 +250,10 @@ struct StructBuilder {
 mxArray *writeLimits(const LimitsT &L) {
     return StructBuilder()
         .add("HasVehicle", lscal(L.HasVehicle))
-        .add("Vehicle", scal(L.Vehicle))
         .add("g", scal(L.g))
         .add("m_init", scal(L.m_init))
         .add("m_dry", scal(L.m_dry))
-        .add("OxMass", scal(L.OxMass))
-        .add("FuMass", scal(L.FuMass))
         .add("MaxThrust", scal(L.MaxThrust))
-        .add("MaxMdot", scal(L.MaxMdot))
-        .add("OF", scal(L.OF))
         .add("rTB", scal(L.rTB))
         .add("CGz_init", scal(L.CGz_init))
         .add("J_init", toMx(L.J_init))
@@ -444,15 +420,13 @@ void mexFunction(int nlhs, mxArray *plhs[], int nrhs, const mxArray *prhs[]) {
         if (nrhs < 3 || nrhs > 4) mexErrMsgIdAndTxt("polyqp_mex:usage", "Usage: [InitialGuess, QPTraj, Report, status, msg] = polyqp_mex('PolyQP', Waypoints, Constants[, Opts])");
         static TOADWaypointArray W;
         readWaypoints(prhs[1], W);
-        const PolyQPConstants C = readConstants(prhs[2]);
-        PolyQPOpts Opts;
+        checkConstants(prhs[2]);
         if (nrhs == 4 && !mxIsEmpty(prhs[3]) && mxIsStruct(prhs[3]) && mxGetField(prhs[3], 0, "R") != nullptr && !mxIsEmpty(mxGetField(prhs[3], 0, "R")))
-            Opts.R = static_cast<int>(num(mxGetField(prhs[3], 0, "R"), "Opts.R"));
-        if (nrhs == 4 && !mxIsEmpty(prhs[3]) && mxIsStruct(prhs[3])) readMassOpts(prhs[3], Opts);
+            checkOrder(static_cast<int>(num(mxGetField(prhs[3], 0, "R"), "Opts.R")));
         static InitialGuessT G;
         static QPTrajT Q;
         static ReportT R;
-        const PolyQPStatus st = PolyQP::PolyQP(W, C, G, Q, R, Opts);
+        const PolyQPStatus st = PolyQP::PolyQP(W, G, Q, R);
         const bool ok = st == PolyQPStatus::Ok;
         out.push(ok ? writeInitialGuess(G) : emptyStruct());
         out.push(ok ? writeQPTraj(Q) : emptyStruct());
@@ -462,16 +436,17 @@ void mexFunction(int nlhs, mxArray *plhs[], int nrhs, const mxArray *prhs[]) {
         needArgs(nrhs, 3, "[Plan, status, msg] = polyqp_mex('resolveWaypoints', Waypoints, r, Limits)");
         static TOADWaypointArray W;
         readWaypoints(prhs[1], W);
-        const int r = static_cast<int>(num(prhs[2], "r"));
+        checkOrder(static_cast<int>(num(prhs[2], "r")));
         const LimitsT L = readLimits(prhs[3]);
         static PlanT P;
-        const PolyQPStatus st = resolveWaypoints(W, r, L, P);
+        const PolyQPStatus st = resolveWaypoints(W, L, P);
         out.push(st == PolyQPStatus::Ok ? writePlan(P) : emptyStruct());
         out.finish(st, nlhs, plhs);
     } else if (cmd == "assembleQP") {
         needArgs(nrhs, 1, "[A0, Q0, H0, status, msg] = polyqp_mex('assembleQP', r)");
         MatNC A0, Q0, H0;
-        const PolyQPStatus st = assembleQP(static_cast<int>(num(prhs[1], "r")), A0, Q0, H0);
+        checkOrder(static_cast<int>(num(prhs[1], "r")));
+        const PolyQPStatus st = assembleQP(A0, Q0, H0);
         out.push(toMx(A0));
         out.push(toMx(Q0));
         out.push(toMx(H0));
@@ -518,11 +493,11 @@ void mexFunction(int nlhs, mxArray *plhs[], int nrhs, const mxArray *prhs[]) {
         readQPTraj(prhs[1], Q);
         static PlanT P;
         readPlan(prhs[2], P);
-        const PolyQPConstants C = readConstants(prhs[3]);
+        checkConstants(prhs[3]);
         const LimitsT L = readLimits(prhs[4]);
         static EvalOutT E;
         bool Feasible = false;
-        const PolyQPStatus st = evaluateConstraints(Q, P, C, L, E, Feasible);
+        const PolyQPStatus st = evaluateConstraints(Q, P, L, E, Feasible);
         const bool ok = st == PolyQPStatus::Ok;
         out.push(ok ? writeEvalOut(E) : emptyStruct());
         out.push(lscal(Feasible));
@@ -534,12 +509,12 @@ void mexFunction(int nlhs, mxArray *plhs[], int nrhs, const mxArray *prhs[]) {
         static RowGrid t_vec;
         readVecAny(prhs[2], t_vec, "t_vec");
         const Vec3 HDGRef = readVec3(prhs[3], "HDGRef");
-        const PolyQPConstants C = readConstants(prhs[4]);
+        checkConstants(prhs[4]);
         const LimitsT L = readLimits(prhs[5]);
         static Mat15Grid X;
         static WrenchT Wr;
         static Mat3Grid AccelCg;
-        const PolyQPStatus st = flatnessInvert(Q, t_vec, HDGRef, C, L, X, Wr, AccelCg);
+        const PolyQPStatus st = flatnessInvert(Q, t_vec, HDGRef, L, X, Wr, AccelCg);
         const bool ok = st == PolyQPStatus::Ok;
         out.push(ok ? toMx(X) : mxCreateDoubleMatrix(0, 0, mxREAL));
         out.push(ok ? writeWrench(Wr) : emptyStruct());
@@ -560,10 +535,10 @@ void mexFunction(int nlhs, mxArray *plhs[], int nrhs, const mxArray *prhs[]) {
         readQPTraj(prhs[1], Q);
         static PlanT P;
         readPlan(prhs[2], P);
-        const PolyQPConstants C = readConstants(prhs[3]);
+        checkConstants(prhs[3]);
         const LimitsT L = readLimits(prhs[4]);
         static InitialGuessT G;
-        const PolyQPStatus st = sampleOutputs(Q, P, C, L, G);
+        const PolyQPStatus st = sampleOutputs(Q, P, L, G);
         out.push(st == PolyQPStatus::Ok ? writeInitialGuess(G) : emptyStruct());
         out.finish(st, nlhs, plhs);
     } else if (cmd == "PolyEval") {
@@ -584,9 +559,8 @@ void mexFunction(int nlhs, mxArray *plhs[], int nrhs, const mxArray *prhs[]) {
     } else if (cmd == "buildVehicleLimits") {
         if (nrhs < 2 || nrhs > 3) mexErrMsgIdAndTxt("polyqp_mex:usage", "Usage: [Limits, status, msg] = polyqp_mex('buildVehicleLimits', Constants[, Opts])");
         LimitsT L;
-        PolyQPOpts Opts;
-        if (nrhs == 3 && !mxIsEmpty(prhs[2]) && mxIsStruct(prhs[2])) readMassOpts(prhs[2], Opts);
-        const PolyQPStatus st = buildVehicleLimits(readConstants(prhs[1]), L, Opts);
+        checkConstants(prhs[1]);
+        const PolyQPStatus st = buildVehicleLimits(L);
         out.push(writeLimits(L));
         out.finish(st, nlhs, plhs);
     } else if (cmd == "TOADWaypoint") {
@@ -619,7 +593,8 @@ void mexFunction(int nlhs, mxArray *plhs[], int nrhs, const mxArray *prhs[]) {
         needArgs(nrhs, 3, "[J_tot, CGz, status, msg] = polyqp_mex('ComputeJtot', m_lox, m_ipa, constants6DoF)");
         Mat3 J_tot;
         Real CGz = 0;
-        ::ComputeJtot(static_cast<Real>(num(prhs[1], "m_lox")), static_cast<Real>(num(prhs[2], "m_ipa")), readConstants(prhs[3]), J_tot, CGz);
+        checkConstants(prhs[3]);
+        ::ComputeJtot(static_cast<Real>(num(prhs[1], "m_lox")), static_cast<Real>(num(prhs[2], "m_ipa")), J_tot, CGz);
         const PolyQPStatus st = PolyQPStatus::Ok;
         out.push(toMx(J_tot));
         out.push(scal(CGz));
@@ -638,7 +613,7 @@ void mexFunction(int nlhs, mxArray *plhs[], int nrhs, const mxArray *prhs[]) {
         AbortXEstT X_est;
         readVecAny(prhs[2], X_est, "X_est");
         if (X_est.size() != 15) mexErrMsgIdAndTxt("polyqp_mex:size", "X_est must have 15 elements");
-        const PolyQPConstants C = readConstants(prhs[3]);
+        checkConstants(prhs[3]);
         AbortGuidanceState state;
         if (nrhs >= 5 && mxIsStruct(prhs[4]) && !mxIsEmpty(prhs[4])) {
             state.abortCalculated = numField(prhs[4], "abortCalculated") != 0.0;
@@ -655,11 +630,11 @@ void mexFunction(int nlhs, mxArray *plhs[], int nrhs, const mxArray *prhs[]) {
         const bool before = state.abortCalculated;
         AbortStatus ast;
         if (nrhs == 7) {
-            ast = AbortGuidance(t, X_est, C, state, Time, States, Inputs, Rep, static_cast<Real>(num(prhs[5], "ABORT")), num(prhs[6], "ABORT_PIN_THRUST") != 0.0);
+            ast = AbortGuidance(t, X_est, state, Time, States, Inputs, Rep, static_cast<Real>(num(prhs[5], "ABORT")), num(prhs[6], "ABORT_PIN_THRUST") != 0.0);
         } else if (nrhs == 6) {
-            ast = AbortGuidance(t, X_est, C, state, Time, States, Inputs, Rep, static_cast<Real>(num(prhs[5], "ABORT")));
+            ast = AbortGuidance(t, X_est, state, Time, States, Inputs, Rep, static_cast<Real>(num(prhs[5], "ABORT")));
         } else {
-            ast = AbortGuidance(t, X_est, C, state, Time, States, Inputs, Rep);
+            ast = AbortGuidance(t, X_est, state, Time, States, Inputs, Rep);
         }
         const bool fired = state.abortCalculated && !before;
         out.push(fired ? toMx(Time) : mxCreateDoubleMatrix(0, 0, mxREAL));
@@ -682,11 +657,11 @@ void mexFunction(int nlhs, mxArray *plhs[], int nrhs, const mxArray *prhs[]) {
         AbortXEstT X_est;
         readVecAny(prhs[1], X_est, "X_est");
         if (X_est.size() != 15) mexErrMsgIdAndTxt("polyqp_mex:size", "X_est must have 15 elements");
-        const PolyQPConstants C = readConstants(prhs[2]);
+        checkConstants(prhs[2]);
         static AbortTimeT Time;
         static AbortStatesT States;
         static AbortInputsT Inputs;
-        abortFallback(X_est, C, static_cast<Real>(num(prhs[3], "vCapZ")), Time, States, Inputs);
+        abortFallback(X_est, static_cast<Real>(num(prhs[3], "vCapZ")), Time, States, Inputs);
         out.push(toMx(Time));
         out.push(toMx(States));
         out.push(toMx(Inputs));

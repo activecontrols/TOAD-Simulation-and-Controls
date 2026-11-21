@@ -3,8 +3,8 @@
 
 namespace PolyQP {
 
-PolyQPStatus flatnessInvert(const QPTrajT &QPTraj, const RowGrid &t_vec, const Vec3 &HDGRef, const PolyQPConstants &Constants, const LimitsT &Limits,
-                            Mat15Grid &X, WrenchT &Wrench, Mat3Grid &AccelCg) {
+PolyQPStatus flatnessInvert(const QPTrajT &QPTraj, const RowGrid &t_vec, const Vec3 &HDGRef, const LimitsT &Limits, Mat15Grid &X, WrenchT &Wrench,
+                            Mat3Grid &AccelCg) {
     // Differential Flatness Inversion at Centre of Percussion
     const int nPts = static_cast<int>(t_vec.size());
     static Mat3Grid P_pos;
@@ -131,11 +131,7 @@ PolyQPStatus flatnessInvert(const QPTrajT &QPTraj, const RowGrid &t_vec, const V
     ml_s.setZero(nPts);
     static RowGrid mi_s;
     mi_s.setZero(nPts);
-    if (Limits.Vehicle == 1) {
-        // TRANSPILE-FLAG F29 (fixed by FIX-F29): propellant integration started from the full-tank masses; Limits.OxMass/FuMass are now the estimate when Opts.InitOxMass/InitFuMass are given (buildVehicleLimits).
-        V1(ml_s, 1) = Limits.OxMass;
-        V1(mi_s, 1) = Limits.FuMass;
-    }
+    // ASTRA-ONLY: ASTRA carries no propellant, so ml_s and mi_s stay zero (X(14:15) keep their slots); the vehicle 1 propellant-depletion integration was removed.
 
     static Mat3Grid F_body;
     F_body.setZero(3, nPts);
@@ -149,7 +145,7 @@ PolyQPStatus flatnessInvert(const QPTrajT &QPTraj, const RowGrid &t_vec, const V
         Mat3 J_tot;
         Real CGz;
         if (Limits.HasVehicle) {
-            ComputeJtot(V1(ml_s, k), V1(mi_s, k), Constants, J_tot, CGz);
+            ComputeJtot(V1(ml_s, k), V1(mi_s, k), J_tot, CGz);
         } else {
             J_tot = Limits.J_init;
             CGz = Limits.CGz_init;
@@ -168,16 +164,6 @@ PolyQPStatus flatnessInvert(const QPTrajT &QPTraj, const RowGrid &t_vec, const V
         const Vec3 C_BI_aG = C_BI * (Col1(AccelCg, k) + G_vec);
         const Vec3 Fk = m_k * C_BI_aG;
         Col1(F_body, k) = Fk;
-
-        // Forward integrate propellant depletion for Vehicle 1
-        if (k < nPts && Limits.Vehicle == 1) {
-            const Real dt_k = V1(t_vec, k + 1) - V1(t_vec, k);
-            const Real T_mag = mnorm(Fk);
-            const Real OF = Limits.OF;
-            const Real mdot_tot = (T_mag / Limits.MaxThrust) * Limits.MaxMdot;
-            V1(ml_s, k + 1) = mmax(Real(0), V1(ml_s, k) - dt_k * (OF / (1 + OF)) * mdot_tot);
-            V1(mi_s, k + 1) = mmax(Real(0), V1(mi_s, k) - dt_k * (1 / (1 + OF)) * mdot_tot);
-        }
     }
 
     X.resize(15, nPts);
