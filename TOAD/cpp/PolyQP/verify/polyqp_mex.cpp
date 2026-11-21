@@ -71,6 +71,19 @@ Vec3 readVec3(const mxArray *a, const char *what) {
     return v;
 }
 
+template <typename A3> void readArray3(const mxArray *a, A3 &A, const char *what) {
+    const mwSize nd = mxGetNumberOfDimensions(a);
+    const mwSize *dims = mxGetDimensions(a);
+    if (nd > 3) mexErrMsgIdAndTxt("polyqp_mex:size", "'%s' must have at most 3 dimensions", what);
+    const int n1 = static_cast<int>(dims[0]);
+    const int n2 = static_cast<int>(dims[1]);
+    const int n3 = nd == 3 ? static_cast<int>(dims[2]) : 1;
+    if (n1 > A3::Cap1 || n2 > A3::Cap2 || n3 > A3::Cap3)
+        mexErrMsgIdAndTxt("polyqp_mex:capacity", "'%s' is %dx%dx%d, capacity %dx%dx%d", what, n1, n2, n3, A3::Cap1, A3::Cap2, A3::Cap3);
+    A.resize(n1, n2, n3);
+    for (int q = 0; q < n1 * n2 * n3; ++q) A.data[q] = static_cast<decltype(A.data[0] + 0)>(elem(a, static_cast<size_t>(q)));
+}
+
 // NO-NAN boundary: the C++ solver carries free boundary conditions as (value 0, fixed = false); MATLAB marks them NaN.
 void readVec3Mask(const mxArray *a, const char *what, Vec3 &v, Vector3b &fixed) {
     v = readVec3(a, what);
@@ -122,18 +135,6 @@ mxArray *writeKnotMask(const Mat3Knot &M, const Bool3Knot &F) {
     return a;
 }
 
-template <typename A3> void readArray3(const mxArray *a, A3 &A, const char *what) {
-    const mwSize nd = mxGetNumberOfDimensions(a);
-    const mwSize *dims = mxGetDimensions(a);
-    if (nd > 3) mexErrMsgIdAndTxt("polyqp_mex:size", "'%s' must have at most 3 dimensions", what);
-    const int n1 = static_cast<int>(dims[0]);
-    const int n2 = static_cast<int>(dims[1]);
-    const int n3 = nd == 3 ? static_cast<int>(dims[2]) : 1;
-    if (n1 > A3::Cap1 || n2 > A3::Cap2 || n3 > A3::Cap3)
-        mexErrMsgIdAndTxt("polyqp_mex:capacity", "'%s' is %dx%dx%d, capacity %dx%dx%d", what, n1, n2, n3, A3::Cap1, A3::Cap2, A3::Cap3);
-    A.resize(n1, n2, n3);
-    for (int q = 0; q < n1 * n2 * n3; ++q) A.data[q] = static_cast<decltype(A.data[0] + 0)>(elem(a, static_cast<size_t>(q)));
-}
 
 template <typename BoolArr> void readBoolRow(const mxArray *a, BoolArr &b, const char *what) {
     const size_t n = mxGetNumberOfElements(a);
