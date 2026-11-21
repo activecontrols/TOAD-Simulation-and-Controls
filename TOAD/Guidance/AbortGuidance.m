@@ -1,16 +1,28 @@
-function S = matlabAbortBlock(t, X_est, constantsTOAD, ABORT, S, ABORT_HOVER_ALT, ABORT_PIN_THRUST)
-% Verification only (never part of the flight build).
-% The TrajectoryManager.m abort block, verbatim, with the persistents carried in S
-% (verify_polyqp.m checkAbortCopyIsVerbatim asserts every line still matches the file).
-% ABORT_HOVER_ALT / ABORT_PIN_THRUST default to the TrajectoryManager.m constants (2, false).
+function S = AbortGuidance(t, X_est, constantsTOAD, ABORT, S, ABORT_HOVER_ALT, ABORT_PIN_THRUST)
+% Abort guidance: the abort block of Guidance/TrajectoryManager.m from branch abort-fixes, unchanged.
+% TrajectoryManager.m was later replaced by the interpolating trajectory manager (commit fd08005), which has
+% no abort block, so the block lives here. It is the MATLAB reference that cpp/PolyQP/AbortGuidance.cpp transpiles.
+% The block's persistents (Time, States, Inputs, tAbort, abortCalculated, abortStatus) are carried in S.
+% ABORT / ABORT_HOVER_ALT / ABORT_PIN_THRUST default to the constants the block had (0, 2, false).
+    if nargin < 4
+        ABORT = 0;
+    end
     if nargin < 6
-        ABORT_HOVER_ALT = 2;
+        ABORT_HOVER_ALT = 2; % DECISION-D5 (TRANSPILE-FLAG F01): abort waypoint 2 altitude (m); the lead's spec says 1 m above the pad
     end
     if nargin < 7
-        ABORT_PIN_THRUST = false;
+        ABORT_PIN_THRUST = false; % FIX-F02: pin knot-1 accel/jerk to hover thrust along the current b3 (DECISION-D4, off by default)
     end
-    Time = S.Time; States = S.States; Inputs = S.Inputs;
-    tAbort = S.tAbort; abortCalculated = S.abortCalculated; abortStatus = S.abortStatus;
+    if nargin < 5 || isempty(S)
+        S = struct('Time', [], 'States', [], 'Inputs', [], 'tAbort', 0, 'abortCalculated', false, 'abortStatus', []);
+    end
+    Time = S.Time; States = S.States; Inputs = S.Inputs; tAbort = S.tAbort;
+    % Persist abort calculation state across function calls
+    abortCalculated = S.abortCalculated;
+    abortStatus = S.abortStatus; % FIX-F08: 0 = OK, 1 = INFEASIBLE_FLOWN (D2), 2 = FALLBACK (D1)
+    if isempty(abortStatus)
+        abortStatus = 0; % FIX-F08: 0 = OK, 1 = INFEASIBLE_FLOWN (D2), 2 = FALLBACK (D1)
+    end
 
     if ABORT > 0 && t > ABORT && ~abortCalculated
         % FIX-F29: plan from the estimated propellant
@@ -35,7 +47,7 @@ function S = matlabAbortBlock(t, X_est, constantsTOAD, ABORT, S, ABORT_HOVER_ALT
         if planOk
             if coder.target('MATLAB') % FIX-F08: code generation has no try/catch, so a PolyQP error is caught only in interpreted MATLAB
                 try
-                    [InitialGuess, QPTraj, Report] = PolyQP(Waypoints, constantsTOAD, Opts); %#ok<ASGLU>
+                    [InitialGuess, QPTraj, Report] = PolyQP(Waypoints, constantsTOAD, Opts);
                 catch
                     planOk = false;
                 end

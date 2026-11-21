@@ -13,6 +13,7 @@ end
 here    = fileparts(mfilename('fullpath'));
 toadDir = fileparts(fileparts(fileparts(here)));
 addpath(toadDir);
+addpath(fullfile(toadDir, 'Guidance'));   % AbortGuidance.m (the abort block)
 addpath(fullfile(toadDir, 'Guidance', 'PolynomialQP'));
 addpath(fullfile(toadDir, 'Helper'));
 addpath(here);
@@ -319,7 +320,7 @@ for v = 1:2
         S0 = struct('abortCalculated', false, 'tAbort', 0, 'abortStatus', 0, 'Time', [], 'States', [], 'Inputs', []);
         idML = '';
         try
-            S1 = matlabAbortBlock(tFire, X_est, c, ABORT, S0);
+            S1 = AbortGuidance(tFire, X_est, c, ABORT, S0);
         catch ME
             idML = ME.identifier;
         end
@@ -330,11 +331,11 @@ for v = 1:2
             okS = isequal(size(S1.Time), size(Tm)) && isequal(size(S1.States), size(Sm)) && isequal(size(S1.Inputs), size(Im)) ...
                 && tAb == S1.tAbort && aC == S1.abortCalculated && aSt == S1.abortStatus;
             % Second call: abortCalculated persists, nothing is recomputed
-            S2 = matlabAbortBlock(tFire + 1, X_est, c, ABORT, S1);
+            S2 = AbortGuidance(tFire + 1, X_est, c, ABORT, S1);
             [Tm2, ~, ~, tAb2, aC2, ~, aSt2, st2] = polyqp_mex('AbortGuidance', tFire + 1, X_est, c, struct('abortCalculated', aC, 'tAbort', tAb, 'abortStatus', aSt), ABORT);
             okS = okS && isempty(st2) && isempty(Tm2) && tAb2 == S2.tAbort && aC2 == S2.abortCalculated && aSt2 == S2.abortStatus;
             % Default trigger (MATLAB ABORT = 0): never fires
-            S3 = matlabAbortBlock(tFire, X_est, c, 0, S0);
+            S3 = AbortGuidance(tFire, X_est, c, 0, S0);
             [Tm3, ~, ~, tAb3, aC3, ~, ~, st3] = polyqp_mex('AbortGuidance', tFire, X_est, c, st0);
             okS = okS && isempty(st3) && isempty(Tm3) && tAb3 == S3.tAbort && aC3 == S3.abortCalculated;
             rec('AbortGuidance structural', okS, NaN, sprintf('%s: shapes/tAbort/abortCalculated/abortStatus/persistence mismatch', tag));
@@ -428,7 +429,7 @@ for v = 1:2
             rec('PolyQP structural / status', okS, NaN, sprintf('%s: MATLAB "%s" vs C++ "%s"', tag, idML, st));
         end
         S0 = struct('abortCalculated', false, 'tAbort', 0, 'abortStatus', 0, 'Time', [], 'States', [], 'Inputs', []);
-        S1 = matlabAbortBlock(2, X_est, c, 1, S0);
+        S1 = AbortGuidance(2, X_est, c, 1, S0);
         [Tm, Sm, Im, tAb, aC, ~, aSt] = polyqp_mex('AbortGuidance', 2, X_est, c, struct('abortCalculated', false, 'tAbort', 0, 'abortStatus', 0), 1);
         okS = isequal(size(S1.Time), size(Tm)) && isequal(size(S1.States), size(Sm)) && isequal(size(S1.Inputs), size(Im)) ...
             && tAb == S1.tAbort && aC == S1.abortCalculated && aSt == S1.abortStatus;
@@ -919,8 +920,8 @@ fprintf('ALL DOUBLE-PRECISION CHECKS PASSED\n');
         fprintf(fid, '\n');
         fprintf(fid, '## Coverage notes\n\n');
         fprintf(fid, '- Local functions are covered through their parents: `solveAllLegs`, `buildReport` (via `PolyQP`); `wpToFix`, `makeCruiseKnot`, `pinTransverse`, `initSingleSegTime` (via `resolveWaypoints`); `softmaxTimes` (via `allocateTimes`); `solveThrustStretch`, `solveThrustFloorStretch` (via `evaluateConstraints`).\n');
-        fprintf(fid, '- Abort cases: %d per vehicle (ASTRA, TOAD); x, y in [-20, 20] m, z in [0.5, 40] m, vx, vy in [-5, 5] m/s, vz in [-6, 4] m/s, quaternion [1 0 0 0], masses OxMass/FuMass. Waypoints from `abortWaypoints` (lines copied verbatim from `TrajectoryManager.m`; the script asserts they still match the file). Plus 15 ASTRA abort cases each at r = 3, 4, 6, and %d tilted, rotating starts per vehicle (tilt <= 30 deg about a random horizontal axis, random heading, |w_B| <= 1 rad/s; TOAD tanks uniformly 0-100 %%, passed as Opts.InitOxMass/InitFuMass) through PolyQP, AbortGuidance and every per-function check, on a separate RNG stream.\n', nAbort, nTilt);
-        fprintf(fid, '- `AbortGuidance` is compared with `matlabAbortBlock`, a verbatim copy of the `TrajectoryManager.m` abort block with the persistents passed explicitly and `ABORT` set to 1 (the file hard-codes 0, so the block can never run as shipped). Each case checks: fire at t = 2, no recompute on a second call (abortCalculated/tAbort persist), and no fire with the default trigger (C++ default ABORT = 0).\n');
+        fprintf(fid, '- Abort cases: %d per vehicle (ASTRA, TOAD); x, y in [-20, 20] m, z in [0.5, 40] m, vx, vy in [-5, 5] m/s, vz in [-6, 4] m/s, quaternion [1 0 0 0], masses OxMass/FuMass. Waypoints from `abortWaypoints` (lines copied verbatim from `Guidance/AbortGuidance.m`; the script asserts they still match the file). Plus 15 ASTRA abort cases each at r = 3, 4, 6, and %d tilted, rotating starts per vehicle (tilt <= 30 deg about a random horizontal axis, random heading, |w_B| <= 1 rad/s; TOAD tanks uniformly 0-100 %%, passed as Opts.InitOxMass/InitFuMass) through PolyQP, AbortGuidance and every per-function check, on a separate RNG stream.\n', nAbort, nTilt);
+        fprintf(fid, '- `AbortGuidance` is compared with `Guidance/AbortGuidance.m`, the abort block (moved out of `TrajectoryManager.m`) with the persistents passed explicitly and `ABORT` set to 1 (the file hard-codes 0, so the block can never run as shipped). Each case checks: fire at t = 2, no recompute on a second call (abortCalculated/tAbort persist), and no fire with the default trigger (C++ default ABORT = 0).\n');
         fprintf(fid, '- `flatnessInvert`, `allocateControls`, `evaluateConstraints`, `sampleOutputs`, `PolyEval` use `QPTraj` from MATLAB `PolyQP` and `Plan` from `resolveWaypoints` with `Plan.SegT(1:M) = QPTraj.T(1:M)`. `flatnessInvert` runs on the `evaluateConstraints` grid; `allocateControls` on MATLAB''s `Wrench`.\n');
         fprintf(fid, '- `solveLeg` inputs from runs are rebuilt exactly as `solveAllLegs` pass 1 builds `FixP`, at both the initial and the final segment times. For the abort, passes 2-3 do not change `FixP` (F04).\n');
         fprintf(fid, '- `resolveWaypoints`/`PolyQP` error IDs: 1 waypoint, r = 2, r = 7, zero first HDGRef, inconsistent HDGRef, zero MaxVel, negative MaxAccel, scaled-but-consistent HDGRef (no error). The MEX rejects more than 16 waypoints before the call (capacity), so the > MAX_WP branch is checked only through the count-of-1 case.\n\n');
@@ -967,19 +968,17 @@ end
 % ================================================================ local helpers
 
 function checkAbortCopyIsVerbatim(toadDir, here)
-% Every non-blank line of the TrajectoryManager.m abort block must appear verbatim in matlabAbortBlock.m.
-    tm = readlines(fullfile(toadDir, 'Guidance', 'TrajectoryManager.m'));
-    me = fileread(fullfile(here, 'matlabAbortBlock.m'));
+% Every waypoint line of the abort block (Guidance/AbortGuidance.m) must appear verbatim in abortWaypoints.m.
+    tm = readlines(fullfile(toadDir, 'Guidance', 'AbortGuidance.m'));
     wp = fileread(fullfile(here, 'abortWaypoints.m'));
     i1 = find(contains(tm, 'if ABORT > 0 && t > ABORT && ~abortCalculated'), 1);
     i2 = find(contains(tm, 'tAbort = t;'), 1);
-    assert(~isempty(i1) && ~isempty(i2) && i2 > i1, 'Abort block not found in TrajectoryManager.m');
+    assert(~isempty(i1) && ~isempty(i2) && i2 > i1, 'Abort block not found in AbortGuidance.m');
     for i = (i1 + 1):i2
         ln = strtrim(tm(i));
         if strlength(ln) == 0
             continue;
         end
-        assert(contains(me, ln), 'verify_polyqp:abortCopy', 'Abort block line not copied verbatim: %s', ln);
         if contains(ln, 'TOADWaypoint(') || contains(ln, 'repmat(dummyWP')
             assert(contains(wp, ln), 'verify_polyqp:abortCopy', 'Abort waypoint line not copied verbatim into abortWaypoints.m: %s', ln);
         end
@@ -1255,7 +1254,7 @@ function fl = floorAbort(t, X_est, c, ABORT, S0, S1)
         X2 = X_est;
         X2(5:10) = pert(X_est(5:10));
         try
-            S2 = matlabAbortBlock(t, X2, c, ABORT, S0);
+            S2 = AbortGuidance(t, X2, c, ABORT, S0);
         catch
             continue;
         end
@@ -1389,7 +1388,7 @@ function R = selfReviewRows(toadDir, polyDir)
         'Guidance/PolynomialQP/TOADWaypoint.m',        'TOADWaypoint.cpp',        [];
         'Helper/ComputeJtot.m',                        'ComputeJtot.cpp',         [];
         'Helper/DCM_Quat_Conversion.m',                'DCM_Quat_Conversion.cpp', [];
-        'Guidance/TrajectoryManager.m',                'AbortGuidance.cpp',       'abort';
+        'Guidance/AbortGuidance.m',                    'AbortGuidance.cpp',       'abort';
         'Guidance/PolynomialQP/abortFallback.m',       'abortFallback.cpp',       [];
         'Helper/quatRot.m',                            'quatRot.cpp',             [];
         };

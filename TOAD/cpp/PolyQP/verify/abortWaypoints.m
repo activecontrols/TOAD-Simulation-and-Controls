@@ -1,6 +1,6 @@
 function Waypoints = abortWaypoints(X_est, constantsTOAD, ABORT_PIN_THRUST, ABORT_HOVER_ALT)
 % Verification only (never part of the flight build).
-% Waypoint lines copied verbatim from the TrajectoryManager.m abort block (shared by verify_polyqp, fix_regressions, diagnose_aborts).
+% Waypoint lines copied verbatim from the abort block in Guidance/AbortGuidance.m (shared by verify_polyqp, fix_regressions, diagnose_aborts).
 % constantsTOAD is used only when ABORT_PIN_THRUST is true; ABORT_PIN_THRUST / ABORT_HOVER_ALT default to the file's constants (false, 2).
     if nargin < 2
         constantsTOAD = struct('g', NaN);

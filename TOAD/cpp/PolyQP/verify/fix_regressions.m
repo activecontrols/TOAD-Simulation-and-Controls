@@ -9,6 +9,7 @@ function R = fix_regressions(ids)
 here    = fileparts(mfilename('fullpath'));
 toadDir = fileparts(fileparts(fileparts(here)));
 addpath(toadDir);
+addpath(fullfile(toadDir, 'Guidance'));   % AbortGuidance.m (the abort block)
 addpath(fullfile(toadDir, 'Guidance', 'PolynomialQP'));
 addpath(fullfile(toadDir, 'Helper'));
 addpath(here);
@@ -308,8 +309,8 @@ function [ok, md] = regF08(ctx)
                     idErr = ME.identifier;
                 end
             end
-            S1 = matlabAbortBlock(tFire, X_est, c, ABORT, S0);
-            S2 = matlabAbortBlock(tFire + 1, X_est, c, ABORT, S1);
+            S1 = AbortGuidance(tFire, X_est, c, ABORT, S0);
+            S2 = AbortGuidance(tFire + 1, X_est, c, ABORT, S1);
             [Tm, Sm, Im, tAb, aC, ~, aSt, pst] = polyqp_mex('AbortGuidance', tFire, X_est, c, st0, ABORT);
             [Tm2, ~, ~, tAb2, aC2, ~, aSt2] = polyqp_mex('AbortGuidance', tFire + 1, X_est, c, struct('abortCalculated', aC, 'tAbort', tAb, 'abortStatus', aSt), ABORT);
             once = isequal(S2.Time, S1.Time) && isequal(S2.States, S1.States) && S2.tAbort == tFire && S2.abortCalculated ...
@@ -340,7 +341,7 @@ function [ok, md] = regF08(ctx)
                 okOr(pst), size(S1.States, 1), e, mode, yesNo(once), gs, passFail(okRow));
         end
     end
-    L{end + 1} = 'Each path fires at t = 2 with ABORT = 1 (MATLAB `matlabAbortBlock`, the verbatim `TrajectoryManager.m` block, against `polyqp_mex(''AbortGuidance'')`), then is called again at t = 3. "No recompute": the second call changes nothing and the C++ writes no outputs. The fallback is closed-form, so it is compared at the closed-form tier (rel 1e-14); planned paths at the end-to-end tier (abs 1e-6).';
+    L{end + 1} = 'Each path fires at t = 2 with ABORT = 1 (MATLAB `Guidance/AbortGuidance.m`, the abort block, against `polyqp_mex(''AbortGuidance'')`), then is called again at t = 3. "No recompute": the second call changes nothing and the C++ writes no outputs. The fallback is closed-form, so it is compared at the closed-form tier (rel 1e-14); planned paths at the end-to-end tier (abs 1e-6).';
     L{end + 1} = '';
     L{end + 1} = '| Vehicle | Path | abortStatus MATLAB / C++ | C++ planStatus | Samples | Max MATLAB vs C++ error | No recompute | Fallback geometry | Result |';
     L{end + 1} = '|---|---|---|---|---|---|---|---|---|';
@@ -667,7 +668,7 @@ function [ok, md] = regF02(ctx)
                     nInf = nInf + ~RP.Feasible;
                     [att(i), tdir(i), tst(i)] = stepAtAbort(IG, X{i}, c);
                     if pin && i <= 20
-                        S1 = matlabAbortBlock(2, X{i}, c, 1, struct('abortCalculated', false, 'tAbort', 0, 'abortStatus', 0, 'Time', [], 'States', [], 'Inputs', []), 2, true);
+                        S1 = AbortGuidance(2, X{i}, c, 1, struct('abortCalculated', false, 'tAbort', 0, 'abortStatus', 0, 'Time', [], 'States', [], 'Inputs', []), 2, true);
                         [Tm, Sm, Im, ~, ~, ~, aSt] = polyqp_mex('AbortGuidance', 2, X{i}, c, struct('abortCalculated', false, 'tAbort', 0, 'abortStatus', 0), 1, true);
                         if isequal(size(Sm), size(S1.States)) && aSt == S1.abortStatus
                             par = max([par, max(abs(Sm - S1.States), [], 'all'), max(abs(Im - S1.Inputs), [], 'all'), max(abs(Tm - S1.Time))]);
@@ -757,7 +758,7 @@ function [ok, md] = regF29(ctx)
     A = A(cellfun(@(a) a.veh, A) == 2);
     c = ctx.C{2};
     fr = [0.5, 0.2, 0.05, 0];
-    L{end + 1} = 'TOAD abort states from the frozen set with the tanks at a fraction of full (oxidiser and fuel independently jittered by +-10 %), through the abort block (`matlabAbortBlock`) and `polyqp_mex(''AbortGuidance'')`.';
+    L{end + 1} = 'TOAD abort states from the frozen set with the tanks at a fraction of full (oxidiser and fuel independently jittered by +-10 %), through the abort block (`Guidance/AbortGuidance.m`) and `polyqp_mex(''AbortGuidance'')`.';
     L{end + 1} = '';
     L{end + 1} = '| Tank fraction | Cases | States(1, 14:15) = X_est(14:15) (MATLAB / C++) | Mass non-increasing | buildVehicleLimits m_init, Rho = from estimate (MATLAB / C++) | MATLAB vs C++ (abs) | Feasible | T_total change vs full tank: median / max (s) |';
     L{end + 1} = '|---|---|---|---|---|---|---|---|';
@@ -768,7 +769,7 @@ function [ok, md] = regF29(ctx)
             X = A{i}.X_est;
             X(14) = max(0, f * c.OxMass * (1 + 0.1 * (2 * rand(rs) - 1)));
             X(15) = max(0, f * c.FuMass * (1 + 0.1 * (2 * rand(rs) - 1)));
-            S1 = matlabAbortBlock(2, X, c, 1, S0);
+            S1 = AbortGuidance(2, X, c, 1, S0);
             [~, Sm, ~, ~, ~, Rc, aSt] = polyqp_mex('AbortGuidance', 2, X, c, st0, 1);
             n = n + 1;
             nOkM = nOkM + isequal(S1.States(1, 14:15), X(14:15).');

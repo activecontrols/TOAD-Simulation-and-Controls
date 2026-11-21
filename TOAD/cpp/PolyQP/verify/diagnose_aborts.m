@@ -12,6 +12,7 @@ end
 here    = fileparts(mfilename('fullpath'));
 toadDir = fileparts(fileparts(fileparts(here)));
 addpath(toadDir);
+addpath(fullfile(toadDir, 'Guidance'));   % AbortGuidance.m (the abort block)
 addpath(fullfile(toadDir, 'Guidance', 'PolynomialQP'));
 addpath(fullfile(toadDir, 'Helper'));
 warnState = warning('off', 'all');
