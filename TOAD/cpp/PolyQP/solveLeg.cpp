@@ -3,6 +3,23 @@
 
 namespace PolyQP {
 
+// STATIC: the rcond guard is evaluated on the leading nP x nP block of R_PP_eq with a fixed-size LU of exactly that size
+// (N = 1..POLYQP_MAX_FREE, chosen at run time). The identity padding leaves the exact 1-norm condition number unchanged, but
+// Eigen's rcond is an estimate (Hager / Higham), and on the padded matrix it differed by up to 3x on 27 of 1874 fuzzed axis
+// solves (verify_polyqp, Phase 4). Estimating on the unpadded block keeps the guard identical to the variable-size solver.
+template <int N> struct RcondLeading {
+    static double eval(const MatrixF_Fd &A, int n) {
+        if (n == N) {
+            const Eigen::Matrix<double, N, N> B = A.template topLeftCorner<N, N>();
+            return Eigen::PartialPivLU<Eigen::Matrix<double, N, N>>(B).rcond();
+        }
+        return RcondLeading<N - 1>::eval(A, n);
+    }
+};
+template <> struct RcondLeading<0> {
+    static double eval(const MatrixF_Fd &, int) { return 0.0; }
+};
+
 PolyQPStatus solveLeg(const Array3_5_Kd &FixLeg, const Array3_5_Kb &FixLegFixed, const Matrix1_Sd &SegTimes, const Matrix10_10d &A0, const Matrix10_10d &H0,
                       Array10_S_3d &CoefPhys, Array3_5_Kd &Deriv, double &Cost) {
     // Closed-Form Minimum-Derivative QP Solve (Paper Eq. ??)
@@ -147,11 +164,11 @@ PolyQPStatus solveLeg(const Array3_5_Kd &FixLeg, const Array3_5_Kb &FixLegFixed,
             rhs_eq.setZero();
             rhs_eq.head(nP) = (s_jac.head(nP).array() * R_PF_dF.head(nP).array()).matrix();
 
-            Eigen::PartialPivLU<MatrixF_Fd> &lu_rc = W.lu_rc;
-            lu_rc.compute(R_PP_eq);
-            const double rc = lu_rc.rcond();
+            const double rc = RcondLeading<POLYQP_MAX_FREE>::eval(R_PP_eq, nP); // STATIC: rcond of the unpadded nP x nP block
 #if defined(POLYQP_ERROR_MESSAGES)
-            lastRcond().rc[d - 1] = rc; // verification only: the padded system's rcond and size, for the padded-vs-unpadded check
+            // STATIC: verification only: the guard's rcond, the padded matrix's own estimate, and the system, per axis
+            lastRcond().rc[d - 1] = rc;
+            lastRcond().rcPadded[d - 1] = Eigen::PartialPivLU<MatrixF_Fd>(R_PP_eq).rcond();
             lastRcond().nP[d - 1] = nP;
             lastRcond().R_PP_eq[d - 1] = R_PP_eq;
 #endif

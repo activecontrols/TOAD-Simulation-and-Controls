@@ -25,9 +25,10 @@ srcs = [{fullfile(here, 'polyqp_mex.cpp')}, fullfile(polyqpDir, flightSrcs), {fu
 defs = {'-DPOLYQP_DEBUG_BOUNDS', '-DPOLYQP_ERROR_MESSAGES', '-D_USE_MATH_DEFINES'};
 name = 'polyqp_mex';
 if strcmpi(variant, 'wide')
-    % 16 segments (17 knots, nv = 85, every unknown may be free) and MATLAB's 3999-sample grid. The 15 x 4000 grid
-    % buffers exceed Eigen's 128 KB static-size check, so it is disabled in every translation unit of this build.
-    defs = [defs, {'-DPOLYQP_MAX_WP=16', '-DPOLYQP_MAX_SEG=16', '-DPOLYQP_MAX_FREE=85', '-DPOLYQP_MAX_GRID=3999', '-DEIGEN_STACK_ALLOCATION_LIMIT=0'}];
+    % 16 segments (17 knots, nv = 85), up to 32 free unknowns per axis (the fuzzed legs and missions need at most 20) and
+    % MATLAB's 3999-sample grid. The 15 x 4000 grid buffers exceed Eigen's 128 KB static-size check, so it is disabled in
+    % every translation unit of this build.
+    defs = [defs, {'-DPOLYQP_MAX_WP=16', '-DPOLYQP_MAX_SEG=16', '-DPOLYQP_MAX_FREE=32', '-DPOLYQP_MAX_GRID=3999', '-DEIGEN_STACK_ALLOCATION_LIMIT=0'}];
     name = 'polyqp_mex_wide';
 elseif ~strcmpi(variant, 'flight')
     error('build_polyqp_mex:variant', 'variant must be ''flight'' or ''wide''.');

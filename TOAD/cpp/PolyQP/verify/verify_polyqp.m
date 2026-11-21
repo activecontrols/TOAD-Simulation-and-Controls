@@ -115,7 +115,7 @@ addRow('AbortGuidance end-to-end',           'end-to-end (abs)',             TOL
 addRow('Missions structural / status',       'exact',                        0);
 addRow('Missions end-to-end',                'end-to-end (abs)',             TOL_E2E);
 addRow('Padded solve vs variable-size solve', 'linear solve (rel)',           TOL_LIN);
-addRow('Padded vs unpadded rcond',           'closed-form (rel)',            1e-12);
+addRow('rcond guard on unpadded block',      'closed-form (rel)',            1e-12);
 
 % ---------------------------------------------------------------- 1. constants
 % ASTRA only: the C++ solver is ASTRA-only (vehicle 0, compiled-in constants, r = 5); the TOAD and r ~= 5 cases were dropped.
@@ -539,7 +539,7 @@ note('allocateTimes', sprintf('%d fuzzed legs (10 single-segment for the M < 2 r
 % padded system gives against the rcond of its unpadded leading nP x nP block (fixed-size Eigen in the MEX), and whether the
 % 1e-13 guard decides the same.
 fprintf('[padding] identity-padded solve vs variable-size solve\n');
-padStats = struct('n', 0, 'beyond', 0, 'statusDiff', 0, 'rcN', 0, 'rcDecisionDiff', 0, 'maxRcRel', 0);
+padStats = struct('n', 0, 'beyond', 0, 'statusDiff', 0, 'rcN', 0, 'rcDecisionDiff', 0, 'maxRcRel', 0, 'maxPadEstRel', 0, 'nPadEstDiff', 0, 'padDecisionDiff', 0);
 for i = 1:numel(caseLog.solveLeg)
     e = caseLog.solveLeg{i};
     if size(e.FixLeg, 3) > POLYQP_FLIGHT_KNOTS
@@ -552,14 +552,19 @@ for i = 1:numel(caseLog.solveLeg)
         continue;
     end
     padStats.n = padStats.n + 1;
-    [rcP, nFree, rcU] = polyqp_mex('solveLegRcond', e.FixLeg, e.SegTimes, A0ML{5}, H0ML{5});
+    [rcG, nFree, rcU, rcP] = polyqp_mex('solveLegRcond', e.FixLeg, e.SegTimes, A0ML{5}, H0ML{5});
     for d = 1:3
         if nFree(d) > 0 && isfinite(rcU(d))
             padStats.rcN = padStats.rcN + 1;
-            relRc = abs(rcP(d) - rcU(d)) / max(abs(rcU(d)), realmin);
+            relRc = abs(rcG(d) - rcU(d)) / max(abs(rcU(d)), realmin);
             padStats.maxRcRel = max(padStats.maxRcRel, relRc);
-            padStats.rcDecisionDiff = padStats.rcDecisionDiff + ((rcP(d) >= 1e-13) ~= (rcU(d) >= 1e-13));
-            rec('Padded vs unpadded rcond', relRc <= 1e-12 && ((rcP(d) >= 1e-13) == (rcU(d) >= 1e-13)), relRc, sprintf('%s axis %d nFree=%d rc padded %.3g, unpadded %.3g', e.tag, d, nFree(d), rcP(d), rcU(d)));
+            padStats.rcDecisionDiff = padStats.rcDecisionDiff + ((rcG(d) >= 1e-13) ~= (rcU(d) >= 1e-13));
+            rec('rcond guard on unpadded block', relRc <= 1e-12 && ((rcG(d) >= 1e-13) == (rcU(d) >= 1e-13)), relRc, sprintf('%s axis %d nFree=%d rc guard %.3g, unpadded %.3g', e.tag, d, nFree(d), rcG(d), rcU(d)));
+            % informational: Eigen's estimate on the padded matrix itself (same exact 1-norm condition, different estimate)
+            relPad = abs(rcP(d) - rcU(d)) / max(abs(rcU(d)), realmin);
+            padStats.maxPadEstRel = max(padStats.maxPadEstRel, relPad);
+            padStats.nPadEstDiff = padStats.nPadEstDiff + (relPad > 1e-12);
+            padStats.padDecisionDiff = padStats.padDecisionDiff + ((rcP(d) >= 1e-13) ~= (rcU(d) >= 1e-13));
         end
     end
     if haveP3
@@ -583,7 +588,8 @@ for i = 1:numel(caseLog.solveLeg)
 end
 note('Padded solve vs variable-size solve', sprintf('%d solveLeg cases within the flight capacities (%d beyond them skipped); %s; status mismatches %d', ...
     padStats.n, padStats.beyond, ternary(haveP3, 'against polyqp_mex_p3 (Phase 3 build)', 'polyqp_mex_p3 NOT available: outputs not compared'), padStats.statusDiff));
-note('Padded vs unpadded rcond', sprintf('%d axis solves; max relative difference %.2e; guard decisions that differ: %d', padStats.rcN, padStats.maxRcRel, padStats.rcDecisionDiff));
+note('rcond guard on unpadded block', sprintf('%d axis solves; guard vs independent unpadded rcond: max rel diff %.2e, decisions that differ %d. Informational: Eigen''s estimate on the padded matrix differs from the unpadded one in %d solves (max rel %.2f; guard decisions it would change: %d), which is why the guard uses the unpadded block', ...
+    padStats.rcN, padStats.maxRcRel, padStats.rcDecisionDiff, padStats.nPadEstDiff, padStats.maxPadEstRel, padStats.padDecisionDiff));
 
 % ---------------------------------------------------------------- self-review (step 9): comments + flight-source scan
 selfReview = selfReviewRows(toadDir, fileparts(here));
@@ -771,6 +777,11 @@ fprintf('ALL DOUBLE-PRECISION CHECKS PASSED\n');
                     % Textbook forward-error bound of a backward-stable solve, cond(R_PP_eq) * eps (no n factor)
                     floorVal = max(floorVal, 10 ^ lc * eps / ROUNDOFF_FACTOR);
                 end
+                % Cost only: the rounding bound of evaluating the quadratic form d' R d, nv * eps * (|d|' |R| |d|) / |Cost|. A near-
+                % optimal cost can be orders of magnitude smaller than its terms (kappa_cost up to 6e10 on fuzzed legs), so the
+                % cost's own floor is the larger of floorVal and this bound; Coef and Deriv keep floorVal.
+                costFloor = max(floorVal, quadFormFloor(FixLeg, SegTimes, H0, Dml, Jml) / ROUNDOFF_FACTOR);
+                e3 = e3 * floorVal / costFloor;   % the cost error expressed against floorVal
                 if numel(exactRef) < 25
                     [~, g1] = cmpNum(Cex, Ccx, 'rel', Inf);
                     [~, g2] = cmpNum(Dex, Dcx, 'rel', Inf);
@@ -841,7 +852,7 @@ fprintf('ALL DOUBLE-PRECISION CHECKS PASSED\n');
         end
         fprintf(fid, '\n### How strict misses are classified\n\n');
         fprintf(fid, 'The tolerances above are applied as written in the transpile spec and are not loosened. A case that misses its tolerance is classed as *roundoff-explained* only if the C++-vs-MATLAB difference is at most %d x the case''s **roundoff floor**, a measurement of MATLAB''s own rounding error for that case:\n\n', ROUNDOFF_FACTOR);
-        fprintf(fid, '- `solveLeg`: the C++-vs-MATLAB difference must be at most max(%d x MATLAB''s own error against the same solve in 60-digit `vpa` arithmetic, cond(R_PP_eq) * eps). The second term is the textbook first-order forward-error bound of a backward-stable (Cholesky/LU) solve, without its dimension factor; it covers cases where MATLAB''s own rounding happens to land unusually close to the exact answer.\n', ROUNDOFF_FACTOR);
+        fprintf(fid, '- `solveLeg`: the C++-vs-MATLAB difference must be at most max(%d x MATLAB''s own error against the same solve in 60-digit `vpa` arithmetic, cond(R_PP_eq) * eps). The second term is the textbook first-order forward-error bound of a backward-stable (Cholesky/LU) solve, without its dimension factor; it covers cases where MATLAB''s own rounding happens to land unusually close to the exact answer. The `Cost` output alone may also use the rounding bound of its quadratic form, nv * eps * (|d|''|R||d|) / |Cost| (Phase 4: a near-optimal cost can be ~1e10 times smaller than its terms on fuzzed legs).\n', ROUNDOFF_FACTOR);
         fprintf(fid, '- `PolyQP`, `AbortGuidance`, missions: the larger of (a) MATLAB''s abs error on its final QP solve (every leg rebuilt from `QPTraj.Fix` with the `Plan.FixCg` free pattern at `QPTraj.T`, solved in `vpa`) and (b) the largest change in MATLAB''s outputs when the waypoint positions and velocities are multiplied by `1 + 2*eps*randn` (3 draws, separate RNG stream; draws that change `OuterIterations` or the sample count are discarded). `AbortGuidance` uses the floor of the identical `PolyQP` call.\n');
         fprintf(fid, '- `allocateTimes`: (b) applied to `FixLeg` and the initial times. `PolyEval`: (b) applied to `QPTraj.Coef` only (query times exactly at knots must not move).\n\n');
         fprintf(fid, 'Input perturbation alone underestimates the floor of the linear solves: it perturbs `R_PP` only along structured directions, while Cholesky''s backward error is unstructured, so its forward error is set by cond(R_PP_eq). The `vpa` table below shows MATLAB and the C++ are equally far from the exact solution. Any other miss counts as a failure and makes the script exit with an error.\n\n');
@@ -1025,6 +1036,24 @@ function lc = logCondRPP(FixLeg, SegTimes, H0)
             lc = max(lc, log10(cond(Req{d})));
         end
     end
+end
+
+function fl = quadFormFloor(FixLeg, SegTimes, H0, Deriv, Cost)
+% nv * eps * (|d|' |Rmat| |d|) / |Cost| with Rmat assembled as solveLeg does (all segments), d = Deriv per axis.
+    r = size(FixLeg, 2);
+    K = size(FixLeg, 3);
+    R = zeros(r * K);
+    for m = 1:(K - 1)
+        s = [SegTimes(m) .^ (0:(r - 1)), SegTimes(m) .^ (0:(r - 1))]';
+        ix = (m - 1) * r + (1:(2 * r));
+        R(ix, ix) = R(ix, ix) + SegTimes(m) ^ (1 - 2 * r) * (s * s') .* H0;
+    end
+    t = 0;
+    for d = 1:size(Deriv, 1)
+        dv = reshape(Deriv(d, :, :), [], 1);
+        t = t + abs(dv)' * abs(R) * abs(dv);
+    end
+    fl = r * K * eps * t / max(abs(Cost), realmin);
 end
 
 function rc = minRcondRPP(FixLeg, SegTimes, H0)

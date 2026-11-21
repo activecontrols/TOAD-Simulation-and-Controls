@@ -665,20 +665,23 @@ void mexFunction(int nlhs, mxArray *plhs[], int nrhs, const mxArray *prhs[]) {
             out.push(ok ? toMx3(Deriv) : empty());
             out.push(ok ? scal(Cost) : empty());
         } else {
-            // [rcPadded, nFree, rcUnpadded, status, msg]: per axis, the rcond of the identity-padded POLYQP_MAX_FREE system that
-            // solveLeg factorises, its free count, and the rcond of the unpadded nFree x nFree system (NaN where not computed)
-            mxArray *rp = mxCreateDoubleMatrix(1, 3, mxREAL);
+            // [rcGuard, nFree, rcUnpadded, rcPadded, status, msg]: per axis, the rcond solveLeg's guard used, the free count, the rcond
+            // of the unpadded nFree x nFree block computed here independently (NaN above 5), and Eigen's estimate on the padded system
+            mxArray *rg = mxCreateDoubleMatrix(1, 3, mxREAL);
             mxArray *nf = mxCreateDoubleMatrix(1, 3, mxREAL);
             mxArray *ru = mxCreateDoubleMatrix(1, 3, mxREAL);
+            mxArray *rp = mxCreateDoubleMatrix(1, 3, mxREAL);
             for (int d = 0; d < 3; ++d) {
                 const int nP = lastRcond().nP[d];
                 mxGetPr(nf)[d] = nP;
-                mxGetPr(rp)[d] = nP > 0 ? lastRcond().rc[d] : mxGetNaN();
+                mxGetPr(rg)[d] = nP > 0 ? lastRcond().rc[d] : mxGetNaN();
                 mxGetPr(ru)[d] = nP > 0 ? rcondUnpadded(lastRcond().R_PP_eq[d], nP) : mxGetNaN();
+                mxGetPr(rp)[d] = nP > 0 ? lastRcond().rcPadded[d] : mxGetNaN();
             }
-            out.push(rp);
+            out.push(rg);
             out.push(nf);
             out.push(ru);
+            out.push(rp);
         }
         out.finish(st, nlhs, plhs);
     } else if (cmd == "allocateTimes") {

@@ -237,7 +237,6 @@ struct PolyQPWorkspace {
         MatrixF_Fd R_PP_eq_T;
         VectorFd R_PF_dF;
         VectorFd rhs_eq;
-        Eigen::PartialPivLU<MatrixF_Fd> lu_rc;
         Eigen::LLT<MatrixF_Fd> llt;
         Eigen::PartialPivLU<MatrixF_Fd> lu;
         VectorFd R_PP_eq_rhs_eq;
@@ -284,7 +283,8 @@ PolyQPWorkspace &workspace();
 #if defined(POLYQP_ERROR_MESSAGES)
 // Verification only: the padded R_PP_eq of the last solveLeg call per axis, for the padded-vs-unpadded rcond check.
 struct PolyQPRcondRecord {
-    double rc[3];
+    double rc[3];       // the rcond solveLeg's guard used (unpadded nP x nP block)
+    double rcPadded[3]; // Eigen's estimate on the padded POLYQP_MAX_FREE system (informational)
     int nP[3];
     MatrixF_Fd R_PP_eq[3];
 };
