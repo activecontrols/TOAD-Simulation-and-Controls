@@ -4,9 +4,9 @@
 namespace PolyQP {
 
 // STATIC: the rcond guard is evaluated on the leading nP x nP block of R_PP_eq with a fixed-size LU of exactly that size
-// (N = 1..POLYQP_MAX_FREE, chosen at run time). The identity padding leaves the exact 1-norm condition number unchanged, but
-// Eigen's rcond is an estimate (Hager / Higham), and on the padded matrix it differed by up to 3x on 27 of 1874 fuzzed axis
-// solves (verify_polyqp, Phase 4). Estimating on the unpadded block keeps the guard identical to the variable-size solver.
+// STATIC: (N = 1..POLYQP_MAX_FREE, chosen at run time). The identity padding leaves the exact 1-norm condition number unchanged,
+// STATIC: but Eigen's rcond is an estimate (Hager / Higham), and on the padded matrix it differed by up to 3x on 27 of 1874 fuzzed
+// STATIC: axis solves (verify_polyqp, Phase 4). Estimating on the unpadded block keeps the guard identical to the variable-size solver.
 template <int N> struct RcondLeading {
     static double eval(const MatrixF_Fd &A, int n) {
         if (n == N) {
