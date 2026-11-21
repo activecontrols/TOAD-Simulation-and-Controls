@@ -38,7 +38,7 @@ constexpr int POLYQP_NC = POLYQP_MAX_NC;
 // the caller's trajectory arrays must hold (Abort::MAX_POINTS). The evaluation grid of evaluateConstraints (dt = 0.05 s, up
 // to 3999 points) is streamed and needs no storage.
 #ifndef POLYQP_MAX_GRID
-#define POLYQP_MAX_GRID 480
+#define POLYQP_MAX_GRID 600
 #endif
 
 // TRANSPILE-FLAG F24: derived capacities. sampleOutputs evaluates Nn = Nc + 1 <= POLYQP_MAX_GRID + 1 nodes; solveLeg needs nv = r * K <= POLYQP_MAX_R * POLYQP_MAX_KNOTS. Transpiled as-is per MATLAB.
@@ -62,18 +62,21 @@ static_assert(POLYQP_MAX_FREE >= 5 && POLYQP_MAX_FREE <= POLYQP_MAX_NV, "the abo
 //     (|vx|, |vy| <= 5, |vz| <= 6 m/s, the verification box). T1 = max(MinSegTime, T_v, T_a, T_dv).
 //   Segment 2, ABT GND -> ABT END (z = 0): rest to rest, MaxVel z = 1: T2 = max(MinSegTime, c_v ABORT_HOVER_ALT / 1, ...) = 4.92 s.
 //   At 40 m: T_v = 18.70 s, T_a = 13.30 s, T_dv = 7.34 s -> T1 = 18.70 s, T_init = 23.62 s (MATLAB resolveWaypoints: 18.703 + 4.922).
-// Dilation: the outer loop multiplies a violating leg's times by s_apply = min(2, 1.02 s_leg) per iteration. The allowance
-// is one full capped step, 2 x T_init = 47.25 s. Measured over 600 envelope starts (300 upright, 300 tilted <= 30 deg with
-// |w| <= 1 rad/s): max T_total = 33.08 s (1.40 x the 40 m T_init). Low starts dilate by up to 2.9 x their own (short) T_init
-// but stay below 28 s. The dilation itself has no hard bound (up to 40 iterations), so a plan that needs more output nodes
-// than POLYQP_MAX_NODES returns CapacityExceeded and the abort flies the fallback; the fallback itself coarsens its grid to
+// Dilation: the outer loop multiplies a violating leg's times by s_apply = min(2, 1.02 s_leg) per iteration, for up to 40
+// iterations, so it has no hard bound; the allowance is measured. With the Phase 5 start boundary condition (acceleration and
+// jerk pinned, FIX-F02), 1500 envelope starts (1000 upright, 700 of them at 30-40 m; 500 tilted <= 30 deg, |w| <= 1 rad/s, at
+// 30-40 m) gave max T_total / T_init = 2.25 and max T_total = 48.28 s (z0 = 39.4 m). (Before Phase 5 the measured ratio was
+// 1.40 and max T_total 33.08 s; the earlier allowance of 2 x T_init = 47.25 s was exceeded by a 39.8 m verification start
+// needing 48.4 s.) The allowance is 2.5 x T_init = 59.05 s (11 % over the measured ratio), so Nc_max = 591 <= POLYQP_MAX_GRID
+// = 600 and the caller's arrays hold Abort::MAX_POINTS = 601 rows. A plan that still needs more output nodes than
+// POLYQP_MAX_NODES returns CapacityExceeded and the abort flies the fallback; the fallback itself coarsens its grid to
 // fit (F34), so it cannot fail.
 // ------------------------------------------------------------------------------------------------------------------------------
 constexpr double ABORT_MAX_START_ALT_M = 40.0;
 constexpr double ABORT_ENVELOPE_MAX_VXY = 5.0;          // m/s, verified start-velocity envelope (lateral)
 constexpr double ABORT_ENVELOPE_MAX_VZ = 6.0;           // m/s, verified start-velocity envelope (vertical)
 constexpr double POLYQP_ABORT_HOVER_ALT_M = 2.0;         // ABT GND altitude (DECISION-D5); AbortGuidance.cpp asserts it matches
-constexpr double POLYQP_DILATION_ALLOWANCE = 2.0;        // one full capped dilation step, s_apply <= 2
+constexpr double POLYQP_DILATION_ALLOWANCE = 2.5;        // measured max T_total / T_init = 2.25 (Phase 5 BC), plus margin
 
 namespace PolyQPCapacity {
 constexpr double csqrt(double x) {
