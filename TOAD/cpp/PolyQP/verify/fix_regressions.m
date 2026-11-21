@@ -1,7 +1,7 @@
 function R = fix_regressions(ids)
 % Verification only (never part of the flight build).
 % Regression sections for the abort fixes (ABORT_FIXES.md), one per FIX ID, each checking that FIX's acceptance
-% criteria on the current MATLAB (.m) and C++ (polyqp_mex, polyqp_mex_float) code.
+% criteria on the current MATLAB (.m) and C++ (polyqp_mex) code.
 %   R = fix_regressions()             % all sections
 %   R = fix_regressions({'F07'})      % selected sections
 % R(i).id, R(i).pass (false if any hard criterion fails), R(i).md (markdown section for the report).
@@ -19,7 +19,7 @@ if nargin < 1 || isempty(ids)
 end
 warnState = warning('off', 'all');
 cleanupWarn = onCleanup(@() warning(warnState));
-clear polyqp_mex polyqp_mex_float;
+clear polyqp_mex;
 
 ctx = struct();
 ctx.here = here;
@@ -202,54 +202,7 @@ function [ok, md] = regF07(ctx)
         L{end + 1} = sprintf('- ID CHANGED: %s', idChanged{j}); %#ok<AGROW>
     end
 
-    % (d) float
-    L{end + 1} = sprintf('\n**(d) Float (informational).** `polyqp_mex_float` against MATLAB double:\n');
-    L{end + 1} = '| SegTimes (s) | log10 cond before / after | MATLAB status | C++ float status | Deriv rel err | Cost rel err |';
-    L{end + 1} = '|---|---|---|---|---|---|';
-    for TT = {[6, 2], [10, 0.6], [3, 1], [8, 0.8]}
-        FixLeg = abortLikeFixLeg(5);
-        [Req, ~, ReqRaw] = rppEqAsSolved(FixLeg, TT{1}, ctx.H0{5});
-        idML = '';
-        try
-            [~, Dml, Cml] = solveLeg(FixLeg, TT{1}, ctx.A0{5}, ctx.H0{5});
-        catch ME
-            idML = ME.identifier;
-        end
-        [~, Df, Cf, stf] = polyqp_mex_float('solveLeg', FixLeg, TT{1}, ctx.A0{5}, ctx.H0{5});
-        if isempty(idML) && isempty(stf)
-            L{end + 1} = sprintf('| (%g, %g) | %.1f / %.1f | ok | ok | %.3g | %.3g |', TT{1}, maxLogCond(ReqRaw), maxLogCond(Req), ...
-                max(abs(Df(:) - Dml(:))) / max(abs(Dml(:))), abs(Cf - Cml) / abs(Cml)); %#ok<AGROW>
-        else
-            L{end + 1} = sprintf('| (%g, %g) | %.1f / %.1f | %s | %s | - | - |', TT{1}, maxLogCond(ReqRaw), maxLogCond(Req), okOr(idML), okOr(stf)); %#ok<AGROW>
-        end
-    end
-    fs = 0; eP = []; eT = [];
-    A = ctx.B.caseLog.abort;
-    for i = 1:numel(A)
-        if A{i}.veh ~= 1
-            continue;
-        end
-        W = abortWaypoints(A{i}.X_est);
-        idML = '';
-        try
-            [IG, ~, RP] = PolyQP(W, ctx.C{1}, struct('R', 5));
-        catch ME
-            idML = ME.identifier;
-        end
-        [IGf, ~, RPf, stf] = polyqp_mex_float('PolyQP', W, ctx.C{1}, struct('R', 5));
-        if ~strcmp(idML, stf)
-            fs = fs + 1;
-            continue;
-        end
-        if isempty(idML)
-            eT(end + 1) = abs(RPf.T_total - RP.T_total); %#ok<AGROW>
-            if isequal(size(IGf.X), size(IG.X))
-                eP(end + 1) = max(abs(IGf.X(5:7, :) - IG.X(5:7, :)), [], 'all'); %#ok<AGROW>
-            end
-        end
-    end
-    L{end + 1} = sprintf('\nASTRA abort cases through `polyqp_mex_float`: %d status mismatches against MATLAB (baseline: 10). T_total abs error median / 95th / max: %s s (baseline 0.000265 / 1.18 / 130). Position abs error median / 95th / max: %s m (baseline 0.0227 / 7.3 / 26.6).\n', ...
-        fs, dist(eT), dist(eP));
+    % (d) float: removed with the float build (the solver is double only; see ABORT_FIXES.md for the last float measurement)
     ok = okA && okB && okC;
     L{end + 1} = sprintf('**Result: %s** ((a) %s, (b) %s, (c) %s).\n', passFail(ok), passFail(okA), passFail(okB), passFail(okC));
     md = strjoin(L, newline);

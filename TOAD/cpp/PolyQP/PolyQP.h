@@ -32,10 +32,7 @@ PolyQPStatus buildVehicleLimits(const PolyQPConstants &Constants, LimitsT &Limit
 
 TOADWaypointT TOADWaypoint(const Vec3 &pos, const TOADWaypointOptions &options = TOADWaypointOptions());
 
-PolyQPStatus ComputeJtot(Real m_lox, Real m_ipa, const PolyQPConstants &constants6DoF, Mat3 &J_tot, Real &CGz);
 
-Vec4 DCM_Quat_Conversion(const Mat3 &R);
 
-Mat3 quatRot(const Vec4 &q);
 
 }

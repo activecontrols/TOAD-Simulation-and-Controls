@@ -1,6 +1,5 @@
 // Transpiled from TOAD/Guidance/PolynomialQP/flatnessInvert.m @ 5ac6bd23
 #include "PolyQP.h"
-#include "matlab_compat.h"
 
 namespace PolyQP {
 
@@ -150,7 +149,7 @@ PolyQPStatus flatnessInvert(const QPTrajT &QPTraj, const RowGrid &t_vec, const V
         Mat3 J_tot;
         Real CGz;
         if (Limits.HasVehicle) {
-            POLYQP_TRY(ComputeJtot(V1(ml_s, k), V1(mi_s, k), Constants, J_tot, CGz));
+            ComputeJtot(V1(ml_s, k), V1(mi_s, k), Constants, J_tot, CGz);
         } else {
             J_tot = Limits.J_init;
             CGz = Limits.CGz_init;

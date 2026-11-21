@@ -1,6 +1,5 @@
 // Transpiled from TOAD/Guidance/PolynomialQP/buildVehicleLimits.m @ 5ac6bd23
 #include "PolyQP.h"
-#include "matlab_compat.h"
 
 namespace PolyQP {
 
@@ -50,7 +49,7 @@ PolyQPStatus buildVehicleLimits(const PolyQPConstants &Constants, LimitsT &Limit
     const Real m_init = Constants.m_dry + m_lox0 + m_ipa0;
     Mat3 J_init;
     Real CGz_init;
-    POLYQP_TRY(ComputeJtot(m_lox0, m_ipa0, Constants, J_init, CGz_init));
+    ComputeJtot(m_lox0, m_ipa0, Constants, J_init, CGz_init);
     const Real rho = M1(J_init, 1, 1) / (m_init * CGz_init);
 
     // Effective actuator bands with controller margins

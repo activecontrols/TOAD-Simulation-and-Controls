@@ -17,7 +17,7 @@ mkdir -p "$OUT"
 cd "$POLYQP"
 
 FLIGHT_SRCS=(PolyQP.cpp resolveWaypoints.cpp assembleQP.cpp solveLeg.cpp allocateTimes.cpp evaluateConstraints.cpp flatnessInvert.cpp
-    allocateControls.cpp sampleOutputs.cpp PolyEval.cpp buildVehicleLimits.cpp TOADWaypoint.cpp ComputeJtot.cpp DCM_Quat_Conversion.cpp AbortGuidance.cpp abortFallback.cpp quatRot.cpp)
+    allocateControls.cpp sampleOutputs.cpp PolyEval.cpp buildVehicleLimits.cpp TOADWaypoint.cpp AbortGuidance.cpp abortFallback.cpp ../matlab_helpers.cpp)
 
 echo "== 1. Host build + smoke test (verification flags) [$CXX]"
 "$CXX" -std=c++17 -O2 -Wall -Wextra -Wpedantic -Werror -ffp-contract=off \
@@ -28,7 +28,7 @@ echo "== 1. Host build + smoke test (verification flags) [$CXX]"
 
 echo "== 2. Flight-flags build of cpp/PolyQP/*.cpp alone (no verification defines)"
 for f in "${FLIGHT_SRCS[@]}"; do
-    "$CXX" -std=c++17 -O2 -Wall -Wextra -Werror -ffp-contract=off -isystem "$EIGEN" -I. -I.. -I../Extras -c "$f" -o "$OUT/flight_${f%.cpp}.o"
+    "$CXX" -std=c++17 -O2 -Wall -Wextra -Werror -ffp-contract=off -isystem "$EIGEN" -I. -I.. -I../Extras -c "$f" -o "$OUT/flight_$(basename "${f%.cpp}").o"
 done
 echo "flight-flags build OK (${#FLIGHT_SRCS[@]} translation units)"
 
@@ -36,7 +36,7 @@ if command -v arm-none-eabi-g++ >/dev/null 2>&1; then
     echo "== 3. Cortex-M7 compile (no link)"
     for f in "${FLIGHT_SRCS[@]}"; do
         arm-none-eabi-g++ -std=c++17 -mcpu=cortex-m7 -mfpu=fpv5-d16 -mfloat-abi=hard -mthumb -O2 -ffp-contract=off -fno-exceptions -fno-rtti \
-            -Wall -Wextra -Werror -isystem "$EIGEN" -I. -I.. -I../Extras -c "$f" -o "$OUT/m7_${f%.cpp}.o"
+            -Wall -Wextra -Werror -isystem "$EIGEN" -I. -I.. -I../Extras -c "$f" -o "$OUT/m7_$(basename "${f%.cpp}").o"
     done
     arm-none-eabi-size "$OUT"/m7_*.o
 else

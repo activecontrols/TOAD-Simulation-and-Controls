@@ -1,10 +1,7 @@
-function build_polyqp_mex(precision)
+function build_polyqp_mex()
 % Verification only (never part of the flight build).
-% build_polyqp_mex          -> polyqp_mex       (Real = double)
-% build_polyqp_mex('float') -> polyqp_mex_float (Real = float, -DPOLYQP_REAL=float)
-if nargin < 1
-    precision = 'double';
-end
+% build_polyqp_mex -> polyqp_mex (the solver is double only; the former float build, -DPOLYQP_REAL=float, was removed
+% when the helpers moved to cpp/matlab_funcs.h, which are double by construction).
 
 here      = fileparts(mfilename('fullpath'));
 polyqpDir = fileparts(here);
@@ -16,17 +13,12 @@ assert(isfile(fullfile(cppDir, 'matlab_funcs.h')), 'matlab_funcs.h not found und
 
 flightSrcs = {'PolyQP.cpp', 'resolveWaypoints.cpp', 'assembleQP.cpp', 'solveLeg.cpp', 'allocateTimes.cpp', ...
     'evaluateConstraints.cpp', 'flatnessInvert.cpp', 'allocateControls.cpp', 'sampleOutputs.cpp', 'PolyEval.cpp', ...
-    'buildVehicleLimits.cpp', 'TOADWaypoint.cpp', 'ComputeJtot.cpp', 'DCM_Quat_Conversion.cpp', 'AbortGuidance.cpp', 'abortFallback.cpp', 'quatRot.cpp'};
-srcs = [{fullfile(here, 'polyqp_mex.cpp')}, fullfile(polyqpDir, flightSrcs)];
+    'buildVehicleLimits.cpp', 'TOADWaypoint.cpp', 'AbortGuidance.cpp', 'abortFallback.cpp'};
+% The double-precision MATLAB helpers (quatRot, DCM_Quat_Conversion, ComputeJtot, ...) live in cpp/matlab_helpers.cpp / matlab_funcs.h.
+srcs = [{fullfile(here, 'polyqp_mex.cpp')}, fullfile(polyqpDir, flightSrcs), {fullfile(cppDir, 'matlab_helpers.cpp')}];
 
 defs = {'-DPOLYQP_DEBUG_BOUNDS', '-DPOLYQP_ERROR_MESSAGES', '-D_USE_MATH_DEFINES'};
 name = 'polyqp_mex';
-if strcmpi(precision, 'float')
-    defs{end + 1} = '-DPOLYQP_REAL=float';
-    name = 'polyqp_mex_float';
-elseif ~strcmpi(precision, 'double')
-    error('build_polyqp_mex:precision', 'precision must be ''double'' or ''float''.');
-end
 
 if ispc
     flags = {'COMPFLAGS=$COMPFLAGS /std:c++17 /fp:precise /bigobj'};
@@ -38,5 +30,5 @@ mex('-outdir', here, '-output', name, ...
     ['-I' polyqpDir], ['-I' cppDir], ['-I' fullfile(cppDir, 'Extras')], ['-I' eigenDir], ...
     defs{:}, flags{:}, srcs{:});
 
-fprintf('Built %s (%s precision).\n', name, precision);
+fprintf('Built %s.\n', name);
 end

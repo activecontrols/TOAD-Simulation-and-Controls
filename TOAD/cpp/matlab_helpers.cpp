@@ -1,3 +1,5 @@
+// PolyQP/PolyQP_types.h first: it defines PolyQPConstants (ComputeJtot) and configures Eigen for PolyQP before matlab_funcs.h includes it.
+#include "PolyQP/PolyQP_types.h"
 #include "matlab_funcs.h"
 
 Matrix3_3 zetaCross(Vector3 zeta) {
@@ -75,4 +77,51 @@ Vector4 DCM_Quat_Conversion(Matrix3_3 R) {
     q.normalize();
 
     return q;
+}
+
+// Transpiled from TOAD/Helper/ComputeJtot.m @ 5ac6bd23 (double; moved from cpp/PolyQP/ComputeJtot.cpp)
+void ComputeJtot(double m_lox, double m_ipa, const PolyQP::PolyQPConstants &constants6DoF, Matrix3_3d &J_tot, double &CGz) {
+
+    const double m_dry = constants6DoF.m_dry;
+    const double m = m_dry + m_lox + m_ipa;
+
+    // Propellant fill height
+    double OxFluidHeight;
+    double FuFluidHeight;
+    if (constants6DoF.Vehicle == 0) {
+        OxFluidHeight = 0;
+        FuFluidHeight = 0;
+    } else {
+        OxFluidHeight = (m_lox / constants6DoF.OxMass) * constants6DoF.OxHeight * 0.9;
+        FuFluidHeight = (m_ipa / constants6DoF.FuMass) * constants6DoF.FuHeight * 0.9;
+    }
+
+    // Propellant inertias (about their own fluid-column centroid)
+    double J_xx = 1.0 / 12.0 * m_lox * (3 * std::pow(constants6DoF.OxRadius, 2.0) + std::pow(OxFluidHeight, 2.0));
+    double J_zz = 1.0 / 2.0 * m_lox * std::pow(constants6DoF.OxRadius, 2.0);
+    Matrix3_3d J_lox = Vector3d(J_xx, J_xx, J_zz).asDiagonal();
+
+    J_xx = 1.0 / 12.0 * m_ipa * (3 * std::pow(constants6DoF.FuRadius, 2.0) + std::pow(FuFluidHeight, 2.0));
+    J_zz = 1.0 / 2.0 * m_ipa * std::pow(constants6DoF.FuRadius, 2.0);
+    Matrix3_3d J_ipa = Vector3d(J_xx, J_xx, J_zz).asDiagonal();
+
+    // Fluid fill location & instantaneous CG (engine-attachment frame)
+    const double OxFluidLocation = constants6DoF.Ox_Z + OxFluidHeight / 2;
+    const double FuFluidLocation = constants6DoF.Fu_Z + FuFluidHeight / 2;
+    CGz = (m_dry * constants6DoF.rTB + m_lox * OxFluidLocation + m_ipa * FuFluidLocation) / m;
+
+    // Parallel-axis shift of each component to the instantaneous CG
+    const double d_dry = constants6DoF.rTB - CGz;
+    const double d_lox = OxFluidLocation - CGz;
+    const double d_ipa = FuFluidLocation - CGz;
+
+    const Matrix3_3d diag_dry = Vector3d(std::pow(d_dry, 2.0), std::pow(d_dry, 2.0), 0.0).asDiagonal();
+    const Matrix3_3d J_dry = constants6DoF.J + m_dry * diag_dry;
+    const Matrix3_3d diag_lox = Vector3d(std::pow(d_lox, 2.0), std::pow(d_lox, 2.0), 0.0).asDiagonal();
+    J_lox = J_lox + m_lox * diag_lox;
+    const Matrix3_3d diag_ipa = Vector3d(std::pow(d_ipa, 2.0), std::pow(d_ipa, 2.0), 0.0).asDiagonal();
+    J_ipa = J_ipa + m_ipa * diag_ipa;
+
+    // Bring everything to the instantaneous CG
+    J_tot = J_dry + J_lox + J_ipa;
 }

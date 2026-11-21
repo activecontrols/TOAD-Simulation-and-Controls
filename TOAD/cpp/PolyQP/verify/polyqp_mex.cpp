@@ -5,7 +5,6 @@
 
 #include "AbortGuidance.h"
 #include "PolyQP.h"
-#include "matlab_compat.h"
 
 #include <cstring>
 #include <string>
@@ -620,7 +619,8 @@ void mexFunction(int nlhs, mxArray *plhs[], int nrhs, const mxArray *prhs[]) {
         needArgs(nrhs, 3, "[J_tot, CGz, status, msg] = polyqp_mex('ComputeJtot', m_lox, m_ipa, constants6DoF)");
         Mat3 J_tot;
         Real CGz = 0;
-        const PolyQPStatus st = ComputeJtot(static_cast<Real>(num(prhs[1], "m_lox")), static_cast<Real>(num(prhs[2], "m_ipa")), readConstants(prhs[3]), J_tot, CGz);
+        ::ComputeJtot(static_cast<Real>(num(prhs[1], "m_lox")), static_cast<Real>(num(prhs[2], "m_ipa")), readConstants(prhs[3]), J_tot, CGz);
+        const PolyQPStatus st = PolyQPStatus::Ok;
         out.push(toMx(J_tot));
         out.push(scal(CGz));
         out.finish(st, nlhs, plhs);
@@ -628,7 +628,7 @@ void mexFunction(int nlhs, mxArray *plhs[], int nrhs, const mxArray *prhs[]) {
         needArgs(nrhs, 1, "[q, status, msg] = polyqp_mex('DCM_Quat_Conversion', R)");
         Mat3 R;
         readMat(prhs[1], R, "R");
-        out.push(toMx(PolyQP::DCM_Quat_Conversion(R)));
+        out.push(toMx(::DCM_Quat_Conversion(R)));
         out.finish(PolyQPStatus::Ok, nlhs, plhs);
     } else if (cmd == "AbortGuidance") {
         if (nrhs < 4 || nrhs > 7)
@@ -675,7 +675,7 @@ void mexFunction(int nlhs, mxArray *plhs[], int nrhs, const mxArray *prhs[]) {
         VecX<4> qv;
         readVecAny(prhs[1], qv, "q");
         if (qv.size() != 4) mexErrMsgIdAndTxt("polyqp_mex:size", "q must have 4 elements");
-        out.push(toMx(PolyQP::quatRot(Vec4(qv))));
+        out.push(toMx(::quatRot(Vec4(qv))));
         out.finish(PolyQPStatus::Ok, nlhs, plhs);
     } else if (cmd == "abortFallback") {
         if (nrhs != 4) mexErrMsgIdAndTxt("polyqp_mex:usage", "Usage: [Time, States, Inputs, status, msg] = polyqp_mex('abortFallback', X_est, Constants, vCapZ)");

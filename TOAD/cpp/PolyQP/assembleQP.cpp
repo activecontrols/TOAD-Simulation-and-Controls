@@ -1,6 +1,5 @@
 // Transpiled from TOAD/Guidance/PolynomialQP/assembleQP.m @ 5ac6bd23
 #include "PolyQP.h"
-#include "matlab_compat.h"
 
 namespace PolyQP {
 

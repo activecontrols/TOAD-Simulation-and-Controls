@@ -2,7 +2,6 @@
 // ASTRA constants copied from LoadTOADParams(0) @ 5ac6bd23.
 #include "AbortGuidance.h"
 #include "PolyQP.h"
-#include "matlab_compat.h"
 
 #include <cstdio>
 #include <limits>

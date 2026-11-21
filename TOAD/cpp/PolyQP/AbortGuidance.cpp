@@ -1,7 +1,6 @@
-// Transpiled from TOAD/Guidance/TrajectoryManager.m (abort block only) @ 5ac6bd23, with the abort fixes of ABORT_FIXES.md
+// Transpiled from TOAD/Guidance/AbortGuidance.m (the abort block formerly in TrajectoryManager.m) @ 5ac6bd23, with the abort fixes of ABORT_FIXES.md
 #include "AbortGuidance.h"
 #include "PolyQP.h"
-#include "matlab_compat.h"
 
 namespace PolyQP {
 

@@ -2,9 +2,9 @@ function verify_polyqp(runTag)
 % Verification only (never part of the flight build).
 % runTag (optional): if given, every abort case and solveLeg check (inputs, MATLAB and C++ outputs)
 % is saved to results/<runTag>_cases.mat for before/after comparisons.
-% Per-function I/O checks of the C++ PolyQP transpile (polyqp_mex / polyqp_mex_float)
+% Per-function I/O checks of the C++ PolyQP transpile (polyqp_mex)
 % against the MATLAB .m files. Run from TOAD/cpp/PolyQP/verify after
-%   build_polyqp_mex; build_polyqp_mex('float');
+%   build_polyqp_mex;
 % Writes verify_polyqp_report.md next to this file and errors if any double-precision check fails.
 
 if nargin < 1
@@ -17,10 +17,9 @@ addpath(fullfile(toadDir, 'Guidance'));   % AbortGuidance.m (the abort block)
 addpath(fullfile(toadDir, 'Guidance', 'PolynomialQP'));
 addpath(fullfile(toadDir, 'Helper'));
 addpath(here);
-clear polyqp_mex polyqp_mex_float;
+clear polyqp_mex;
 
 assert(exist('polyqp_mex', 'file') == 3, 'polyqp_mex not built: run build_polyqp_mex first.');
-assert(exist('polyqp_mex_float', 'file') == 3, 'polyqp_mex_float not built: run build_polyqp_mex(''float'') first.');
 
 warnState = warning('off', 'all');
 cleanupWarn = onCleanup(@() warning(warnState));
@@ -42,7 +41,7 @@ ROUNDOFF_FACTOR = 10;   % a strict miss is roundoff-explained if err <= ROUNDOFF
 exactRef = {};          % vpa reference rows for solveLeg strict misses
 statusCounts = struct('ok', 0, 'IllPosedQP', 0, 'SingularRPP', 0);
 atMoved = 0;
-caseLog = struct('abort', {{}}, 'solveLeg', {{}}, 'float', {{}});
+caseLog = struct('abort', {{}}, 'solveLeg', {{}});
 
     function addRow(name, kind, tol)
         rows(end + 1) = struct('name', name, 'kind', kind, 'tol', tol, 'cases', 0, 'fails', 0, 'roundoff', 0, 'maxErr', 0, 'maxRatio', 0, ...
@@ -246,8 +245,6 @@ end
 % ---------------------------------------------------------------- 2. abort cases
 nAbort = 200;
 abortStats = struct('veh', {}, 'n', {}, 'feasible', {}, 'outerHist', {}, 'T_total', {}, 'maxLogCond', {}, 'nOver', {}, 'feasOver', {});
-floatInputs = {};
-mlAstra = {};
 maxLogCondAll = -Inf;
 for v = 1:2
     c = C{v};
@@ -304,14 +301,6 @@ for v = 1:2
         else
             caseLog.abort{end + 1} = struct('veh', v, 'q', q, 'X_est', X_est, 'idML', idML, 'st', st, 'IG', [], 'QT', [], 'RP', [], ...
                 'IGc', [], 'QTc', [], 'RPc', []);
-        end
-        if v == 1
-            floatInputs{end + 1} = Waypoints; %#ok<AGROW>
-            if isempty(idML)
-                mlAstra{end + 1} = struct('IG', IG, 'RP', RP); %#ok<AGROW>
-            else
-                mlAstra{end + 1} = struct('IG', [], 'RP', [], 'id', idML); %#ok<AGROW>
-            end
         end
 
         % ---- AbortGuidance vs the MATLAB abort block (persistent semantics as explicit state)
@@ -568,61 +557,6 @@ for q = 1:nAT
 end
 note('allocateTimes', sprintf('%d fuzzed legs (10 single-segment for the M < 2 return), pinned rest endpoints and free interior derivatives; %d legs where the line search moved the times; also run on every qualifying mission leg', nAT, atMoved));
 
-% ---------------------------------------------------------------- 6. float comparison (informational)
-fprintf('[float] ASTRA abort cases through polyqp_mex_float\n');
-fl = struct('statusFail', 0, 'statusDetail', {{}}, 'shapeMismatch', 0, 'outerMismatch', 0, 'feasMismatch', 0, ...
-    'eT', [], 'ePos', [], 'eQuat', [], 'eVel', [], 'eU', [], 'eThrust', []);
-for q = 1:numel(floatInputs)
-    ml = mlAstra{q};
-    [IGf, ~, RPf, st] = polyqp_mex_float('PolyQP', floatInputs{q}, C{1}, struct('R', 5));
-    caseLog.float{end + 1} = struct('q', q, 'st', st, 'IGf', IGf, 'RPf', RPf);
-    if isempty(ml.IG)
-        if ~strcmp(st, ml.id)
-            fl.statusFail = fl.statusFail + 1;
-        end
-        continue;
-    end
-    if ~isempty(st)
-        fl.statusFail = fl.statusFail + 1;
-        if numel(fl.statusDetail) < 5
-            fl.statusDetail{end + 1} = sprintf('case %d: %s', q, st);
-        end
-        continue;
-    end
-    fl.outerMismatch = fl.outerMismatch + (RPf.OuterIterations ~= ml.RP.OuterIterations);
-    fl.feasMismatch = fl.feasMismatch + (RPf.Feasible ~= ml.RP.Feasible);
-    fl.eT(end + 1) = abs(RPf.T_total - ml.RP.T_total);
-    if ~isequal(size(IGf.X), size(ml.IG.X))
-        fl.shapeMismatch = fl.shapeMismatch + 1;
-        continue;
-    end
-    fl.eQuat(end + 1) = max(abs(IGf.X(1:4, :) - ml.IG.X(1:4, :)), [], 'all');
-    fl.ePos(end + 1) = max(abs(IGf.X(5:7, :) - ml.IG.X(5:7, :)), [], 'all');
-    fl.eVel(end + 1) = max(abs(IGf.X(8:10, :) - ml.IG.X(8:10, :)), [], 'all');
-    fl.eU(end + 1) = max(abs(IGf.U([1, 2, 4], :) - ml.IG.U([1, 2, 4], :)), [], 'all');
-    fl.eThrust(end + 1) = max(abs(IGf.U(3, :) - ml.IG.U(3, :)), [], 'all');
-end
-% Float solveLeg on the abort-like leg at the Python-port reference times
-flLeg = {};
-for TT = {[6, 2], [10, 0.6], [3, 1], [8, 0.8]}
-    SegTimes = TT{1};
-    FixLeg = abortLikeFixLeg(5);
-    idML = '';
-    try
-        [~, Dml, Cml] = solveLeg(FixLeg, SegTimes, A0ML{5}, H0ML{5});
-    catch ME
-        idML = ME.identifier;
-    end
-    [~, Df, Cf, stf] = polyqp_mex_float('solveLeg', FixLeg, SegTimes, A0ML{5}, H0ML{5});
-    lcd = logCondRPP(FixLeg, SegTimes, H0ML{5});
-    if isempty(idML) && isempty(stf)
-        [~, eD] = cmpNum(Dml, Df, 'rel', Inf);
-        flLeg{end + 1} = sprintf('| (%g, %g) | %.1f | ok | ok | %.3g | %.3g |', SegTimes, lcd, eD, abs(Cf - Cml) / abs(Cml)); %#ok<AGROW>
-    else
-        flLeg{end + 1} = sprintf('| (%g, %g) | %.1f | %s | %s | - | - |', SegTimes, lcd, okOr(idML), okOr(stf)); %#ok<AGROW>
-    end
-end
-
 % ---------------------------------------------------------------- self-review (step 9): comments + flight-source scan
 selfReview = selfReviewRows(toadDir, fileparts(here));
 if any(~[selfReview.ok])
@@ -638,7 +572,7 @@ if ~isempty(runTag)
     if ~isfolder(fullfile(here, 'results'))
         mkdir(fullfile(here, 'results'));
     end
-    save(fullfile(here, 'results', [runTag, '_cases.mat']), 'caseLog', 'rows', 'abortStats', 'fl', 'flLeg', '-v7');
+    save(fullfile(here, 'results', [runTag, '_cases.mat']), 'caseLog', 'rows', 'abortStats', '-v7');
 end
 % ---------------------------------------------------------------- 8. abort-fix regressions (one section per FIX, ABORT_FIXES.md)
 fprintf('[fix regressions]\n');
@@ -937,26 +871,6 @@ fprintf('ALL DOUBLE-PRECISION CHECKS PASSED\n');
         fprintf(fid, '`BuildTrajectory.m` is a script (`clear; clc; close all`, CSV export, plots), so it is not run. Its one mission (Circle) defines its waypoints without Simulink; those lines are copied verbatim into `circleMissionWaypoints`. Two synthetic missions add an initial hold, a cruise split and free pass-through corners.\n\n');
         fprintf(fid, '| Mission / vehicle | Segs | Legs | Holds | Cruise | Feasible | OuterIter (MATLAB) | T_total (s) | OuterIter (C++) | Max end-to-end err |\n|---|---|---|---|---|---|---|---|---|---|\n');
         fprintf(fid, '%s\n', missionLog{:});
-        fprintf(fid, '\n## Float vs double (informational, `polyqp_mex_float`, `-DPOLYQP_REAL=float`)\n\n');
-        fprintf(fid, 'ASTRA abort cases: %d. Status failures (C++ float errored where MATLAB succeeded, or ID differs): **%d**. Sample-count mismatches: %d. OuterIterations mismatches: %d. Feasible mismatches: %d.\n\n', ...
-            numel(floatInputs), fl.statusFail, fl.shapeMismatch, fl.outerMismatch, fl.feasMismatch);
-        for j = 1:numel(fl.statusDetail)
-            fprintf(fid, '- %s\n', fl.statusDetail{j});
-        end
-        fprintf(fid, '\n| Quantity (abs error vs MATLAB double) | Median | 95th pct | Max |\n|---|---|---|---|\n');
-        qn = {'T_total (s)', fl.eT; 'Quaternion X(1:4)', fl.eQuat; 'Position X(5:7) (m)', fl.ePos; 'Velocity X(8:10) (m/s)', fl.eVel; ...
-            'Gimbal / roll U(1,2,4)', fl.eU; 'Thrust U(3) (N)', fl.eThrust};
-        for i = 1:size(qn, 1)
-            x = qn{i, 2};
-            if isempty(x)
-                fprintf(fid, '| %s | - | - | - |\n', qn{i, 1});
-            else
-                fprintf(fid, '| %s | %.3g | %.3g | %.3g |\n', qn{i, 1}, median(x), prctile95(x), max(x));
-            end
-        end
-        fprintf(fid, '\nFloat `solveLeg` on the abort-shaped leg (lateral axis has free knot-2 position), against MATLAB double:\n\n');
-        fprintf(fid, '| SegTimes (s) | log10 cond(R_PP_eq) (double) | MATLAB status | C++ float status | Deriv rel err | Cost rel err |\n|---|---|---|---|---|---|\n');
-        fprintf(fid, '%s\n', flLeg{:});
         fprintf(fid, '\n# Abort-fix regressions (`fix_regressions.m`)\n\n');
         fprintf(fid, 'One section per FIX in `ABORT_FIXES.md`, checking its acceptance criteria on the fixed MATLAB and C++. Overall: %s.\n\n', passStr(all([fixR.pass])));
         for i = 1:numel(fixR)
@@ -1386,23 +1300,37 @@ function R = selfReviewRows(toadDir, polyDir)
         'Guidance/PolynomialQP/PolyEval.m',            'PolyEval.cpp',            [];
         'Guidance/PolynomialQP/buildVehicleLimits.m',  'buildVehicleLimits.cpp',  [];
         'Guidance/PolynomialQP/TOADWaypoint.m',        'TOADWaypoint.cpp',        [];
-        'Helper/ComputeJtot.m',                        'ComputeJtot.cpp',         [];
-        'Helper/DCM_Quat_Conversion.m',                'DCM_Quat_Conversion.cpp', [];
+        'Helper/ComputeJtot.m',                        '../matlab_helpers.cpp',   'region';
+        'Helper/DCM_Quat_Conversion.m',                '../matlab_funcs.h',       'region';
         'Guidance/AbortGuidance.m',                    'AbortGuidance.cpp',       'abort';
         'Guidance/PolynomialQP/abortFallback.m',       'abortFallback.cpp',       [];
-        'Helper/quatRot.m',                            'quatRot.cpp',             [];
+        'Helper/quatRot.m',                            '../matlab_funcs.h',       'region';
         };
     R = struct('m', {}, 'cpp', {}, 'nM', {}, 'nC', {}, 'commentsOk', {}, 'scanOk', {}, 'ok', {}, 'msg', {});
     forbidden = '(mex\.h|\bmx[A-Z]\w*\(|iostream|fstream|std::cout|std::cerr|\bfopen\b|\bprintf\(|<chrono>|\bclock\()';
     for i = 1:size(pairs, 1)
         mLines = readlines(fullfile(toadDir, pairs{i, 1}));
-        if ~isempty(pairs{i, 3})
+        if strcmp(pairs{i, 3}, 'abort')
             i1 = find(contains(mLines, 'ABORT = 0'), 1);
             i2 = find(contains(mLines, 'tAbort = t;'), 1) + 1;
             mLines = mLines(i1:i2);
         end
         cText = fileread(fullfile(polyDir, pairs{i, 2}));
         cLines = splitlines(string(cText));
+        if strcmp(pairs{i, 3}, 'region')
+            % Helpers moved into cpp/matlab_helpers.cpp / matlab_funcs.h: the region from this helper's
+            % "// Transpiled from TOAD/<file>.m" header to the next "// Transpiled from" header (or end of file).
+            j1 = find(contains(cLines, ['// Transpiled from TOAD/', pairs{i, 1}]), 1);
+            assert(~isempty(j1), 'selfReview:region', 'No "Transpiled from TOAD/%s" header in %s', pairs{i, 1}, pairs{i, 2});
+            j2 = find(contains(cLines((j1 + 1):end), '// Transpiled from'), 1);
+            if isempty(j2)
+                j2 = numel(cLines);
+            else
+                j2 = j1 + j2 - 1;
+            end
+            cLines = cLines(j1:j2);
+            cText = char(strjoin(cLines, newline));
+        end
         mc = matlabComments(mLines);
         cc = strings(0, 1);
         for j = 1:numel(cLines)

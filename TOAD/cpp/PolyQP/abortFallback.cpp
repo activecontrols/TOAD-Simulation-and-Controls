@@ -1,6 +1,5 @@
 // Transpiled from TOAD/Guidance/PolynomialQP/abortFallback.m @ abort-fixes
 #include "AbortGuidance.h"
-#include "matlab_compat.h"
 
 namespace PolyQP {
 

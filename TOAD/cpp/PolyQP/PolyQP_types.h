@@ -3,42 +3,18 @@
 
 #include "PolyQP_config.h"
 
-#include <Eigen/Dense>
+#include "matlab_funcs.h"
+
 #include <cstdint>
 #include <limits>
-#if defined(POLYQP_DEBUG_BOUNDS)
-#include <cstdlib>
-#endif
 
-#ifndef POLYQP_REAL
-#define POLYQP_REAL double
-#endif
-
-#if defined(POLYQP_DEBUG_BOUNDS)
-namespace PolyQP {
-using BoundsHookT = void (*)(const char *file, int line);
-inline BoundsHookT &boundsHook() {
-    static BoundsHookT hook = nullptr;
-    return hook;
-}
-[[noreturn]] inline void boundsFail(const char *file, int line) {
-    if (boundsHook() != nullptr) boundsHook()(file, line);
-    std::abort();
-}
-}
-#define POLYQP_ASSERT(cond)                                                                                                                                    \
-    do {                                                                                                                                                       \
-        if (!(cond)) ::PolyQP::boundsFail(__FILE__, __LINE__);                                                                                                 \
-    } while (0)
-#else
-#define POLYQP_ASSERT(cond)                                                                                                                                    \
-    do {                                                                                                                                                       \
-    } while (0)
+#if defined(POLYQP_ERROR_MESSAGES)
+#include <cstdio>
 #endif
 
 namespace PolyQP {
 
-using Real = POLYQP_REAL;
+using Real = double;
 
 template <int MR, int MC> using MatX = Eigen::Matrix<Real, Eigen::Dynamic, Eigen::Dynamic, Eigen::ColMajor, MR, MC>;
 template <int MR> using VecX = Eigen::Matrix<Real, Eigen::Dynamic, 1, Eigen::ColMajor, MR, 1>;
@@ -46,9 +22,9 @@ template <int MC> using RowX = Eigen::Matrix<Real, 1, Eigen::Dynamic, Eigen::Row
 template <int MC> using BoolRowX = Eigen::Array<bool, 1, Eigen::Dynamic, Eigen::RowMajor, 1, MC>;
 template <int MC> using IntRowX = Eigen::Array<int, 1, Eigen::Dynamic, Eigen::RowMajor, 1, MC>;
 
-using Vec3 = Eigen::Matrix<Real, 3, 1>;
-using Vec4 = Eigen::Matrix<Real, 4, 1>;
-using Mat3 = Eigen::Matrix<Real, 3, 3>;
+using Vec3 = Vector3d;
+using Vec4 = Vector4d;
+using Mat3 = Matrix3_3d;
 
 using MatR = MatX<POLYQP_MAX_R, POLYQP_MAX_R>;
 using VecR = VecX<POLYQP_MAX_R>;
@@ -75,39 +51,6 @@ using Mat3Grid = MatX<3, POLYQP_MAX_NODES>;
 using Mat4Grid = MatX<4, POLYQP_MAX_NODES>;
 using Mat15Grid = MatX<15, POLYQP_MAX_NODES>;
 using BoolGrid = BoolRowX<POLYQP_MAX_NODES>;
-
-template <typename T, int D1, int D2, int D3> struct Array3 {
-    T data[D1 * D2 * D3];
-    int n1 = 0;
-    int n2 = 0;
-    int n3 = 0;
-
-    static constexpr int Cap1 = D1;
-    static constexpr int Cap2 = D2;
-    static constexpr int Cap3 = D3;
-
-    void resize(int a, int b, int c) {
-        POLYQP_ASSERT(a >= 0 && a <= D1 && b >= 0 && b <= D2 && c >= 0 && c <= D3);
-        n1 = a;
-        n2 = b;
-        n3 = c;
-    }
-    void setConstant(int a, int b, int c, T v) {
-        resize(a, b, c);
-        for (int q = 0; q < a * b * c; ++q) data[q] = v;
-    }
-    int numel() const { return n1 * n2 * n3; }
-    int size(int dim) const { return dim == 1 ? n1 : (dim == 2 ? n2 : n3); }
-
-    T &operator()(int i, int j, int k) {
-        POLYQP_ASSERT(i >= 1 && i <= n1 && j >= 1 && j <= n2 && k >= 1 && k <= n3);
-        return data[(i - 1) + n1 * ((j - 1) + n2 * (k - 1))];
-    }
-    const T &operator()(int i, int j, int k) const {
-        POLYQP_ASSERT(i >= 1 && i <= n1 && j >= 1 && j <= n2 && k >= 1 && k <= n3);
-        return data[(i - 1) + n1 * ((j - 1) + n2 * (k - 1))];
-    }
-};
 
 using Fix3 = Array3<Real, 3, POLYQP_MAX_R, POLYQP_MAX_KNOTS>;
 using FixOut3 = Array3<Real, 3, 6, POLYQP_MAX_KNOTS>;
@@ -296,4 +239,40 @@ struct WrenchT {
     RowGrid CGz;
 };
 
+#if defined(POLYQP_ERROR_MESSAGES)
+struct PolyQPErrorRecord {
+    char identifier[48];
+    char message[256];
+};
+inline PolyQPErrorRecord &lastError() {
+    static PolyQPErrorRecord rec{};
+    return rec;
 }
+#endif
+
+inline bool repmat(const TOADWaypointT &A, int m, int n, TOADWaypointArray &out) {
+    if (m * n > POLYQP_MAX_WP) return false;
+    out.count = m * n;
+    for (int q = 1; q <= m * n; ++q) out(q) = A;
+    return true;
+}
+
+}
+
+#if defined(POLYQP_ERROR_MESSAGES)
+#define POLYQP_ERROR(ID, ...)                                                                                                                                  \
+    do {                                                                                                                                                       \
+        std::snprintf(::PolyQP::lastError().identifier, sizeof(::PolyQP::lastError().identifier), "%s", "PolyQP:" #ID);                                       \
+        std::snprintf(::PolyQP::lastError().message, sizeof(::PolyQP::lastError().message), __VA_ARGS__);                                                      \
+        return ::PolyQP::PolyQPStatus::ID;                                                                                                                     \
+    } while (0)
+#else
+#define POLYQP_ERROR(ID, ...) return ::PolyQP::PolyQPStatus::ID
+#endif
+
+#define POLYQP_CAPACITY(cond)                                                                                                                                  \
+    do {                                                                                                                                                       \
+        if (!(cond)) {                                                                                                                                         \
+            POLYQP_ERROR(CapacityExceeded, "PolyQP capacity exceeded: %s", #cond);                                                                             \
+        }                                                                                                                                                      \
+    } while (0)
